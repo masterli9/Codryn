@@ -1,0 +1,21 @@
+nejprve v cmd, poté přejít ke GUI (electron nebo tauri)
+Electron - pohodlnější, větší, řerevíc RAm, node.js
+Tauri - rychlejší, menší, bezpečnější, webview ale mívá problémy
+(spíše tedy vyhrává electron)
+
+Cílový produkt / vize: vibe coding aplikace jako antigravity nebo claude code, ale řeší jejich problémy / nedostatky + implementuje nově features a QoL.
+
+- UI postavené na IKEA EFEKTU - uživatel si sám určí, kde a co bude mít na obrazobvce (příp. přednastavené možnosti)
+- Přístup k terminálu v aplikaci pro spuštění projektů. Případně možnost nastavění rychlého spuštění na jedno tlačítko.
+- LLM WIKI (karpathy) - naučit modely využívat princip llm wiki
+- Uživatel si sám připojí svůj API klíč k modelu jeho výběru, možnost využití i lokálního modelu
+- Lepší harness než antigravity co se týče tool callů a ověřování hotové práce
+- Vestavěné skilly, pluginy / mcp - rozhodně v základu musí být playwright a věci jako kladení otázek, brainstorming, psaní plánů
+- Důraz na dobré, odlišné a přehledné UI komponenty (upozornění na akci animací)
+- Nové možnosti inputu - malování
+- Věc jako napojení na typescript lint server (AST), LSP
+- MCP Marketplace, plugin a skills marketplace
+
+
+
+https://ampcode.com/notes/how-to-build-an-agent
