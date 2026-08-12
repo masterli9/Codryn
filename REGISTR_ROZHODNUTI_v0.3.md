@@ -133,3 +133,24 @@ Registr zachycuje rozhodnutí uzavřená do revize PRD v0.3. Nejde o implementa�
 **Rozhodnutí:** v O1 proběhne offline E0 nad syntetickými nebo anonymizovanými dlouhými relacemi. Porovná plnou historii, posuvné okno, lineární kompakci a jednoduché checkpointy se selektivním dohledáním evidence.  
 **Gate:** pokračovat k produktové variantě A pouze při zachované nebo lepší správnosti, prokazatelné tokenové úspoře, funkční stale detekci a auditovatelném návratu ke kanonickým eventům. FTS5, automatické hranice, reranking a embeddings vyžadují pozdější samostatné rozhodnutí.
 
+## DR-21: Headless/CLI průřez před produktovým UI
+
+**Stav:** přijato.
+
+**Rozhodnutí:** první funkční vertikální průřez agentního jádra vznikne přes interní headless/CLI driver. Ověří cestu zadání → fake nebo reálný adapter → tool call → oprávnění → změna → ověření → diff a výsledek → bezpečný návrat, aniž by správnost této cesty závisela na React rendereru.
+
+**Hranice:** CLI není samostatný produkt, veřejný příslib ani druhé dlouhodobě udržované uživatelské rozhraní. CLI, automatické testy a Electron renderer používají stejné aplikační služby, doménové kontrakty a eventy; agentní pravidla se nesmí duplikovat do jednotlivých rozhraní.
+
+**Paralelní ověření:** v F0 současně vznikne minimální Electron spike pouze pro včasné ověření Windows balení, úzkého IPC, SQLite a procesního runneru. Minimální produktové UI se připojí po stabilizaci headless vertikálního průřezu.
+
+**Důvod:** oddělení agentního jádra od prezentační vrstvy zrychlí deterministické testování, zpřesní hranice komponent a zabrání tomu, aby chyby UI zakrývaly chyby orchestrace nebo harnessu.
+
+## DR-22: Pravidla zdrojů konkurenční inspirace
+
+**Stav:** přijato.
+
+**Rozhodnutí:** Codryn nebude při návrhu ani implementaci používat neveřejný, uniklý nebo jinak licenčně nejasný proprietární codebase. Inspirace může vycházet z veřejného chování produktu, oficiální dokumentace a veřejných repozitářů s ověřenou licencí.
+
+**Provenience:** pokud konkrétní veřejný zdroj ovlivní významné technické rozhodnutí nebo implementaci, příslušná oblastní specifikace či rozhodovací záznam uvede zdroj, licenci, převzatý princip a vlastní odůvodnění řešení Codrynu.
+
+**Důvod:** pravidlo omezuje právní a bezpečnostní riziko, brání neúmyslnému přenosu proprietárního kódu a zachovává obhajitelnost samostatné maturitní práce.

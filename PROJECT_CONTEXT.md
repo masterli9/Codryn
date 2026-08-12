@@ -9,6 +9,9 @@
 
 - Aktuální produktovou autoritou je `PRD_v0.3.md`; `PRD_v0.2.md` a `PRD_v0.1.md` jsou historické snapshoty.
 - Důvody uzavřených rozhodnutí jsou v `REGISTR_ROZHODNUTI_v0.3.md` a interní rámec je v `ETAPIZACE_v0.3.md`.
+- Pořadí skutečné implementace bez kalendářních dat určuje `ROADMAP.md`. Roadmap nenahrazuje produktový rozsah PRD ani řízení rizika v etapizaci.
+- První funkční vertikální průřez agentního jádra vznikne přes interní headless/CLI driver bez produktového UI. CLI není samostatný produkt ani druhé trvale udržované uživatelské rozhraní; používá stejné aplikační služby jako pozdější Electron renderer.
+- Současně s headless průřezem vznikne pouze minimální Electron spike pro včasné ověření Windows balení, úzkého IPC, SQLite a procesního runneru. Minimální produktové UI se připojí až ke stabilnímu jádru.
 - PRD v0.3 je technicky konkrétní na úrovni odpovědností komponent, stavových automatů, invariantů, datových toků, chyb a testů. Přesné TypeScript interface, SQL migrace, adresářová struktura a volba každé knihovny patří do navazujících implementačních specifikací.
 - Běžné UX detaily se doplňují systematicky přes oblastní baseline checklisty. Detail lze přidat bez nové revize PRD jen tehdy, pokud nemění etapu, bezpečnost, data, externí účinek nebo význam akceptačního kritéria.
 - O1 zahrnuje `@` reference na soubory a složky projektu. Obecné textové/obrazové přílohy, drag-and-drop a vložení obrázku ze schránky jsou povinné nejpozději pro ŠF.
@@ -16,6 +19,7 @@
 - Dřívější pevná volba Gemini `gemini-2.5-flash` jako prvního adaptéru je nahrazena provider evalem. Počáteční kandidáti jsou GPT-5.6 Luna a Gemini `gemini-2.5-flash`; rozhoduje agentní kvalita, latence, cena celého úkolu, dostupnost a aktuální datové podmínky.
 - Workspace Intelligence, koordinace relací a přímé zápisy subagentů jsou zapracovány do O1 v0.3. Awareness nenahrazuje expected-hash/revision kontrolu každého zápisu.
 - `NAVRH_EPIZODICKE_PAMETI_KONTEXTU_v0.1.md` zůstává kandidátní architekturou. Schválen je pouze offline experiment E0; produktová implementace, FTS5, reranking ani embeddings nejsou automaticky součástí O1.
+- Neveřejný nebo uniklý proprietární codebase se nepoužívá jako implementační podklad. Technická rešerše čerpá z veřejných dokumentací a repozitářů s ověřenou licencí a u převzatých praktik eviduje původ a vlastní odůvodnění.
 - Pokud se starší text níže nebo dřívější podklady rozcházejí s v0.3 dokumenty, platí v0.3.
 
 ## Aktualizace po revizi PRD v0.2 – 11. srpna 2026

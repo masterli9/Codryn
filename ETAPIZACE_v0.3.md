@@ -18,6 +18,7 @@ Tato etapizace není školní seznam měsíčních úkolů. Je to interní říz
 5. Interní cíle se průběžně posouvají dopředu; oficiální termín neslouží jako plánované datum dokončení.
 6. Drobný UX detail lze doplnit během implementace, ale nová schopnost, změna bezpečnostní hranice nebo přesun etapy vyžaduje rozhodovací záznam.
 7. Workspace awareness snižuje počet konfliktů, ale žádná fáze nesmí vypustit očekávaný hash/revizi při zápisu.
+8. Skutečné pořadí implementačních přírůstků a jejich dokončovací brány určuje `ROADMAP.md`; tato etapizace nadále řídí rozsah, rizika a vazbu na školní milníky.
 
 ## F0 – rozhodnutí a technické základy
 
@@ -25,7 +26,8 @@ Tato etapizace není školní seznam měsíčních úkolů. Je to interní říz
 **Cíl:** odstranit rizika, která by vynutila přestavbu celého projektu.
 
 - potvrdit repo strukturu a hranice renderer/backend/orchestrátor/harness;
-- vytvořit minimální Electron spike s úzkým IPC;
+- vymezit sdílené aplikační služby tak, aby je mohly používat interní headless/CLI driver, automatické testy i Electron renderer bez duplikace agentních pravidel;
+- vytvořit minimální Electron spike s úzkým IPC pouze pro ověření integračních rizik, nikoli jako první produktové UI;
 - ověřit SQLite balení, WAL, migraci a zálohu na Windows;
 - ověřit spuštění, timeout a ukončení procesního stromu;
 - definovat interní kontrakty zpráv, událostí, tool callů a adapterů;
@@ -33,22 +35,24 @@ Tato etapizace není školní seznam měsíčních úkolů. Je to interní říz
 - ověřit Git CLI, zjištění credential mechanismu a lokální bare-remote fixture bez ukládání tajemství;
 - zavést rozhodovací záznamy a základ testovací infrastruktury.
 
-**Gate:** lze spustit zabalení nebo produkčně blízký Electron build, bezpečně uložit a obnovit testovací relaci a řízeně spustit/ukončit fixture proces.
+**Gate:** lze spustit zabalení nebo produkčně blízký Electron spike, bezpečně uložit a obnovit testovací relaci a řízeně spustit/ukončit fixture proces; doménové a aplikační kontrakty přitom nejsou závislé na rendereru.
 
 ## F1 – první kompletní agentní průchod
 
 **Orientační okno:** srpen až září 2026.  
 **Cíl:** co nejdříve získat malý end-to-end cyklus místo izolovaných obrazovek.
 
-- otevření projektu, projektový chat a stav relace;
-- fake adapter, capability kontrakt a první reálný modelový adapter vybraný provider evalem mezi počátečními kandidáty;
+- interní headless/CLI driver pro otevření fixture projektu, zadání úkolu a sledování stavu relace;
+- doménové a aplikační služby sdílené s budoucím Electron rendererem;
+- fake adapter a provider-neutral capability kontrakt připravený pro pozdější reálné adaptery;
 - čtení, hledání, cílený patch a omezený shell/test;
 - Řízený režim oprávnění a append-oriented event log;
 - diff, ověřovací výsledek a návrat změny;
-- první deterministický Git fixture.
-- základní `@` reference na projektový soubor v composeru a audit skutečně sestaveného kontextu.
+- první deterministický Git fixture;
+- základní explicitní reference na projektový soubor v headless vstupu a audit skutečně sestaveného kontextu;
+- po stabilizaci headless průchodu připojit minimální Electron pracovní plochu ke stejným aplikačním službám bez přesunu orchestrace do rendereru.
 
-**Gate:** referenční úkol projde 10krát z 10 s fake adapterem a žádný neověřený stav není zobrazen jako dokončený.
+**Gate:** referenční úkol projde v headless režimu 10krát z 10 s fake adapterem, žádný neověřený stav není zobrazen jako dokončený a stejnou relaci lze pozorovat přes minimální Electron UI bez odlišné implementace agentní smyčky.
 
 ## F2 – bezpečný a obnovitelný harness
 
@@ -72,6 +76,7 @@ Tato etapizace není školní seznam měsíčních úkolů. Je to interní říz
 **Orientační okno:** říjen až prosinec 2026.  
 **Cíl:** dokončit dvě prioritní odlišující oblasti široké alfy.
 
+- provést provider eval počátečních kandidátů a připojit první reálný modelový adapter přes kontrakt ověřený ve F1;
 - rozpoznání TypeScript/Node/React/Next.js projektu;
 - definice, reference, typy, diagnostika a import/export vazby;
 - progresivní repo mapa, invalidace a hlubší inicializace;
@@ -159,4 +164,3 @@ Při skluzu se omezují funkce v tomto pořadí:
 8. produktová implementace epizodické paměti, pokud E0 jednoznačně nesplní rozhodovací gate.
 
 Nikdy se kvůli množství funkcí neškrtá ochrana tajemství, audit oprávnění, diff, bezpečný návrat, deterministický fallback ani pravdivé označení ověřeného stavu.
-
