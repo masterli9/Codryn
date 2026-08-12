@@ -5,6 +5,19 @@
 > významném rozhodnutí ho aktualizuj. Nezaměňuj zde označené nápady za hotová
 > rozhodnutí.
 
+## Aktualizace po revizi PRD v0.3 – 12. srpna 2026
+
+- Aktuální produktovou autoritou je `PRD_v0.3.md`; `PRD_v0.2.md` a `PRD_v0.1.md` jsou historické snapshoty.
+- Důvody uzavřených rozhodnutí jsou v `REGISTR_ROZHODNUTI_v0.3.md` a interní rámec je v `ETAPIZACE_v0.3.md`.
+- PRD v0.3 je technicky konkrétní na úrovni odpovědností komponent, stavových automatů, invariantů, datových toků, chyb a testů. Přesné TypeScript interface, SQL migrace, adresářová struktura a volba každé knihovny patří do navazujících implementačních specifikací.
+- Běžné UX detaily se doplňují systematicky přes oblastní baseline checklisty. Detail lze přidat bez nové revize PRD jen tehdy, pokud nemění etapu, bezpečnost, data, externí účinek nebo význam akceptačního kritéria.
+- O1 zahrnuje `@` reference na soubory a složky projektu. Obecné textové/obrazové přílohy, drag-and-drop a vložení obrázku ze schránky jsou povinné nejpozději pro ŠF.
+- O1 zahrnuje kompaktní Git workspace: stav, staged/unstaged změny, diff, historii, branch, commit, AI návrh commit message, fetch, pull a push. Operace jsou explicitní, používají čerstvý preflight, systémový Git credential mechanismus, resource-key serializaci a neprovádějí automatický force push.
+- Dřívější pevná volba Gemini `gemini-2.5-flash` jako prvního adaptéru je nahrazena provider evalem. Počáteční kandidáti jsou GPT-5.6 Luna a Gemini `gemini-2.5-flash`; rozhoduje agentní kvalita, latence, cena celého úkolu, dostupnost a aktuální datové podmínky.
+- Workspace Intelligence, koordinace relací a přímé zápisy subagentů jsou zapracovány do O1 v0.3. Awareness nenahrazuje expected-hash/revision kontrolu každého zápisu.
+- `NAVRH_EPIZODICKE_PAMETI_KONTEXTU_v0.1.md` zůstává kandidátní architekturou. Schválen je pouze offline experiment E0; produktová implementace, FTS5, reranking ani embeddings nejsou automaticky součástí O1.
+- Pokud se starší text níže nebo dřívější podklady rozcházejí s v0.3 dokumenty, platí v0.3.
+
 ## Aktualizace po revizi PRD v0.2 – 11. srpna 2026
 
 - Aktuálním pracovním názvem produktu je **Codryn**; Codey je předchozí pracovní název.
@@ -72,13 +85,16 @@ Harness však potřebuje jednotné interní rozhraní a pro každý API formát 
 adapter, protože se poskytovatelé liší v tool callech, streamování, kontextu a
 dalších schopnostech.
 
-- **Výchozí testovací adapter pro MVP:** Gemini `gemini-2.5-flash` jako
-  hlavní agent. Důvodem je dostupný free tier, nízká cena a podpora function
-  calling; pro soukromý kód je nutné upozornit na rozdíl mezi free a placeným
-  režimem z hlediska využití obsahu poskytovatelem.
-- **Druhý ověřovací adapter:** Kimi `kimi-k2.6`. Cílem není mít hned všechny
-  providery, ale ověřit přenositelnost nad OpenAI-kompatibilním API a agentními
-  tool cally.
+- **První reálný adapter pro MVP:** vybere provider eval mezi počátečními
+  kandidáty GPT-5.6 Luna a Gemini `gemini-2.5-flash`. Eval porovnává tool
+  calling, dokončení úkolu, opravu po chybě, latenci, cenu celého úkolu a
+  aktuální podmínky zpracování dat. Ceníková cena tokenu sama nerozhoduje.
+- **Druhý ověřovací adapter:** používá odlišný API formát nebo srovnatelný
+  OpenAI-kompatibilní endpoint a prochází stejnou kontraktní sadou. Konkrétní
+  model se může změnit podle dostupnosti bez změny hranic harnessu.
+- **Bezplatné režimy:** před odesláním projektového obsahu musí Codryn upozornit
+  na aktuální podmínky poskytovatele, zejména pokud může obsah využívat ke
+  zlepšování produktů. Pro automatické testy se soukromý kód nepoužívá.
 - Levnější model, například Gemini Flash-Lite, může později sloužit pro malé
   pomocné úlohy (sumarizace nebo klasifikace rizika), nikoli jako nezbytná
   závislost základní agentní smyčky.
