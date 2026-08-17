@@ -1,1 +1,10 @@
 .superpowers/
+node_modules/
+dist/
+out/
+coverage/
+*.log
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+.r0-artifacts/

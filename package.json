@@ -1,0 +1,36 @@
+{
+  "name": "codryn",
+  "version": "0.0.0",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "backend/*",
+    "shared",
+    "tests/support"
+  ],
+  "engines": {
+    "node": "24.19.0",
+    "npm": ">=11 <12"
+  },
+  "scripts": {
+    "preinstall": "node scripts/check-runtime.mjs",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "lint": "eslint apps backend shared tests scripts --max-warnings=0",
+    "check:deps": "depcruise apps backend shared tests/support/src --config dependency-cruiser.config.mjs",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "package": "npm run package --workspace @codryn/desktop",
+    "make": "npm run make --workspace @codryn/desktop",
+    "verify:r0": "node scripts/verify-r0.mjs"
+  },
+  "devDependencies": {
+    "@eslint/js": "9.39.5",
+    "@types/node": "24.13.3",
+    "dependency-cruiser": "18.1.0",
+    "eslint": "9.39.5",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.65.0",
+    "vite": "7.3.6",
+    "vitest": "4.1.7"
+  }
+}
