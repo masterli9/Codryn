@@ -25,3 +25,27 @@ export {
   transitionGitOperation
 } from './state/git-operation.js';
 export type { GitOperationState } from './state/git-operation.js';
+export { RunR0Diagnostics } from './diagnostics/run-r0-diagnostics.js';
+export type { RunR0DiagnosticsDependencies } from './diagnostics/run-r0-diagnostics.js';
+export type {
+  BackupEvidence,
+  CredentialHelperCategory,
+  DatabaseEvidence,
+  DiagnosticSession,
+  GitEvidence,
+  InitialEvent,
+  LogEntry,
+  ProcessResult,
+  ProcessSpec,
+  R0DiagnosticProfile
+} from './diagnostics/model.js';
+export type {
+  Clock,
+  DatabaseDiagnostics,
+  DiagnosticLogger,
+  EventStore,
+  GitProbe,
+  IdGenerator,
+  ProcessRunner,
+  SessionRepository
+} from './diagnostics/ports.js';
