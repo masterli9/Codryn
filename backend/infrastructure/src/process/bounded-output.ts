@@ -9,9 +9,10 @@ export interface BoundedOutputSnapshot {
 
 type OutputStream = 'stdout' | 'stderr';
 
-function decodeCompleteUtf8(chunks: readonly Buffer[]): string {
+function decodeUtf8(chunks: readonly Buffer[], truncated: boolean): string {
   const decoder = new StringDecoder('utf8');
-  return chunks.map((chunk) => decoder.write(chunk)).join('');
+  const decoded = chunks.map((chunk) => decoder.write(chunk)).join('');
+  return truncated ? decoded : decoded + decoder.end();
 }
 
 export class BoundedOutput {
@@ -39,8 +40,8 @@ export class BoundedOutput {
 
   snapshot(): BoundedOutputSnapshot {
     return {
-      stdout: decodeCompleteUtf8(this.stdoutChunks),
-      stderr: decodeCompleteUtf8(this.stderrChunks),
+      stdout: decodeUtf8(this.stdoutChunks, this.stdoutTruncated),
+      stderr: decodeUtf8(this.stderrChunks, this.stderrTruncated),
       stdoutTruncated: this.stdoutTruncated,
       stderrTruncated: this.stderrTruncated
     };
