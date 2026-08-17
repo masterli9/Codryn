@@ -9,3 +9,4 @@ export { JsonlDiagnosticLogger } from './logging/jsonl-diagnostic-logger.js';
 export type { JsonlDiagnosticLoggerOptions } from './logging/jsonl-diagnostic-logger.js';
 export { redactLogValue } from './logging/redact.js';
 export type { RedactionPolicy } from './logging/redact.js';
+export { WindowsProcessRunner } from './process/windows-process-runner.js';
