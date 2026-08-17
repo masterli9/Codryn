@@ -7,7 +7,7 @@
 
 ## Aktualizace po schválení návrhu R0 – 17. srpna 2026
 
-- Návrhová specifikace prvního implementačního kroku je v `docs/superpowers/specs/2026-08-17-r0-technicke-zaklady-design.md`; před detailním implementačním plánem čeká na revizi souboru uživatelem.
+- Návrhová specifikace prvního implementačního kroku je schválená v `docs/superpowers/specs/2026-08-17-r0-technicke-zaklady-design.md`; detailní implementační plán na ni může přímo navázat.
 - R0 použije npm workspaces. Srozumitelné kořenové hranice jsou `apps/desktop`, `backend/core`, `backend/infrastructure`, `shared` a `tests/support`; všechny interní workspace zůstanou privátní.
 - Electron spike použije Electron Forge se stabilní Webpack + TypeScript cestou. R0 renderer je pouze statická diagnostická stránka bez Reactu; produktové UI zůstává pro R3.
 - SQLite adapter použije vestavěné `node:sqlite` za vlastním backendovým rozhraním. R0 povinně ověří WAL, migraci, znovuotevření i obsahovou zálohu v Node testu a zabaleném Electron buildu.

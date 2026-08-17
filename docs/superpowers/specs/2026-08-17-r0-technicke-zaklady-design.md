@@ -2,7 +2,7 @@
 
 | Položka | Hodnota |
 | --- | --- |
-| Stav | Návrh schválený v konverzaci, čeká na revizi souboru |
+| Stav | Schváleno pro implementační plán |
 | Datum | 17. srpna 2026 |
 | Implementační krok | `R0 – ověření technických základů` |
 | Produktová autorita | `PRD_v0.3.md` |
