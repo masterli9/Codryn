@@ -5,3 +5,7 @@ export { runMigrations } from './persistence/run-migrations.js';
 export { SqliteSessionRepository } from './persistence/sqlite-session-repository.js';
 export { SqliteEventStore } from './persistence/sqlite-event-store.js';
 export { SqliteDiagnostics } from './persistence/sqlite-diagnostics.js';
+export { JsonlDiagnosticLogger } from './logging/jsonl-diagnostic-logger.js';
+export type { JsonlDiagnosticLoggerOptions } from './logging/jsonl-diagnostic-logger.js';
+export { redactLogValue } from './logging/redact.js';
+export type { RedactionPolicy } from './logging/redact.js';
