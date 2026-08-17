@@ -9,10 +9,10 @@ export interface BoundedOutputSnapshot {
 
 type OutputStream = 'stdout' | 'stderr';
 
-function decodeUtf8(chunks: readonly Buffer[], truncated: boolean): string {
+function decodeUtf8(chunks: readonly Buffer[], suppressTerminalPartial: boolean): string {
   const decoder = new StringDecoder('utf8');
   const decoded = chunks.map((chunk) => decoder.write(chunk)).join('');
-  return truncated ? decoded : decoded + decoder.end();
+  return suppressTerminalPartial ? decoded : decoded + decoder.end();
 }
 
 export class BoundedOutput {
@@ -21,6 +21,8 @@ export class BoundedOutput {
   private remainingBytes: number;
   private stdoutTruncated = false;
   private stderrTruncated = false;
+  private stdoutLimitSliced = false;
+  private stderrLimitSliced = false;
   private limitNotified = false;
 
   constructor(
@@ -40,8 +42,8 @@ export class BoundedOutput {
 
   snapshot(): BoundedOutputSnapshot {
     return {
-      stdout: decodeUtf8(this.stdoutChunks, this.stdoutTruncated),
-      stderr: decodeUtf8(this.stderrChunks, this.stderrTruncated),
+      stdout: decodeUtf8(this.stdoutChunks, this.stdoutLimitSliced),
+      stderr: decodeUtf8(this.stderrChunks, this.stderrLimitSliced),
       stdoutTruncated: this.stdoutTruncated,
       stderrTruncated: this.stderrTruncated
     };
@@ -57,6 +59,7 @@ export class BoundedOutput {
     if (this.remainingBytes > 0) {
       this.chunks(stream).push(Buffer.from(chunk.subarray(0, this.remainingBytes)));
       this.remainingBytes = 0;
+      this.markLimitSliced(stream);
     }
     this.markTruncated(stream);
 
@@ -73,5 +76,10 @@ export class BoundedOutput {
   private markTruncated(stream: OutputStream): void {
     if (stream === 'stdout') this.stdoutTruncated = true;
     else this.stderrTruncated = true;
+  }
+
+  private markLimitSliced(stream: OutputStream): void {
+    if (stream === 'stdout') this.stdoutLimitSliced = true;
+    else this.stderrLimitSliced = true;
   }
 }

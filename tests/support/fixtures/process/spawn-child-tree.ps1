@@ -1,6 +1,7 @@
 param(
   [Parameter(Mandatory = $true)][string]$ChildPidFile,
-  [Parameter(Mandatory = $true)][string]$IdentityFile
+  [Parameter(Mandatory = $true)][string]$ParentIdentityFile,
+  [Parameter(Mandatory = $true)][string]$ChildIdentityFile
 )
 
 $parent = Get-Process -Id $PID
@@ -10,25 +11,24 @@ $parent = Get-Process -Id $PID
     processName = $parent.ProcessName
     startTimeUtcTicks = $parent.StartTime.ToUniversalTime().Ticks.ToString()
   }
-} | ConvertTo-Json -Compress -Depth 3 | Set-Content -LiteralPath $IdentityFile -Encoding ascii
+} | ConvertTo-Json -Compress -Depth 3 | Set-Content -LiteralPath $ParentIdentityFile -Encoding ascii
 
 $child = Start-Process `
-  -FilePath "$env:SystemRoot\System32\ping.exe" `
-  -ArgumentList @('-t', '127.0.0.1') `
+  -FilePath "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" `
+  -ArgumentList @(
+    '-NoLogo',
+    '-NoProfile',
+    '-NonInteractive',
+    '-ExecutionPolicy',
+    'Bypass',
+    '-File',
+    (Join-Path $PSScriptRoot 'recorded-child.ps1'),
+    '-ChildPidFile',
+    $ChildPidFile,
+    '-ChildIdentityFile',
+    $ChildIdentityFile
+  ) `
   -WindowStyle Hidden `
   -PassThru
 
-@{
-  parent = @{
-    pid = $PID
-    processName = $parent.ProcessName
-    startTimeUtcTicks = $parent.StartTime.ToUniversalTime().Ticks.ToString()
-  }
-  child = @{
-    pid = $child.Id
-    processName = $child.ProcessName
-    startTimeUtcTicks = $child.StartTime.ToUniversalTime().Ticks.ToString()
-  }
-} | ConvertTo-Json -Compress -Depth 3 | Set-Content -LiteralPath $IdentityFile -Encoding ascii
-Set-Content -LiteralPath $ChildPidFile -Value $child.Id -Encoding ascii
 while ($true) { Start-Sleep -Seconds 1 }

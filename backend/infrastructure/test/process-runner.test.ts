@@ -6,10 +6,12 @@ import { tmpdir } from 'node:os';
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { PassThrough } from 'node:stream';
 import { fileURLToPath } from 'node:url';
-import type { ProcessSpec } from '@codryn/core';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { ProcessRunner, ProcessSpec } from '@codryn/core';
+import { afterEach, describe, expect, expectTypeOf, it, vi } from 'vitest';
 import { BoundedOutput } from '../src/process/bounded-output.js';
+import * as Infrastructure from '../src/index.js';
 import { WindowsProcessRunner } from '../src/index.js';
+import { createWindowsProcessRunnerInternal } from '../src/process/windows-process-runner.js';
 
 const systemRoot = process.env.SystemRoot ?? 'C:\\Windows';
 const powershell = join(
@@ -35,6 +37,7 @@ const fixtureDirectory = fileURLToPath(
 interface OwnedFixture {
   readonly directory: string;
   identityFile?: string;
+  childIdentityFile?: string;
 }
 
 interface RecordedProcessIdentity {
@@ -62,6 +65,19 @@ const inspectProcessCommand = [
   "[Console]::Out.Write($target.ProcessName + '|' + $target.StartTime.ToUniversalTime().Ticks)",
   '}'
 ].join('; ');
+const terminateOwnedProcessCommand = [
+  '$expectedPid = [int]$args[0]',
+  '$expectedName = $args[1]',
+  '$expectedTicks = $args[2]',
+  '$taskkill = $args[3]',
+  '$target = Get-Process -Id $expectedPid -ErrorAction SilentlyContinue',
+  'if ($null -eq $target) { exit 0 }',
+  '$liveTicks = $target.StartTime.ToUniversalTime().Ticks.ToString()',
+  'if (-not [string]::Equals($target.ProcessName, $expectedName, [StringComparison]::OrdinalIgnoreCase)) { exit 0 }',
+  'if ($liveTicks -ne $expectedTicks) { exit 0 }',
+  '& $taskkill /PID $expectedPid /T /F *> $null',
+  'exit $LASTEXITCODE'
+].join('; ');
 
 class ControlledChild extends EventEmitter {
   readonly stdout = new PassThrough();
@@ -70,6 +86,7 @@ class ControlledChild extends EventEmitter {
   exitCode: number | null = null;
   signalCode: NodeJS.Signals | null = null;
   killCalls = 0;
+  processHandleReleased = false;
 
   constructor(pid: number | undefined) {
     super();
@@ -84,6 +101,8 @@ class ControlledChild extends EventEmitter {
   emitExit(code: number | null, signal: NodeJS.Signals | null = null): void {
     this.exitCode = code;
     this.signalCode = signal;
+    // Model the worst-case Node ordering: handle release begins before exit.
+    this.processHandleReleased = true;
     this.emit('exit', code, signal);
   }
 
@@ -104,7 +123,7 @@ function controlledRunner(
   main: ControlledChild,
   taskkill: ControlledChild | Error,
   terminationGraceMs = 20
-): { readonly runner: WindowsProcessRunner; readonly calls: SpawnCall[] } {
+): { readonly runner: ProcessRunner; readonly calls: SpawnCall[] } {
   const calls: SpawnCall[] = [];
   const spawnProcess: ControlledSpawn = (executable, args, options) => {
     calls.push({ executable, args: [...args], options });
@@ -112,12 +131,8 @@ function controlledRunner(
     if (taskkill instanceof Error) throw taskkill;
     return taskkill as unknown as ChildProcess;
   };
-  const RunnerWithOptions = WindowsProcessRunner as unknown as new (options: {
-    readonly spawnProcess: ControlledSpawn;
-    readonly terminationGraceMs: number;
-  }) => WindowsProcessRunner;
   return {
-    runner: new RunnerWithOptions({ spawnProcess, terminationGraceMs }),
+    runner: createWindowsProcessRunnerInternal({ spawnProcess, terminationGraceMs }),
     calls
   };
 }
@@ -247,6 +262,17 @@ async function readFixtureProcessIdentity(identityFile: string): Promise<Fixture
   }
 }
 
+async function readRecordedProcessIdentityFile(
+  identityFile: string
+): Promise<RecordedProcessIdentity | null> {
+  try {
+    const parsed: unknown = JSON.parse(await readFile(identityFile, 'ascii'));
+    return isRecordedProcessIdentity(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
 async function inspectProcess(pid: number): Promise<RecordedProcessIdentity | null> {
   return new Promise<RecordedProcessIdentity | null>((resolveInspection) => {
     const inspector = spawn(powershell, [
@@ -308,9 +334,27 @@ async function isSameOwnedProcessAlive(identity: RecordedProcessIdentity): Promi
 }
 
 async function terminateOwnedProcess(identity: RecordedProcessIdentity): Promise<void> {
-  if (!await isSameOwnedProcessAlive(identity)) return;
   await new Promise<void>((resolve) => {
-    const killer = spawn(taskkillExecutable, ['/PID', String(identity.pid), '/T', '/F'], {
+    const killer = spawn(powershell, [
+      '-NoLogo',
+      '-NoProfile',
+      '-NonInteractive',
+      '-ExecutionPolicy',
+      'Bypass',
+      '-Command',
+      terminateOwnedProcessCommand,
+      String(identity.pid),
+      identity.processName,
+      identity.startTimeUtcTicks,
+      taskkillExecutable
+    ], {
+      cwd: temporaryRoot,
+      env: {
+        SystemRoot: systemRoot,
+        PATH: process.env.PATH ?? join(systemRoot, 'System32'),
+        TEMP: temporaryRoot,
+        TMP: temporaryRoot
+      },
       shell: false,
       windowsHide: true,
       stdio: 'ignore'
@@ -336,8 +380,17 @@ afterEach(async () => {
         if (identity.child !== undefined) await terminateOwnedProcess(identity.child);
       }
     }
+    if (ownedFixture.childIdentityFile !== undefined) {
+      const childIdentity = await readRecordedProcessIdentityFile(ownedFixture.childIdentityFile);
+      if (childIdentity !== null) await terminateOwnedProcess(childIdentity);
+    }
     assertOwnedTempDirectory(ownedFixture.directory);
-    await rm(ownedFixture.directory, { recursive: true, force: true });
+    await rm(ownedFixture.directory, {
+      recursive: true,
+      force: true,
+      maxRetries: 20,
+      retryDelay: 100
+    });
   }
 });
 
@@ -430,9 +483,53 @@ describeWindows('BoundedOutput', () => {
       stderrTruncated: false
     });
   });
+
+  it('preserves a natural incomplete sequence when later cross-stream usage marks it truncated', () => {
+    const output = new BoundedOutput(2, () => undefined);
+
+    output.appendStdout(Buffer.from([0xc3]));
+    output.appendStderr(Buffer.from('x', 'utf8'));
+    output.appendStdout(Buffer.from('later', 'utf8'));
+
+    expect(output.snapshot()).toEqual({
+      stdout: '�',
+      stderr: 'x',
+      stdoutTruncated: true,
+      stderrTruncated: false
+    });
+  });
 });
 
 describeWindows('WindowsProcessRunner', () => {
+  it('exposes a zero-option production constructor that cannot inject process spawning', async () => {
+    expectTypeOf<ConstructorParameters<typeof WindowsProcessRunner>>().toEqualTypeOf<[]>();
+    expect(Infrastructure).not.toHaveProperty('createWindowsProcessRunnerForTest');
+    expect(Infrastructure).not.toHaveProperty('createWindowsProcessRunnerInternal');
+
+    const injectedMain = new ControlledChild(undefined);
+    let injectedSpawnCalled = false;
+    const injectedSpawn: ControlledSpawn = () => {
+      injectedSpawnCalled = true;
+      return injectedMain as unknown as ChildProcess;
+    };
+    const runner = Reflect.construct(WindowsProcessRunner, [{
+      spawnProcess: injectedSpawn,
+      terminationGraceMs: 1
+    }]) as WindowsProcessRunner;
+    const run = runner.run(controlledProcessSpec());
+
+    if (injectedSpawnCalled) {
+      injectedMain.emit('error', new Error('controlled missing executable'));
+      injectedMain.emitClose(null);
+    }
+
+    await expect(run).resolves.toMatchObject({
+      termination: 'spawn_failed',
+      treeTerminated: false
+    });
+    expect(injectedSpawnCalled).toBe(false);
+  });
+
   it('captures stdout, stderr and exit code separately', async () => {
     const ownedFixture = await createOwnedFixture();
 
@@ -474,25 +571,33 @@ describeWindows('WindowsProcessRunner', () => {
   it('terminates the parent and recorded child after timeout', async () => {
     const ownedFixture = await createOwnedFixture();
     const childPidFile = join(ownedFixture.directory, 'child.pid');
-    const identityFile = join(ownedFixture.directory, 'process-identity.json');
-    ownedFixture.identityFile = identityFile;
+    const parentIdentityFile = join(ownedFixture.directory, 'parent-process-identity.json');
+    const childIdentityFile = join(ownedFixture.directory, 'child-process-identity.json');
+    ownedFixture.identityFile = parentIdentityFile;
+    ownedFixture.childIdentityFile = childIdentityFile;
 
     const run = new WindowsProcessRunner().run(processSpec(
       ownedFixture.directory,
       'spawn-child-tree.ps1',
       {
-        scriptArgs: ['-ChildPidFile', childPidFile, '-IdentityFile', identityFile],
-        timeoutMs: 1_000
+        scriptArgs: [
+          '-ChildPidFile', childPidFile,
+          '-ParentIdentityFile', parentIdentityFile,
+          '-ChildIdentityFile', childIdentityFile
+        ],
+        timeoutMs: 10_000
       }
     ));
 
     let childPid: number | null = null;
     await eventually(async () => {
       childPid = await readRecordedPid(childPidFile);
-      const identity = await readFixtureProcessIdentity(identityFile);
+      const parentIdentity = await readFixtureProcessIdentity(parentIdentityFile);
+      const childIdentity = await readRecordedProcessIdentityFile(childIdentityFile);
       expect(childPid).not.toBeNull();
-      expect(identity?.child).toBeDefined();
-    }, { timeoutMs: 3_000, intervalMs: 25 });
+      expect(parentIdentity).not.toBeNull();
+      expect(childIdentity).not.toBeNull();
+    }, { timeoutMs: 8_000, intervalMs: 25 });
 
     const result = await run;
     expect(result).toMatchObject({
@@ -502,14 +607,15 @@ describeWindows('WindowsProcessRunner', () => {
     });
     expect(childPid).not.toBeNull();
     if (childPid === null) throw new Error('The fixture did not record its child PID.');
-    const identity = await readFixtureProcessIdentity(identityFile);
-    if (identity === null || identity.child === undefined) {
+    const parentIdentity = await readFixtureProcessIdentity(parentIdentityFile);
+    const childIdentity = await readRecordedProcessIdentityFile(childIdentityFile);
+    if (parentIdentity === null || childIdentity === null) {
       throw new Error('The fixture did not record both process identities.');
     }
-    expect(identity.child.pid).toBe(childPid);
+    expect(childIdentity.pid).toBe(childPid);
     await eventually(async () => {
-      expect(await isSameOwnedProcessAlive(identity.parent)).toBe(false);
-      expect(await isSameOwnedProcessAlive(identity.child as RecordedProcessIdentity)).toBe(false);
+      expect(await isSameOwnedProcessAlive(parentIdentity.parent)).toBe(false);
+      expect(await isSameOwnedProcessAlive(childIdentity)).toBe(false);
     }, { timeoutMs: 3_000, intervalMs: 25 });
   });
 
@@ -605,7 +711,7 @@ describeWindows('WindowsProcessRunner', () => {
     })).rejects.toThrow(/positive/i);
   });
 
-  it('does not launch taskkill after exit while waiting for close', async () => {
+  it('does not launch taskkill after Node releases the process handle on exit', async () => {
     vi.useFakeTimers();
     const main = new ControlledChild(4_101);
     const taskkill = new ControlledChild(4_102);
@@ -613,6 +719,7 @@ describeWindows('WindowsProcessRunner', () => {
     const run = runner.run(controlledProcessSpec({ timeoutMs: 10, maxOutputBytes: 1 }));
 
     main.emitExit(0);
+    expect(main.processHandleReleased).toBe(true);
     main.stdout.write('ab');
     await vi.advanceTimersByTimeAsync(20);
 
