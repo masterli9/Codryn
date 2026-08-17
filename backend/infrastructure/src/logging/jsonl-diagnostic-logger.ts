@@ -13,6 +13,8 @@ export interface JsonlDiagnosticLoggerOptions {
 const defaultMaxBytes = 2 * 1024 * 1024;
 const activeFilename = 'codryn.log.jsonl';
 const rotatedFilename = 'codryn.log.jsonl.1';
+const minimumTruncatedLine = `${JSON.stringify({ level: 'error', event: '', data: { truncated: true } })}\n`;
+const minimumTruncatedLineBytes = Buffer.byteLength(minimumTruncatedLine, 'utf8');
 
 export class JsonlDiagnosticLogger implements DiagnosticLogger {
   private readonly directory: string;
@@ -31,6 +33,9 @@ export class JsonlDiagnosticLogger implements DiagnosticLogger {
 
     if (!Number.isSafeInteger(this.maxBytes) || this.maxBytes <= 0) {
       throw new RangeError('maxBytes must be a positive safe integer');
+    }
+    if (this.maxBytes < minimumTruncatedLineBytes) {
+      throw new RangeError(`maxBytes must be at least ${minimumTruncatedLineBytes} bytes, the minimum fallback line size`);
     }
   }
 

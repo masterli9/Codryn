@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -66,6 +66,14 @@ describe('redactLogValue', () => {
 });
 
 describe('JsonlDiagnosticLogger', () => {
+  it('rejects a positive maxBytes below the minimum bounded fallback line', async () => {
+    const directory = await createLogDirectory();
+
+    expect(() => new JsonlDiagnosticLogger({ directory, maxBytes: 1, redactionPolicy })).toThrowError(
+      /maxBytes.*minimum/i
+    );
+  });
+
   it('writes exactly one valid JSON object per line', async () => {
     const directory = await createLogDirectory();
     const logger = new JsonlDiagnosticLogger({ directory, maxBytes: 256, redactionPolicy });
@@ -93,6 +101,37 @@ describe('JsonlDiagnosticLogger', () => {
     expect(lines.map((line) => JSON.parse(line).data.index).sort((a, b) => a - b)).toEqual(
       Array.from({ length: 40 }, (_, index) => index)
     );
+  });
+
+  it('keeps multibyte oversized-line truncation valid and bounded', async () => {
+    const directory = await createLogDirectory();
+    const maxBytes = 96;
+    const logger = new JsonlDiagnosticLogger({ directory, maxBytes, redactionPolicy });
+
+    await logger.write(entry({ payload: 'x'.repeat(256) }, 'žluťoučký kůň '.repeat(20)));
+
+    const [file] = await readLogFiles(directory);
+    expect(file).toBeDefined();
+    expect(Buffer.byteLength(file ?? '', 'utf8')).toBeLessThanOrEqual(maxBytes);
+    expect(JSON.parse(file?.trim() ?? '')).toEqual({
+      level: 'error',
+      event: expect.any(String),
+      data: { truncated: true }
+    });
+  });
+
+  it('recovers the writer chain after one write rejects', async () => {
+    const directory = await createLogDirectory();
+    const blockedDirectory = join(directory, 'blocked-logger-directory');
+    await writeFile(blockedDirectory, 'not a directory');
+    const logger = new JsonlDiagnosticLogger({ directory: blockedDirectory, redactionPolicy });
+
+    await expect(logger.write(entry({ first: true }))).rejects.toThrow();
+    await rm(blockedDirectory);
+    await expect(logger.write(entry({ recovered: true }))).resolves.toBeUndefined();
+
+    const content = await readFile(join(blockedDirectory, 'codryn.log.jsonl'), 'utf8');
+    expect(JSON.parse(content.trim()).data).toEqual({ recovered: true });
   });
 
   it('rotates current log to .1 before exceeding the configured limit', async () => {
