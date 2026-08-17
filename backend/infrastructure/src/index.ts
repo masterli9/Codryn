@@ -10,3 +10,6 @@ export type { JsonlDiagnosticLoggerOptions } from './logging/jsonl-diagnostic-lo
 export { redactLogValue } from './logging/redact.js';
 export type { RedactionPolicy } from './logging/redact.js';
 export { WindowsProcessRunner } from './process/windows-process-runner.js';
+export { categorizeCredentialHelpers } from './git/credential-helper-category.js';
+export { LocalGitProbe } from './git/local-git-probe.js';
+export type { LocalGitProbeOptions } from './git/local-git-probe.js';
