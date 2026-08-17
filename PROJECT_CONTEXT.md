@@ -5,6 +5,15 @@
 > významném rozhodnutí ho aktualizuj. Nezaměňuj zde označené nápady za hotová
 > rozhodnutí.
 
+## Aktualizace po schválení návrhu R0 – 17. srpna 2026
+
+- Návrhová specifikace prvního implementačního kroku je v `docs/superpowers/specs/2026-08-17-r0-technicke-zaklady-design.md`; před detailním implementačním plánem čeká na revizi souboru uživatelem.
+- R0 použije npm workspaces. Srozumitelné kořenové hranice jsou `apps/desktop`, `backend/core`, `backend/infrastructure`, `shared` a `tests/support`; všechny interní workspace zůstanou privátní.
+- Electron spike použije Electron Forge se stabilní Webpack + TypeScript cestou. R0 renderer je pouze statická diagnostická stránka bez Reactu; produktové UI zůstává pro R3.
+- SQLite adapter použije vestavěné `node:sqlite` za vlastním backendovým rozhraním. R0 povinně ověří WAL, migraci, znovuotevření i obsahovou zálohu v Node testu a zabaleném Electron buildu.
+- Viditelný výsledek R0 je pravdivá diagnostika databáze, procesního runneru a lokálního Git fixture se stavy `pass`, `fail` a `skipped`. Stejnou backendovou službu volá test, IPC i interní packaged smoke režim.
+- Procesní spike R0 ověří ukončení podporovaného stromu přes explicitní Windows mechanismus, ale nebude jej vydávat za bezpečnostní sandbox. Povinná O1 volba Windows Job Object nebo ověřeného ekvivalentu zůstává před obecným shell toolem samostatnou branou.
+
 ## Aktualizace po revizi PRD v0.3 – 12. srpna 2026
 
 - Aktuální produktovou autoritou je `PRD_v0.3.md`; `PRD_v0.2.md` a `PRD_v0.1.md` jsou historické snapshoty.
