@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process';
 import type { ChildProcess, SpawnOptions } from 'node:child_process';
 import { EventEmitter } from 'node:events';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { PassThrough } from 'node:stream';
@@ -66,17 +66,30 @@ const inspectProcessCommand = [
   '}'
 ].join('; ');
 const terminateOwnedProcessCommand = [
-  '$expectedPid = [int]$args[0]',
-  '$expectedName = $args[1]',
-  '$expectedTicks = $args[2]',
-  '$taskkill = $args[3]',
+  '$expectedPid = [int]$env:CODRYN_OWNED_PID',
+  '$expectedName = $env:CODRYN_OWNED_PROCESS_NAME',
+  '$expectedTicks = $env:CODRYN_OWNED_START_TICKS',
+  '$taskkill = $env:CODRYN_OWNED_TASKKILL',
   '$target = Get-Process -Id $expectedPid -ErrorAction SilentlyContinue',
   'if ($null -eq $target) { exit 0 }',
-  '$liveTicks = $target.StartTime.ToUniversalTime().Ticks.ToString()',
-  'if (-not [string]::Equals($target.ProcessName, $expectedName, [StringComparison]::OrdinalIgnoreCase)) { exit 0 }',
-  'if ($liveTicks -ne $expectedTicks) { exit 0 }',
-  '& $taskkill /PID $expectedPid /T /F *> $null',
-  'exit $LASTEXITCODE'
+  '$safeHandle = $target.SafeHandle',
+  '$handleRefAdded = $false',
+  '$decisionExitCode = 0',
+  'try {',
+  '  $safeHandle.DangerousAddRef([ref]$handleRefAdded)',
+  '  $liveTicks = $target.StartTime.ToUniversalTime().Ticks.ToString()',
+  '  $nameMatches = [string]::Equals($target.ProcessName, $expectedName, [StringComparison]::OrdinalIgnoreCase)',
+  '  if ($nameMatches -and $liveTicks -eq $expectedTicks) {',
+  '    & $taskkill /PID $expectedPid /T /F *> $null',
+  '    $decisionExitCode = $LASTEXITCODE',
+  '  }',
+  '} finally {',
+  '  [GC]::KeepAlive($target)',
+  '  [GC]::KeepAlive($safeHandle)',
+  '  if ($handleRefAdded) { $safeHandle.DangerousRelease() }',
+  '  $target.Dispose()',
+  '}',
+  'exit $decisionExitCode'
 ].join('; ');
 
 class ControlledChild extends EventEmitter {
@@ -342,18 +355,18 @@ async function terminateOwnedProcess(identity: RecordedProcessIdentity): Promise
       '-ExecutionPolicy',
       'Bypass',
       '-Command',
-      terminateOwnedProcessCommand,
-      String(identity.pid),
-      identity.processName,
-      identity.startTimeUtcTicks,
-      taskkillExecutable
+      terminateOwnedProcessCommand
     ], {
       cwd: temporaryRoot,
       env: {
         SystemRoot: systemRoot,
         PATH: process.env.PATH ?? join(systemRoot, 'System32'),
         TEMP: temporaryRoot,
-        TMP: temporaryRoot
+        TMP: temporaryRoot,
+        CODRYN_OWNED_PID: String(identity.pid),
+        CODRYN_OWNED_PROCESS_NAME: identity.processName,
+        CODRYN_OWNED_START_TICKS: identity.startTimeUtcTicks,
+        CODRYN_OWNED_TASKKILL: taskkillExecutable
       },
       shell: false,
       windowsHide: true,
@@ -395,6 +408,85 @@ afterEach(async () => {
 });
 
 const describeWindows = process.platform === 'win32' ? describe : describe.skip;
+
+describeWindows('fixture process cleanup', () => {
+  it('retains the owned process SafeHandle through the taskkill decision', async () => {
+    const ownedFixture = await createOwnedFixture();
+    const markerFile = join(ownedFixture.directory, 'safe-handle-retained.marker');
+    const proofFile = join(ownedFixture.directory, 'taskkill-proof.txt');
+    const fakeTaskkill = join(ownedFixture.directory, 'taskkill-probe.ps1');
+    await writeFile(fakeTaskkill, [
+      'if (Test-Path -LiteralPath $env:CODRYN_SAFE_HANDLE_MARKER) {',
+      "  Set-Content -LiteralPath $env:CODRYN_SAFE_HANDLE_PROOF -Value 'retained' -Encoding ascii",
+      '  $global:LASTEXITCODE = 0',
+      '  return',
+      '}',
+      "Set-Content -LiteralPath $env:CODRYN_SAFE_HANDLE_PROOF -Value 'missing' -Encoding ascii",
+      '$global:LASTEXITCODE = 23'
+    ].join('\r\n'), 'ascii');
+
+    const identity: RecordedProcessIdentity = {
+      pid: 4_242,
+      processName: 'fixture-owned',
+      startTimeUtcTicks: '638000000000000000'
+    };
+    const safeHandleProbePrelude = [
+      '$script:probeHandle = [pscustomobject]@{}',
+      "$script:probeHandle | Add-Member -MemberType ScriptMethod -Name DangerousAddRef -Value { param([ref]$success) Set-Content -LiteralPath $env:CODRYN_SAFE_HANDLE_MARKER -Value 'held' -Encoding ascii; $success.Value = $true }",
+      '$script:probeHandle | Add-Member -MemberType ScriptMethod -Name DangerousRelease -Value { Remove-Item -LiteralPath $env:CODRYN_SAFE_HANDLE_MARKER -Force }',
+      '$script:probeTarget = [pscustomobject]@{ ProcessName = $env:CODRYN_OWNED_PROCESS_NAME; StartTime = [datetime]::new([long]$env:CODRYN_OWNED_START_TICKS, [DateTimeKind]::Utc); SafeHandle = $script:probeHandle }',
+      '$script:probeTarget | Add-Member -MemberType ScriptMethod -Name Dispose -Value {}',
+      'function Get-Process { param([int]$Id, $ErrorAction) $script:probeTarget }'
+    ].join('; ');
+
+    const probeResult = await new Promise<{
+      readonly exitCode: number | null;
+      readonly stderr: string;
+    }>((resolveExit, rejectExit) => {
+      const probe = spawn(powershell, [
+        '-NoLogo',
+        '-NoProfile',
+        '-NonInteractive',
+        '-ExecutionPolicy',
+        'Bypass',
+        '-Command',
+        `${safeHandleProbePrelude}; ${terminateOwnedProcessCommand}`
+      ], {
+        cwd: temporaryRoot,
+        env: {
+          SystemRoot: systemRoot,
+          PATH: process.env.PATH ?? join(systemRoot, 'System32'),
+          TEMP: temporaryRoot,
+          TMP: temporaryRoot,
+          CODRYN_OWNED_PID: String(identity.pid),
+          CODRYN_OWNED_PROCESS_NAME: identity.processName,
+          CODRYN_OWNED_START_TICKS: identity.startTimeUtcTicks,
+          CODRYN_OWNED_TASKKILL: fakeTaskkill,
+          CODRYN_SAFE_HANDLE_MARKER: markerFile,
+          CODRYN_SAFE_HANDLE_PROOF: proofFile
+        },
+        shell: false,
+        windowsHide: true,
+        stdio: ['ignore', 'ignore', 'pipe']
+      });
+      const stderrChunks: Buffer[] = [];
+      probe.stderr.on('data', (chunk: Buffer) => {
+        stderrChunks.push(Buffer.from(chunk));
+      });
+      probe.once('error', rejectExit);
+      probe.once('close', (exitCode) => {
+        resolveExit({
+          exitCode,
+          stderr: Buffer.concat(stderrChunks).toString('utf8')
+        });
+      });
+    });
+
+    expect(probeResult).toEqual({ exitCode: 0, stderr: '' });
+    expect((await readFile(proofFile, 'ascii')).trim()).toBe('retained');
+    await expect(readFile(markerFile, 'ascii')).rejects.toThrow();
+  });
+});
 
 describeWindows('BoundedOutput', () => {
   it('slices ASCII at the remaining combined-byte budget and notifies once', () => {
