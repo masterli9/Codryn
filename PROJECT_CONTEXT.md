@@ -5,6 +5,24 @@
 > významném rozhodnutí ho aktualizuj. Nezaměňuj zde označené nápady za hotová
 > rozhodnutí.
 
+## Aktualizace po vydání PRD v1.0 – 14. srpna 2026
+
+- Aktuální produktovou autoritou je `PRD_v1.0.md`. `PRD_v0.3.md`, `PRD_v0.2.md` a `PRD_v0.1.md` jsou neměnné historické snapshoty.
+- Důvody schválených rozhodnutí jsou v `REGISTR_ROZHODNUTI_v1.0.md`, řízení rozsahu v `ETAPIZACE_v1.0.md` a pořadí implementačních přírůstků bez kalendářních dat v `ROADMAP.md`.
+- v1.0 znamená schválený implementačně připravený produktový kontrakt, nikoli hotovou implementaci. Po vydání se nemění; významná změna rozsahu, priority, etapy, bezpečnosti, dat nebo akceptačního kritéria vyžaduje novou verzi nejméně v1.1.
+- První funkční průřez nadále vzniká bez produktového UI přes interní headless/CLI driver nad stejnými aplikačními službami, které později používá Electron. Současně vzniká pouze minimální Electron spike pro včasné ověření balení, úzkého IPC, SQLite a procesního runneru.
+- Povinný O1 Git rozsah je lokální: status, diff, historie, stage/unstage celého souboru, branch, commit a upravitelný AI návrh commit message. `fetch`, `pull` a `push` jsou S/O1 a M/ŠF.
+- Vzdálené Git operace používají nainstalovaný Git CLI a autentizaci ponechají systémovému credential helperu nebo SSH. Codryn hesla, tokeny ani privátní klíče nečte ani neukládá; nepodporovaný interaktivní prompt bezpečně skončí s návodem přihlásit se mimo agentní relaci.
+- Povinné bezpečnostní jádro Workspace Intelligence v O1 tvoří `workspaceRevision`, expected-hash/revision ochrana zápisů, invalidace zastaralých verification recordů, resource-key serializace a audit provenience. `taskSummary`, snapshot aktivních relací, překryv, viditelný strom a skuteční subagenti jsou S/O1 a M/ŠF.
+- `.codrynignore` je M/O1 a spolu s bezpečnými výchozími pravidly jednotně chrání automatický crawl, hledání, TypeScript index, repo mapu, hlubší inicializaci a context assembly. `.gitignore` je jen doplňkový signál; změna pravidel invaliduje dotčená odvozená data.
+- Strukturované upřesňující otázky jsou M/O1: obsahují důvod, dvě až pět možností a vlastní odpověď, trvale pozastaví stejný běh ve `waiting_for_user_input` a po první platné odpovědi jej obnoví právě jednou. `UserQuestion` nikdy nenahrazuje `PermissionRequest`, nevyžaduje tajemství a navazující riziková akce znovu prochází permission enginem.
+- O1 povinně obsahuje interní registry a dva vestavěné workflows: planning/brainstorming a ověření. Import cizího lokálního manifestu je S/O1 a M/ŠF; minimální MCP klient a správa rozšíření jsou M/ŠF; instalace z GitHubu nebo URL je S/PŠ.
+- Playwright screenshot a vision-check jsou M/ŠF pro podporované úkoly závislé na vykresleném UI. „Vizuálně ověřeno“ vyžaduje screenshot aktuální relevantní workspace revize, záměr, viewport, výsledek a omezení; nesoulad se vrací do opravné smyčky a nedostupná kontrola se vždy označí „vizuálně neověřeno“.
+- Vývoj probíhá přes krátkodobé pracovní branche nad stabilní `main`; přímý vývoj funkcí na `main` se nepoužívá. Před obhajobami vzniknou stabilizační branche `release/o1` a `release/sf`. Přesný commit skutečně použitého obhajovacího buildu se vždy uzamkne neměnným anotovaným tagem `obhajoba/o1-vN` nebo `obhajoba/sf-vN` a archivuje se s instalačním artefaktem, checksumem, test reportem a známými omezeními. Pozdější vývoj tak může pokračovat bez ztráty možnosti obnovit přesnou obhajovací verzi.
+- E0 epizodické paměti je volitelný experiment S/O1 a neblokuje O1 ani ŠF. Produktová epizodická paměť je nejdříve C/PŠ, pouze po úspěšném E0 a samostatném rozhodnutí.
+- Neveřejný, uniklý nebo licenčně nejasný proprietární codebase se nepoužívá jako implementační podklad. Přípustná inspirace vychází z veřejného chování, oficiální dokumentace a veřejných repozitářů s ověřenou licencí; významný vliv eviduje původ a vlastní odůvodnění.
+- Pokud se starší text níže nebo starší dokumenty rozcházejí s v1.0 sadou, platí v1.0.
+
 ## Aktualizace po revizi PRD v0.3 – 12. srpna 2026
 
 - Aktuální produktovou autoritou je `PRD_v0.3.md`; `PRD_v0.2.md` a `PRD_v0.1.md` jsou historické snapshoty.
