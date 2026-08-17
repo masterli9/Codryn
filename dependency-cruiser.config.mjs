@@ -7,6 +7,14 @@ export default {
       to: { path: '^(backend/infrastructure/|apps/desktop/)' }
     },
     {
+      name: 'core-must-not-import-runtime-adapters',
+      severity: 'error',
+      from: { path: '^backend/core/' },
+      to: {
+        path: '^(electron|(?:node:)?sqlite|(?:node:)?child_process|(?:node:)?fs(?:/promises)?|simple-git|isomorphic-git|nodegit|dugite)$'
+      }
+    },
+    {
       name: 'shared-must-stay-independent',
       severity: 'error',
       from: { path: '^shared/' },
@@ -16,7 +24,7 @@ export default {
       name: 'renderer-must-use-preload',
       severity: 'error',
       from: { path: '^apps/desktop/src/renderer/' },
-      to: { path: '^(backend/|apps/desktop/src/(composition-root|ipc|smoke))' }
+      to: { path: '^(backend/|apps/desktop/src/(?!renderer/|preload/))' }
     },
     {
       name: 'production-must-not-import-test-support',
