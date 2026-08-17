@@ -33,15 +33,23 @@ export class SqliteSessionRepository implements SessionRepository {
     const event = validateEvent(eventInput);
     if (event.sessionId !== session.id) throw new TypeError('INITIAL_EVENT_SESSION_MISMATCH');
 
-    this.database.exec('BEGIN IMMEDIATE;');
+    let transactionStarted = false;
     try {
+      this.database.exec('BEGIN IMMEDIATE;');
+      transactionStarted = true;
       this.database.prepare(`INSERT INTO diagnostic_sessions (
         id, status, created_at, updated_at
       ) VALUES (?, ?, ?, ?)`).run(session.id, session.status, session.createdAt, session.updatedAt);
       insertEvent(this.database, event);
       this.database.exec('COMMIT;');
     } catch {
-      if (this.database.isTransaction) this.database.exec('ROLLBACK;');
+      if (transactionStarted) {
+        try {
+          if (this.database.isTransaction) this.database.exec('ROLLBACK;');
+        } catch {
+          // Preserve the stable repository failure below even if rollback itself fails.
+        }
+      }
       throw new R0DiagnosticFailure('R0_DB_OPEN_FAILED', 'SESSION_EVENT_WRITE_FAILED');
     }
   }

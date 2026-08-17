@@ -36,8 +36,10 @@ export function runMigrations(database: DatabaseSync, now: string): void {
     throw new R0DiagnosticFailure('R0_DB_MIGRATION_FAILED', 'MIGRATION_TIMESTAMP_INVALID');
   }
 
-  database.exec('BEGIN IMMEDIATE;');
+  let transactionStarted = false;
   try {
+    database.exec('BEGIN IMMEDIATE;');
+    transactionStarted = true;
     const ledgerMigration = migrations[0];
     if (ledgerMigration === undefined) {
       throw new R0DiagnosticFailure('R0_DB_MIGRATION_FAILED', 'MIGRATION_LEDGER_MISSING');
@@ -66,7 +68,13 @@ export function runMigrations(database: DatabaseSync, now: string): void {
     }
     database.exec('COMMIT;');
   } catch (error) {
-    if (database.isTransaction) database.exec('ROLLBACK;');
+    if (transactionStarted) {
+      try {
+        if (database.isTransaction) database.exec('ROLLBACK;');
+      } catch {
+        // Preserve the stable migration failure below even if rollback itself fails.
+      }
+    }
     if (error instanceof R0DiagnosticFailure) throw error;
     throw new R0DiagnosticFailure('R0_DB_MIGRATION_FAILED', 'MIGRATION_APPLY_FAILED');
   }

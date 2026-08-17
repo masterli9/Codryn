@@ -6,6 +6,8 @@ interface SafetyState {
   readonly foreignKeysEnabled: boolean;
   readonly defensiveModeEnabled: boolean;
   readonly extensionsEnabled: boolean;
+  readonly busyTimeoutMs: number | null;
+  readonly synchronousLevel: number | null;
   readonly quickCheck: string | null;
 }
 
@@ -20,6 +22,11 @@ function textScalar(database: DatabaseSync, sql: string, column: string): string
   return typeof value === 'string' ? value : null;
 }
 
+function numberScalar(database: DatabaseSync, sql: string, column: string): number | null {
+  const value = scalar(database, sql, column);
+  return typeof value === 'number' ? value : null;
+}
+
 function extensionsAreDisabled(database: DatabaseSync): boolean {
   try {
     database.prepare("SELECT load_extension('__codryn_extension_probe__') AS extension_probe").get();
@@ -31,13 +38,19 @@ function extensionsAreDisabled(database: DatabaseSync): boolean {
 
 export function inspectDatabaseSafety(database: DatabaseSync): SafetyState {
   database.exec('PRAGMA writable_schema = ON;');
-  return {
-    journalMode: textScalar(database, 'PRAGMA journal_mode', 'journal_mode'),
-    foreignKeysEnabled: scalar(database, 'PRAGMA foreign_keys', 'foreign_keys') === 1,
-    defensiveModeEnabled: scalar(database, 'PRAGMA writable_schema', 'writable_schema') === 0,
-    extensionsEnabled: !extensionsAreDisabled(database),
-    quickCheck: textScalar(database, 'PRAGMA quick_check', 'quick_check')
-  };
+  try {
+    return {
+      journalMode: textScalar(database, 'PRAGMA journal_mode', 'journal_mode'),
+      foreignKeysEnabled: scalar(database, 'PRAGMA foreign_keys', 'foreign_keys') === 1,
+      defensiveModeEnabled: scalar(database, 'PRAGMA writable_schema', 'writable_schema') === 0,
+      extensionsEnabled: !extensionsAreDisabled(database),
+      busyTimeoutMs: numberScalar(database, 'PRAGMA busy_timeout', 'timeout'),
+      synchronousLevel: numberScalar(database, 'PRAGMA synchronous', 'synchronous'),
+      quickCheck: textScalar(database, 'PRAGMA quick_check', 'quick_check')
+    };
+  } finally {
+    database.exec('PRAGMA writable_schema = OFF;');
+  }
 }
 
 export function openR0Database(filename: string): DatabaseSync {
@@ -58,7 +71,12 @@ export function openR0Database(filename: string): DatabaseSync {
     database.exec('PRAGMA synchronous = NORMAL;');
 
     const safety = inspectDatabaseSafety(database);
-    if (safety.journalMode !== 'wal' || !safety.foreignKeysEnabled || !safety.defensiveModeEnabled || safety.extensionsEnabled) {
+    if (safety.journalMode !== 'wal'
+      || !safety.foreignKeysEnabled
+      || !safety.defensiveModeEnabled
+      || safety.extensionsEnabled
+      || safety.busyTimeoutMs !== 5_000
+      || safety.synchronousLevel !== 1) {
       throw new R0DiagnosticFailure('R0_DB_OPEN_FAILED', 'DATABASE_SAFETY_BASELINE_MISMATCH');
     }
     if (safety.quickCheck !== 'ok') {

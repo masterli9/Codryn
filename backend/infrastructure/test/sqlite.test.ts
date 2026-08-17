@@ -1,11 +1,12 @@
-import { mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   SqliteDiagnostics,
   SqliteEventStore,
   SqliteSessionRepository,
+  migrations,
   openR0Database,
   runMigrations
 } from '../src/index.js';
@@ -40,6 +41,7 @@ async function createDatabasePath(): Promise<string> {
 }
 
 afterEach(async () => {
+  vi.restoreAllMocks();
   await Promise.all(temporaryDirectories.splice(0).map(async (directory) => {
     await rm(directory, { recursive: true, force: true });
   }));
@@ -77,12 +79,55 @@ describe('R0 SQLite persistence', () => {
     }
   });
 
+  it.each([
+    ['busy timeout', 'PRAGMA busy_timeout = 0;', 'PRAGMA busy_timeout', { timeout: 0 }],
+    ['synchronous mode', 'PRAGMA synchronous = FULL;', 'PRAGMA synchronous', { synchronous: 2 }]
+  ])('rejects drifted %s without changing public evidence', async (_label, driftSql, readSql, driftedRow) => {
+    const filename = await createDatabasePath();
+    const database = openR0Database(filename);
+
+    try {
+      runMigrations(database, firstTimestamp);
+      database.exec(driftSql);
+      expect(database.prepare(readSql).get()).toEqual(driftedRow);
+
+      await expect(new SqliteDiagnostics(database, filename).inspect()).rejects.toMatchObject({
+        code: 'R0_DB_OPEN_FAILED',
+        message: 'DATABASE_SAFETY_BASELINE_MISMATCH'
+      });
+    } finally {
+      database.close();
+    }
+  });
+
+  it('restores writable_schema after detecting disabled defensive mode', async () => {
+    const filename = await createDatabasePath();
+    const database = openR0Database(filename);
+
+    try {
+      runMigrations(database, firstTimestamp);
+      database.enableDefensive(false);
+
+      await expect(new SqliteDiagnostics(database, filename).inspect()).rejects.toMatchObject({
+        code: 'R0_DB_OPEN_FAILED',
+        message: 'DATABASE_SAFETY_BASELINE_MISMATCH'
+      });
+      expect(database.prepare('PRAGMA writable_schema').get()).toEqual({ writable_schema: 0 });
+    } finally {
+      database.exec('PRAGMA writable_schema = OFF;');
+      database.close();
+    }
+  });
+
   it('applies migrations exactly once after reopen', async () => {
     const filename = await createDatabasePath();
     const firstConnection = openR0Database(filename);
-    runMigrations(firstConnection, firstTimestamp);
-    await new SqliteSessionRepository(firstConnection).createWithInitialEvent(session, initialEvent);
-    firstConnection.close();
+    try {
+      runMigrations(firstConnection, firstTimestamp);
+      await new SqliteSessionRepository(firstConnection).createWithInitialEvent(session, initialEvent);
+    } finally {
+      firstConnection.close();
+    }
 
     const secondConnection = openR0Database(filename);
     try {
@@ -129,6 +174,67 @@ describe('R0 SQLite persistence', () => {
     }
   });
 
+  it.each([
+    ['name', 'tampered-name', undefined],
+    ['checksum', undefined, 'tampered-checksum']
+  ])('rejects a migration %s mismatch before applying a missing later migration', async (_label, name, checksum) => {
+    const filename = await createDatabasePath();
+    const database = openR0Database(filename);
+    const ledger = migrations[0];
+    if (ledger === undefined) throw new Error('Migration 0 fixture is missing.');
+
+    try {
+      database.exec(ledger.sql);
+      database.prepare(
+        'INSERT INTO schema_migrations (version, name, checksum, applied_at) VALUES (?, ?, ?, ?)'
+      ).run(ledger.version, name ?? ledger.name, checksum ?? ledger.checksum, firstTimestamp);
+      const createdTables: string[] = [];
+      database.setAuthorizer((_actionCode, firstArgument) => {
+        if (firstArgument === 'diagnostic_sessions') createdTables.push(firstArgument);
+        return 0;
+      });
+
+      try {
+        expect(() => runMigrations(database, secondTimestamp)).toThrowError(
+          expect.objectContaining({
+            code: 'R0_DB_MIGRATION_FAILED',
+            message: 'MIGRATION_CHECKSUM_MISMATCH'
+          })
+        );
+      } finally {
+        database.setAuthorizer(null);
+      }
+
+      expect(createdTables).toEqual([]);
+      expect(database.prepare(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'diagnostic_sessions'"
+      ).get()).toBeUndefined();
+    } finally {
+      database.close();
+    }
+  });
+
+  it('maps migration transaction-entry failure without rolling back the caller transaction', async () => {
+    const filename = await createDatabasePath();
+    const database = openR0Database(filename);
+
+    try {
+      runMigrations(database, firstTimestamp);
+      database.exec('BEGIN IMMEDIATE;');
+
+      expect(() => runMigrations(database, secondTimestamp)).toThrowError(
+        expect.objectContaining({
+          code: 'R0_DB_MIGRATION_FAILED',
+          message: 'MIGRATION_APPLY_FAILED'
+        })
+      );
+      expect(database.isTransaction).toBe(true);
+    } finally {
+      if (database.isTransaction) database.exec('ROLLBACK;');
+      database.close();
+    }
+  });
+
   it('atomically creates a diagnostic session with its initial event', async () => {
     const filename = await createDatabasePath();
     const database = openR0Database(filename);
@@ -143,6 +249,25 @@ describe('R0 SQLite persistence', () => {
       await expect(sessions.findById(session.id)).resolves.toEqual(session);
       await expect(events.findBySessionId(session.id)).resolves.toEqual([initialEvent]);
     } finally {
+      database.close();
+    }
+  });
+
+  it('maps session transaction-entry failure without rolling back the caller transaction', async () => {
+    const filename = await createDatabasePath();
+    const database = openR0Database(filename);
+
+    try {
+      runMigrations(database, firstTimestamp);
+      database.exec('BEGIN IMMEDIATE;');
+
+      await expect(new SqliteSessionRepository(database).createWithInitialEvent(session, initialEvent)).rejects.toMatchObject({
+        code: 'R0_DB_OPEN_FAILED',
+        message: 'SESSION_EVENT_WRITE_FAILED'
+      });
+      expect(database.isTransaction).toBe(true);
+    } finally {
+      if (database.isTransaction) database.exec('ROLLBACK;');
       database.close();
     }
   });
@@ -212,6 +337,27 @@ describe('R0 SQLite persistence', () => {
   });
 
   it.each([
+    ['envelope', 'UPDATE events SET event_type = ?', ''],
+    ['payload', 'UPDATE events SET payload_json = ?', '{"value":1e400}']
+  ])('rejects an invalid persisted %s during event reconstruction', async (_label, updateSql, invalidValue) => {
+    const filename = await createDatabasePath();
+    const database = openR0Database(filename);
+
+    try {
+      runMigrations(database, firstTimestamp);
+      await new SqliteSessionRepository(database).createWithInitialEvent(session, initialEvent);
+      database.prepare(updateSql).run(invalidValue);
+
+      await expect(new SqliteEventStore(database).findBySessionId(session.id)).rejects.toMatchObject({
+        code: 'R0_DB_OPEN_FAILED',
+        message: 'EVENT_READ_FAILED'
+      });
+    } finally {
+      database.close();
+    }
+  });
+
+  it.each([
     ['undefined', { value: undefined }],
     ['BigInt', { value: 1n }],
     ['function', { value: () => 'not JSON' }],
@@ -248,15 +394,47 @@ describe('R0 SQLite persistence', () => {
       runMigrations(database, firstTimestamp);
       await new SqliteSessionRepository(database).createWithInitialEvent(session, initialEvent);
 
-      const diagnostics = new SqliteDiagnostics(database, filename);
-      const evidence = await diagnostics.backupAndVerify(session.id);
-      const secondEvidence = await diagnostics.backupAndVerify(session.id);
+      vi.spyOn(Date, 'now').mockReturnValue(1_786_971_192_243);
+      const evidence = await new SqliteDiagnostics(database, filename).backupAndVerify(session.id);
+      const secondEvidence = await new SqliteDiagnostics(database, filename).backupAndVerify(session.id);
 
       expect(evidence).toEqual({ integrityCheck: 'ok', sessionFound: true, eventFound: true });
       expect(secondEvidence).toEqual(evidence);
       expect(database.isOpen).toBe(true);
       const backupFiles = await readdir(join(filename, '..', 'backups'));
-      expect(backupFiles.filter((entry) => entry.endsWith('.sqlite'))).toHaveLength(2);
+      expect(backupFiles.filter((entry) => entry.endsWith('.sqlite')).sort()).toEqual([
+        'r0-1786971192243.sqlite',
+        'r0-1786971192244.sqlite'
+      ]);
+    } finally {
+      database.close();
+    }
+  });
+
+  it('never overwrites a pre-existing backup candidate after restart', async () => {
+    const filename = await createDatabasePath();
+    const database = openR0Database(filename);
+    const backupDirectory = join(filename, '..', 'backups');
+    const existingBackup = join(backupDirectory, 'r0-1786971192243.sqlite');
+
+    try {
+      runMigrations(database, firstTimestamp);
+      await new SqliteSessionRepository(database).createWithInitialEvent(session, initialEvent);
+      await mkdir(backupDirectory, { recursive: true });
+      await writeFile(existingBackup, 'must-not-be-overwritten');
+      vi.spyOn(Date, 'now').mockReturnValue(1_786_971_192_243);
+
+      await expect(new SqliteDiagnostics(database, filename).backupAndVerify(session.id)).resolves.toEqual({
+        integrityCheck: 'ok',
+        sessionFound: true,
+        eventFound: true
+      });
+      await expect(readFile(existingBackup, 'utf8')).resolves.toBe('must-not-be-overwritten');
+      const backupFiles = await readdir(backupDirectory);
+      expect(backupFiles.filter((entry) => entry.endsWith('.sqlite')).sort()).toEqual([
+        'r0-1786971192243.sqlite',
+        'r0-1786971192244.sqlite'
+      ]);
     } finally {
       database.close();
     }

@@ -1,4 +1,4 @@
-import { mkdir } from 'node:fs/promises';
+import { mkdir, open as openFile, rm } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { backup, DatabaseSync, type SQLOutputValue } from 'node:sqlite';
 import { R0DiagnosticFailure } from '@codryn/core';
@@ -17,9 +17,35 @@ function requireString(value: SQLOutputValue | undefined): string {
   return value;
 }
 
-export class SqliteDiagnostics implements DatabaseDiagnostics {
-  private lastBackupTimestamp = 0;
+function isAlreadyExists(error: unknown): boolean {
+  return typeof error === 'object' && error !== null && Reflect.get(error, 'code') === 'EEXIST';
+}
 
+async function reserveBackupPath(backupDirectory: string, initialTimestamp: number): Promise<string> {
+  let timestamp = initialTimestamp;
+  while (Number.isSafeInteger(timestamp)) {
+    const candidate = join(backupDirectory, `r0-${timestamp}.sqlite`);
+    try {
+      const reservation = await openFile(candidate, 'wx');
+      await reservation.close();
+      return candidate;
+    } catch (error) {
+      if (!isAlreadyExists(error)) throw error;
+      timestamp += 1;
+    }
+  }
+  throw new Error('BACKUP_TIMESTAMP_EXHAUSTED');
+}
+
+async function removeFailedBackup(path: string): Promise<void> {
+  await Promise.all([
+    rm(path, { force: true }),
+    rm(`${path}-wal`, { force: true }),
+    rm(`${path}-shm`, { force: true })
+  ]).catch(() => undefined);
+}
+
+export class SqliteDiagnostics implements DatabaseDiagnostics {
   constructor(
     private readonly database: DatabaseSync,
     private readonly filename: string
@@ -33,7 +59,12 @@ export class SqliteDiagnostics implements DatabaseDiagnostics {
       ).all().map((row) => requireNumber(row.version));
       const expectedVersions = migrations.map((migration) => migration.version);
 
-      if (safety.journalMode !== 'wal' || !safety.foreignKeysEnabled || !safety.defensiveModeEnabled || safety.extensionsEnabled) {
+      if (safety.journalMode !== 'wal'
+        || !safety.foreignKeysEnabled
+        || !safety.defensiveModeEnabled
+        || safety.extensionsEnabled
+        || safety.busyTimeoutMs !== 5_000
+        || safety.synchronousLevel !== 1) {
         throw new R0DiagnosticFailure('R0_DB_OPEN_FAILED', 'DATABASE_SAFETY_BASELINE_MISMATCH');
       }
       if (safety.quickCheck !== 'ok') {
@@ -60,15 +91,16 @@ export class SqliteDiagnostics implements DatabaseDiagnostics {
 
   async backupAndVerify(sessionId: Uuid): Promise<BackupEvidence> {
     const backupDirectory = join(dirname(this.filename), 'backups');
-    const timestamp = Math.max(Date.now(), this.lastBackupTimestamp + 1);
-    this.lastBackupTimestamp = timestamp;
-    const backupPath = join(backupDirectory, `r0-${timestamp}.sqlite`);
+    let backupPath: string | undefined;
+    let backupCompleted = false;
     let copy: DatabaseSync | undefined;
 
     try {
       await mkdir(backupDirectory, { recursive: true });
+      backupPath = await reserveBackupPath(backupDirectory, Date.now());
       if (!this.database.isOpen) throw new Error('SOURCE_DATABASE_CLOSED');
       await backup(this.database, backupPath);
+      backupCompleted = true;
       if (!this.database.isOpen) throw new Error('SOURCE_DATABASE_CLOSED');
 
       copy = new DatabaseSync(backupPath, {
@@ -95,6 +127,7 @@ export class SqliteDiagnostics implements DatabaseDiagnostics {
       throw new R0DiagnosticFailure('R0_DB_BACKUP_FAILED', 'BACKUP_VERIFICATION_FAILED');
     } finally {
       copy?.close();
+      if (!backupCompleted && backupPath !== undefined) await removeFailedBackup(backupPath);
     }
   }
 }
