@@ -11,6 +11,19 @@ describe('test support', () => {
     await expect(access(directory.path)).rejects.toThrow();
   });
 
+  it('rejects a non-simple prefix before creating a temporary directory', async () => {
+    let unexpectedDirectory: Awaited<ReturnType<typeof createTempDirectory>> | undefined;
+    let rejection: unknown;
+    try {
+      unexpectedDirectory = await createTempDirectory('.');
+    } catch (error: unknown) {
+      rejection = error;
+    }
+    await unexpectedDirectory?.cleanup();
+
+    expect(rejection).toMatchObject({ message: 'Temporary directory prefix must be a simple name.' });
+  });
+
   it('retries an assertion until it succeeds', async () => {
     let attempts = 0;
 
@@ -26,5 +39,11 @@ describe('test support', () => {
     const expected = new Error('last failure');
 
     await expect(eventually(() => { throw expected; }, { timeoutMs: 10, intervalMs: 1 })).rejects.toBe(expected);
+  });
+
+  it('does not sleep past the remaining eventually timeout', async () => {
+    const startedAt = Date.now();
+    await expect(eventually(() => { throw new Error('not ready'); }, { timeoutMs: 20, intervalMs: 100 })).rejects.toThrow('not ready');
+    expect(Date.now() - startedAt).toBeLessThan(80);
   });
 });

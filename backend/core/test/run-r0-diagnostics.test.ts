@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { EventEnvelope, Uuid } from '@codryn/shared';
-import { RunR0Diagnostics } from '../src/index.js';
-import type { BackupEvidence, DatabaseEvidence, DiagnosticSession, GitEvidence, InitialEvent, LogEntry, ProcessResult } from '../src/index.js';
+import { R0DiagnosticFailure, RunR0Diagnostics } from '../src/index.js';
+import type { BackupEvidence, DatabaseEvidence, DiagnosticSession, GitEvidence, InitialEvent, LogEntry, ProcessResult, ProcessSpec } from '../src/index.js';
 
 const request = {
   requestId: '00000000-0000-4000-8000-000000000101',
@@ -65,27 +65,41 @@ class FakeClock {
 }
 
 class FakeIds {
-  private nextValue = 1;
+  readonly values: readonly Uuid[] = [
+    '00000000-0000-4000-8000-000000000001',
+    '00000000-0000-4000-8000-000000000002'
+  ];
+  calls = 0;
 
-  next(): '00000000-0000-4000-8000-000000000001' {
-    this.nextValue += 1;
-    return '00000000-0000-4000-8000-000000000001';
+  next(): Uuid {
+    const value = this.values[this.calls];
+    this.calls += 1;
+    if (value === undefined) throw new Error('unexpected ID request');
+    return value;
   }
 }
 
 class FakeEventStore {
   readonly events: EventEnvelope[] = [];
 
+  constructor(private readonly trace: string[]) {}
+
   async append(event: EventEnvelope): Promise<void> {
     this.events.push(event);
   }
 
   async findBySessionId(sessionId: Uuid): Promise<readonly EventEnvelope[]> {
+    this.trace.push('event-read');
     return this.events.filter((event) => event.sessionId === sessionId);
   }
 
   eventsFor(sessionId: Uuid): readonly EventEnvelope[] {
     return this.events.filter((event) => event.sessionId === sessionId);
+  }
+
+  persistInitial(event: InitialEvent): void {
+    this.trace.push('atomic-persist');
+    this.events.push(event);
   }
 }
 
@@ -93,30 +107,37 @@ class FakeSessionRepository {
   createdCount = 0;
   private session: DiagnosticSession | null = null;
 
-  constructor(private readonly eventStore: FakeEventStore) {}
+  constructor(private readonly eventStore: FakeEventStore, private readonly trace: string[]) {}
 
   async createWithInitialEvent(session: DiagnosticSession, event: InitialEvent): Promise<void> {
     this.createdCount += 1;
     this.session = session;
-    await this.eventStore.append(event);
+    this.eventStore.persistInitial(event);
   }
 
   async findById(id: Uuid): Promise<DiagnosticSession | null> {
+    this.trace.push('session-read');
     return this.session?.id === id ? this.session : null;
   }
 }
 
 class FakeDatabaseDiagnostics {
   inspectEvidence: DatabaseEvidence = successfulDatabaseEvidence;
-  inspectError: Error | null = null;
-  backupError: Error | null = null;
+  inspectError: unknown = null;
+  backupError: unknown = null;
+  readonly backupSessionIds: Uuid[] = [];
+
+  constructor(private readonly trace: string[]) {}
 
   async inspect(): Promise<DatabaseEvidence> {
+    this.trace.push('inspect');
     if (this.inspectError !== null) throw this.inspectError;
     return this.inspectEvidence;
   }
 
-  async backupAndVerify(): Promise<BackupEvidence> {
+  async backupAndVerify(sessionId: Uuid): Promise<BackupEvidence> {
+    this.trace.push('backup');
+    this.backupSessionIds.push(sessionId);
     if (this.backupError !== null) throw this.backupError;
     return successfulBackupEvidence;
   }
@@ -125,8 +146,13 @@ class FakeDatabaseDiagnostics {
 class FakeProcessRunner {
   calls = 0;
   results: ProcessResult[] = [...processResults];
+  readonly specs: ProcessSpec[] = [];
 
-  async run(): Promise<ProcessResult> {
+  constructor(private readonly expectedSpecs: readonly ProcessSpec[]) {}
+
+  async run(spec: ProcessSpec): Promise<ProcessResult> {
+    this.specs.push(spec);
+    expect(spec).toEqual(this.expectedSpecs[this.calls]);
     const result = this.results[this.calls];
     this.calls += 1;
     if (result === undefined) throw new Error('unexpected process call');
@@ -137,9 +163,11 @@ class FakeProcessRunner {
 class FakeGitProbe {
   calls = 0;
   evidence: GitEvidence = successfulGitEvidence;
+  inspectError: unknown = null;
 
   async inspect(): Promise<GitEvidence> {
     this.calls += 1;
+    if (this.inspectError !== null) throw this.inspectError;
     return this.evidence;
   }
 }
@@ -153,15 +181,22 @@ class FakeLogger {
 }
 
 function createSubject() {
-  const eventStore = new FakeEventStore();
-  const sessionRepository = new FakeSessionRepository(eventStore);
-  const databaseDiagnostics = new FakeDatabaseDiagnostics();
-  const processRunner = new FakeProcessRunner();
+  const trace: string[] = [];
+  const ids = new FakeIds();
+  const eventStore = new FakeEventStore(trace);
+  const sessionRepository = new FakeSessionRepository(eventStore, trace);
+  const databaseDiagnostics = new FakeDatabaseDiagnostics(trace);
+  const processRunner = new FakeProcessRunner([
+    profile.outputProcess,
+    profile.nonzeroProcess,
+    profile.timeoutTreeProcess,
+    profile.largeOutputProcess
+  ]);
   const gitProbe = new FakeGitProbe();
   const logger = new FakeLogger();
   const subject = new RunR0Diagnostics({
     clock: new FakeClock(),
-    ids: new FakeIds(),
+    ids,
     sessionRepository,
     eventStore,
     databaseDiagnostics,
@@ -170,7 +205,7 @@ function createSubject() {
     logger,
     profile
   });
-  return { subject, sessionRepository, eventStore, databaseDiagnostics, processRunner, gitProbe, logger };
+  return { subject, ids, trace, sessionRepository, eventStore, databaseDiagnostics, processRunner, gitProbe, logger };
 }
 
 function check(report: Awaited<ReturnType<RunR0Diagnostics['execute']>>, checkId: string) {
@@ -181,7 +216,7 @@ function check(report: Awaited<ReturnType<RunR0Diagnostics['execute']>>, checkId
 
 describe('RunR0Diagnostics', () => {
   it('reports every R0 check as passed in deterministic order', async () => {
-    const { subject, sessionRepository, eventStore } = createSubject();
+    const { subject, ids, trace, sessionRepository, eventStore, databaseDiagnostics, processRunner, logger } = createSubject();
 
     const report = await subject.execute(request);
 
@@ -190,11 +225,23 @@ describe('RunR0Diagnostics', () => {
     expect(report.checks.every((result) => result.status === 'pass')).toBe(true);
     expect(sessionRepository.createdCount).toBe(1);
     expect(eventStore.eventsFor(report.sessionId)).toHaveLength(1);
+    expect(ids.calls).toBe(2);
+    expect(report.sessionId).toBe('00000000-0000-4000-8000-000000000001');
+    expect(eventStore.events[0]?.eventId).toBe('00000000-0000-4000-8000-000000000002');
+    expect(trace).toEqual(['inspect', 'atomic-persist', 'session-read', 'event-read', 'backup']);
+    expect(databaseDiagnostics.backupSessionIds).toEqual([report.sessionId]);
+    expect(processRunner.specs).toEqual([
+      profile.outputProcess,
+      profile.nonzeroProcess,
+      profile.timeoutTreeProcess,
+      profile.largeOutputProcess
+    ]);
+    expect(logger.entries.map((entry) => entry.event)).toEqual(['r0.diagnostic.started', 'r0.diagnostic.finished']);
   });
 
   it('skips database dependants but still executes process and Git checks', async () => {
     const { subject, databaseDiagnostics, processRunner, gitProbe } = createSubject();
-    databaseDiagnostics.inspectEvidence = { ...successfulDatabaseEvidence, journalMode: 'delete' } as never;
+    databaseDiagnostics.inspectError = new R0DiagnosticFailure('R0_DB_OPEN_FAILED');
 
     const report = await subject.execute(request);
 
@@ -204,8 +251,8 @@ describe('RunR0Diagnostics', () => {
     expect(gitProbe.calls).toBe(1);
   });
 
-  it('fails when a timed-out process leaves its child tree alive', async () => {
-    const { subject, processRunner } = createSubject();
+  it('fails when a timed-out process leaves its child tree alive but completes independent checks', async () => {
+    const { subject, processRunner, gitProbe } = createSubject();
     const timeoutResult = processRunner.results[2];
     if (timeoutResult === undefined) throw new Error('Missing timeout fixture result.');
     processRunner.results[2] = { ...timeoutResult, treeTerminated: false };
@@ -214,11 +261,42 @@ describe('RunR0Diagnostics', () => {
 
     expect(check(report, 'process.timeout-tree')).toMatchObject({ status: 'fail', code: 'R0_PROCESS_TREE_REMAINS' });
     expect(report.overallStatus).toBe('failed');
+    expect(processRunner.specs).toEqual([
+      profile.outputProcess,
+      profile.nonzeroProcess,
+      profile.timeoutTreeProcess,
+      profile.largeOutputProcess
+    ]);
+    expect(gitProbe.calls).toBe(1);
+  });
+
+  it('fails output-limit check when its process tree remains alive', async () => {
+    const { subject, processRunner } = createSubject();
+    const outputLimitResult = processRunner.results[3];
+    if (outputLimitResult === undefined) throw new Error('Missing output-limit fixture result.');
+    processRunner.results[3] = { ...outputLimitResult, treeTerminated: false };
+
+    const report = await subject.execute(request);
+
+    expect(check(report, 'process.output-limit')).toMatchObject({ status: 'fail', code: 'R0_PROCESS_TREE_REMAINS' });
+  });
+
+  it.each(['process.timeout-tree', 'process.output-limit'] as const)('maps spawn failures in %s to R0_PROCESS_SPAWN_FAILED', async (checkId) => {
+    const { subject, processRunner } = createSubject();
+    const index = checkId === 'process.timeout-tree' ? 2 : 3;
+    processRunner.results[index] = {
+      termination: 'spawn_failed', exitCode: null, signal: null, stdout: '', stderr: '', durationMs: 1,
+      stdoutTruncated: false, stderrTruncated: false, treeTerminated: false
+    };
+
+    const report = await subject.execute(request);
+
+    expect(check(report, checkId)).toMatchObject({ status: 'fail', code: 'R0_PROCESS_SPAWN_FAILED' });
   });
 
   it.each(['plaintext_store', 'custom', 'unknown'] as const)('fails unsafe credential category %s without exposing helper output', async (credentialHelperCategory) => {
     const { subject, gitProbe, logger } = createSubject();
-    gitProbe.evidence = { ...successfulGitEvidence, credentialHelperCategory };
+    gitProbe.evidence = { ...successfulGitEvidence, credentialHelperCategory, rawCredentialHelperOutput: 'super-secret-value' } as GitEvidence;
 
     const report = await subject.execute(request);
 
@@ -238,7 +316,7 @@ describe('RunR0Diagnostics', () => {
 
   it('returns failed when any mandatory check is skipped', async () => {
     const { subject, databaseDiagnostics } = createSubject();
-    databaseDiagnostics.inspectEvidence = { ...successfulDatabaseEvidence, journalMode: 'delete' } as never;
+    databaseDiagnostics.inspectError = new R0DiagnosticFailure('R0_DB_OPEN_FAILED');
 
     const report = await subject.execute(request);
 
@@ -254,6 +332,47 @@ describe('RunR0Diagnostics', () => {
     expect(check(report, 'database.open-and-migrate')).toMatchObject({ status: 'fail', code: 'R0_INTERNAL_ERROR' });
     expect(JSON.stringify(report)).not.toContain('super-secret-value');
     expect(JSON.stringify(logger.entries)).not.toContain('super-secret-value');
+  });
+
+  it.each([
+    ['inspect', 'R0_DB_OPEN_FAILED'],
+    ['inspect', 'R0_DB_MIGRATION_FAILED'],
+    ['inspect', 'R0_DB_INTEGRITY_FAILED'],
+    ['backup', 'R0_DB_BACKUP_FAILED']
+  ] as const)('preserves safe database adapter failure code %s/%s', async (operation, code) => {
+    const { subject, databaseDiagnostics } = createSubject();
+    const rawFailureMessage = 'super-secret-value';
+    const failure = new R0DiagnosticFailure(code, rawFailureMessage);
+    if (operation === 'inspect') databaseDiagnostics.inspectError = failure;
+    else databaseDiagnostics.backupError = failure;
+
+    const report = await subject.execute(request);
+
+    expect(check(report, operation === 'inspect' ? 'database.open-and-migrate' : 'database.backup')).toMatchObject({ status: 'fail', code });
+    expect(JSON.stringify(report)).not.toContain(rawFailureMessage);
+  });
+
+  it('evaluates Git local-remote and credential evidence after a version check failure', async () => {
+    const { subject, gitProbe } = createSubject();
+    gitProbe.evidence = { version: '', localCommitCreated: true, fetchSucceeded: true, credentialHelperCategory: 'none' };
+
+    const report = await subject.execute(request);
+
+    expect(check(report, 'git.version')).toMatchObject({ status: 'fail', code: 'R0_GIT_NOT_AVAILABLE' });
+    expect(check(report, 'git.local-remote')).toMatchObject({ status: 'pass', code: 'R0_OK' });
+    expect(check(report, 'git.credential-helper')).toMatchObject({ status: 'pass', code: 'R0_OK' });
+  });
+
+  it('skips dependent Git checks only when evidence cannot be obtained', async () => {
+    const { subject, gitProbe } = createSubject();
+    gitProbe.inspectError = new Error('super-secret-value');
+
+    const report = await subject.execute(request);
+
+    expect(check(report, 'git.version')).toMatchObject({ status: 'fail', code: 'R0_INTERNAL_ERROR' });
+    expect(check(report, 'git.local-remote')).toMatchObject({ status: 'skipped', code: 'R0_SKIPPED_DEPENDENCY' });
+    expect(check(report, 'git.credential-helper')).toMatchObject({ status: 'skipped', code: 'R0_SKIPPED_DEPENDENCY' });
+    expect(JSON.stringify(report)).not.toContain('super-secret-value');
   });
 
   it('validates a direct request before calling adapters', async () => {

@@ -28,12 +28,13 @@ interface CheckSuccess {
 }
 
 type CheckAttempt<T> =
-  | { readonly ok: true; readonly value: T; readonly result: R0CheckResult }
-  | { readonly ok: false; readonly result: R0CheckResult };
+  | { readonly obtained: true; readonly passed: true; readonly value: T; readonly result: R0CheckResult }
+  | { readonly obtained: true; readonly passed: false; readonly value: T; readonly result: R0CheckResult }
+  | { readonly obtained: false; readonly passed: false; readonly result: R0CheckResult };
 
-class R0DiagnosticFailure extends Error {
-  constructor(readonly code: CheckCode, readonly safeMessage: string) {
-    super(safeMessage);
+export class R0DiagnosticFailure extends Error {
+  constructor(readonly code: CheckCode, rawMessage?: string) {
+    super(rawMessage);
   }
 }
 
@@ -84,7 +85,7 @@ export class RunR0Diagnostics {
     );
     checks.push(databaseInspection.result);
 
-    if (databaseInspection.ok) {
+    if (databaseInspection.passed) {
       const sessionRoundtrip = await this.runCheck(
         'database.session-roundtrip',
         async () => {
@@ -100,7 +101,7 @@ export class RunR0Diagnostics {
       );
       checks.push(sessionRoundtrip.result);
 
-      if (sessionRoundtrip.ok) {
+      if (sessionRoundtrip.passed) {
         const eventRoundtrip = await this.runCheck(
           'database.event-roundtrip',
           () => this.dependencies.eventStore.findBySessionId(sessionId),
@@ -113,7 +114,7 @@ export class RunR0Diagnostics {
         );
         checks.push(eventRoundtrip.result);
 
-        if (eventRoundtrip.ok) {
+        if (eventRoundtrip.passed) {
           checks.push((await this.runCheck(
             'database.backup',
             () => this.dependencies.databaseDiagnostics.backupAndVerify(sessionId),
@@ -160,7 +161,7 @@ export class RunR0Diagnostics {
       (evidence) => this.validateGitVersion(evidence)
     );
     checks.push(gitInspection.result);
-    if (gitInspection.ok) {
+    if (gitInspection.obtained) {
       checks.push((await this.runCheck(
         'git.local-remote',
         async () => gitInspection.value,
@@ -200,12 +201,18 @@ export class RunR0Diagnostics {
     validate: (value: T) => CheckSuccess
   ): Promise<CheckAttempt<T>> {
     const startedAt = this.timestamp();
+    let value: T;
     try {
-      const value = await operation();
+      value = await operation();
+    } catch (error: unknown) {
+      return { obtained: false, passed: false, result: this.failedCheck(checkId, startedAt, error) };
+    }
+    try {
       const success = validate(value);
       const finishedAt = this.timestamp();
       return {
-        ok: true,
+        obtained: true,
+        passed: true,
         value,
         result: {
           checkId,
@@ -219,23 +226,7 @@ export class RunR0Diagnostics {
         }
       };
     } catch (error: unknown) {
-      const failure = error instanceof R0DiagnosticFailure
-        ? error
-        : new R0DiagnosticFailure('R0_INTERNAL_ERROR', 'An internal diagnostic adapter error occurred.');
-      const finishedAt = this.timestamp();
-      return {
-        ok: false,
-        result: {
-          checkId,
-          status: 'fail',
-          code: failure.code,
-          message: failure.safeMessage,
-          startedAt,
-          finishedAt,
-          durationMs: this.duration(startedAt, finishedAt),
-          evidence: {}
-        }
-      };
+      return { obtained: true, passed: false, value, result: this.failedCheck(checkId, startedAt, error) };
     }
   }
 
@@ -289,18 +280,27 @@ export class RunR0Diagnostics {
   }
 
   private validateTimeoutTree(result: ProcessResult): CheckSuccess {
+    if (result.termination === 'spawn_failed') {
+      throw new R0DiagnosticFailure('R0_PROCESS_SPAWN_FAILED');
+    }
     if (result.termination !== 'timed_out') {
-      throw new R0DiagnosticFailure('R0_PROCESS_TIMED_OUT', 'Process did not time out as expected.');
+      throw new R0DiagnosticFailure('R0_PROCESS_TIMED_OUT');
     }
     if (!result.treeTerminated) {
-      throw new R0DiagnosticFailure('R0_PROCESS_TREE_REMAINS', 'Timed-out process left its child tree alive.');
+      throw new R0DiagnosticFailure('R0_PROCESS_TREE_REMAINS');
     }
     return this.processSuccess('Timed-out process tree was terminated.', result);
   }
 
   private validateOutputLimit(result: ProcessResult): CheckSuccess {
+    if (result.termination === 'spawn_failed') {
+      throw new R0DiagnosticFailure('R0_PROCESS_SPAWN_FAILED');
+    }
     if (result.termination !== 'output_limit_exceeded' || !result.stdoutTruncated || !result.stderrTruncated) {
-      throw new R0DiagnosticFailure('R0_PROCESS_OUTPUT_LIMIT', 'Process output limit was not enforced.');
+      throw new R0DiagnosticFailure('R0_PROCESS_OUTPUT_LIMIT');
+    }
+    if (!result.treeTerminated) {
+      throw new R0DiagnosticFailure('R0_PROCESS_TREE_REMAINS');
     }
     return this.processSuccess('Process output limit was enforced.', result);
   }
@@ -392,5 +392,20 @@ export class RunR0Diagnostics {
 
   private duration(startedAt: string, finishedAt: string): number {
     return Math.max(0, Date.parse(finishedAt) - Date.parse(startedAt));
+  }
+
+  private failedCheck(checkId: string, startedAt: R0DiagnosticReport['startedAt'], error: unknown): R0CheckResult {
+    const code = error instanceof R0DiagnosticFailure ? error.code : 'R0_INTERNAL_ERROR';
+    const finishedAt = this.timestamp();
+    return {
+      checkId,
+      status: 'fail',
+      code,
+      message: 'Diagnostic check failed. See the stable code for details.',
+      startedAt,
+      finishedAt,
+      durationMs: this.duration(startedAt, finishedAt),
+      evidence: {}
+    };
   }
 }

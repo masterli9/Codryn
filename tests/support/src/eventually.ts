@@ -16,7 +16,9 @@ export async function eventually(
     } catch (error: unknown) {
       lastError = error;
     }
-    await new Promise<void>((resolve) => setTimeout(resolve, options.intervalMs));
+    const remainingMs = deadline - Date.now();
+    if (remainingMs <= 0) break;
+    await new Promise<void>((resolve) => setTimeout(resolve, Math.min(options.intervalMs, remainingMs)));
   }
   throw lastError;
 }

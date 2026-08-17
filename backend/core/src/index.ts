@@ -25,7 +25,7 @@ export {
   transitionGitOperation
 } from './state/git-operation.js';
 export type { GitOperationState } from './state/git-operation.js';
-export { RunR0Diagnostics } from './diagnostics/run-r0-diagnostics.js';
+export { R0DiagnosticFailure, RunR0Diagnostics } from './diagnostics/run-r0-diagnostics.js';
 export type { RunR0DiagnosticsDependencies } from './diagnostics/run-r0-diagnostics.js';
 export type {
   BackupEvidence,
