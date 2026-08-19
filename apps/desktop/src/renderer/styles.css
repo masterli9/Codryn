@@ -1,0 +1,91 @@
+:root {
+  color: #172033;
+  background: #eef1f5;
+  font-family: "Segoe UI", system-ui, sans-serif;
+  font-synthesis: none;
+}
+
+* { box-sizing: border-box; }
+
+body { margin: 0; min-width: 680px; }
+
+main {
+  width: min(100% - 48px, 1120px);
+  margin: 40px auto;
+}
+
+header, .controls, section[aria-labelledby] {
+  padding: 24px 28px;
+  border: 1px solid #cbd2dc;
+  background: #fff;
+}
+
+header { border-radius: 10px 10px 0 0; }
+
+.eyebrow {
+  margin: 0 0 6px;
+  color: #526076;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+}
+
+h1, h2 { margin: 0; }
+h1 { font-size: 30px; }
+h2 { margin-bottom: 16px; font-size: 18px; }
+header > p:last-child { margin-bottom: 0; color: #526076; }
+
+.controls {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  border-top: 0;
+  border-bottom: 0;
+}
+
+button {
+  flex: 0 0 auto;
+  padding: 10px 16px;
+  border: 1px solid #163f75;
+  border-radius: 5px;
+  color: #fff;
+  background: #1c5295;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+button:hover { background: #163f75; }
+button:focus-visible { outline: 3px solid #9dc5f6; outline-offset: 2px; }
+button:disabled { cursor: wait; opacity: .65; }
+#overall-status { margin: 0; font-weight: 600; }
+section[aria-labelledby] { border-radius: 0 0 10px 10px; }
+.table-wrap { overflow-x: auto; }
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+th, td {
+  padding: 11px 12px;
+  border-bottom: 1px solid #dfe3e9;
+  text-align: left;
+  vertical-align: top;
+}
+
+th { color: #526076; background: #f7f8fa; font-size: 12px; text-transform: uppercase; }
+.status { font-weight: 800; white-space: nowrap; }
+.status--pass::before { content: "✓ "; }
+.status--fail::before { content: "✕ "; }
+.status--skipped::before { content: "– "; }
+.status--pass { color: #19613c; }
+.status--fail { color: #9c2c2c; }
+.status--skipped { color: #63561c; }
+
+@media (max-width: 760px) {
+  main { width: calc(100% - 24px); margin: 12px auto; }
+  .controls { align-items: flex-start; flex-direction: column; }
+}

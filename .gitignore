@@ -2,6 +2,7 @@
 node_modules/
 dist/
 out/
+.webpack/
 coverage/
 *.log
 *.sqlite

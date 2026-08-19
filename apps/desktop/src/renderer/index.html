@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="cs">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'">
+    <title>Codryn — diagnostika R0</title>
+  </head>
+  <body>
+    <main>
+      <header>
+        <p class="eyebrow">Technické základy</p>
+        <h1>Diagnostika R0</h1>
+        <p>Ověřte lokální databázi, procesy a Git před navazující implementací.</p>
+      </header>
+
+      <section class="controls" aria-label="Spuštění diagnostiky">
+        <button id="run-diagnostics" type="button">Spustit kontrolu R0</button>
+        <p id="overall-status" role="status" aria-live="polite">Kontrola zatím nebyla spuštěna.</p>
+      </section>
+
+      <section aria-labelledby="results-heading">
+        <h2 id="results-heading">Výsledky kontrol</h2>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th scope="col">Kontrola</th>
+                <th scope="col">Stav</th>
+                <th scope="col">Kód</th>
+                <th scope="col">Zpráva</th>
+                <th scope="col">Trvání</th>
+              </tr>
+            </thead>
+            <tbody id="results"></tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>
