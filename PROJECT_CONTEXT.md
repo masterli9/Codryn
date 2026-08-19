@@ -16,9 +16,9 @@
 
 ## Aktualizace po revizi PRD v0.3 – 12. srpna 2026
 
-- Aktuální produktovou autoritou je `PRD_v0.3.md`; `PRD_v0.2.md` a `PRD_v0.1.md` jsou historické snapshoty.
-- Důvody uzavřených rozhodnutí jsou v `REGISTR_ROZHODNUTI_v0.3.md` a interní rámec je v `ETAPIZACE_v0.3.md`.
-- Pořadí skutečné implementace bez kalendářních dat určuje `ROADMAP.md`. Roadmap nenahrazuje produktový rozsah PRD ani řízení rizika v etapizaci.
+- Aktuální produktovou autoritou je `PRD_v0.3.md`; `docs/product/PRD_v0.2.md` a `docs/product/PRD_v0.1.md` jsou historické snapshoty.
+- Důvody uzavřených rozhodnutí jsou v `docs/product/REGISTR_ROZHODNUTI_v0.3.md` a interní rámec je v `docs/product/ETAPIZACE_v0.3.md`.
+- Pořadí skutečné implementace bez kalendářních dat určuje `docs/product/ROADMAP.md`. Roadmap nenahrazuje produktový rozsah PRD ani řízení rizika v etapizaci.
 - První funkční vertikální průřez agentního jádra vznikne přes interní headless/CLI driver bez produktového UI. CLI není samostatný produkt ani druhé trvale udržované uživatelské rozhraní; používá stejné aplikační služby jako pozdější Electron renderer.
 - Současně s headless průřezem vznikne pouze minimální Electron spike pro včasné ověření Windows balení, úzkého IPC, SQLite a procesního runneru. Minimální produktové UI se připojí až ke stabilnímu jádru.
 - PRD v0.3 je technicky konkrétní na úrovni odpovědností komponent, stavových automatů, invariantů, datových toků, chyb a testů. Přesné TypeScript interface, SQL migrace, adresářová struktura a volba každé knihovny patří do navazujících implementačních specifikací.
@@ -27,23 +27,23 @@
 - O1 zahrnuje kompaktní Git workspace: stav, staged/unstaged změny, diff, historii, branch, commit, AI návrh commit message, fetch, pull a push. Operace jsou explicitní, používají čerstvý preflight, systémový Git credential mechanismus, resource-key serializaci a neprovádějí automatický force push.
 - Dřívější pevná volba Gemini `gemini-2.5-flash` jako prvního adaptéru je nahrazena provider evalem. Počáteční kandidáti jsou GPT-5.6 Luna a Gemini `gemini-2.5-flash`; rozhoduje agentní kvalita, latence, cena celého úkolu, dostupnost a aktuální datové podmínky.
 - Workspace Intelligence, koordinace relací a přímé zápisy subagentů jsou zapracovány do O1 v0.3. Awareness nenahrazuje expected-hash/revision kontrolu každého zápisu.
-- `NAVRH_EPIZODICKE_PAMETI_KONTEXTU_v0.1.md` zůstává kandidátní architekturou. Schválen je pouze offline experiment E0; produktová implementace, FTS5, reranking ani embeddings nejsou automaticky součástí O1.
+- `docs/product/NAVRH_EPIZODICKE_PAMETI_KONTEXTU_v0.1.md` zůstává kandidátní architekturou. Schválen je pouze offline experiment E0; produktová implementace, FTS5, reranking ani embeddings nejsou automaticky součástí O1.
 - Neveřejný nebo uniklý proprietární codebase se nepoužívá jako implementační podklad. Technická rešerše čerpá z veřejných dokumentací a repozitářů s ověřenou licencí a u převzatých praktik eviduje původ a vlastní odůvodnění.
 - Pokud se starší text níže nebo dřívější podklady rozcházejí s v0.3 dokumenty, platí v0.3.
 
 ## Aktualizace po revizi PRD v0.2 – 11. srpna 2026
 
 - Aktuálním pracovním názvem produktu je **Codryn**; Codey je předchozí pracovní název.
-- Aktuální produktovou autoritou je `PRD_v0.2.md`.
-- Důvody uzavřených rozhodnutí jsou v `REGISTR_ROZHODNUTI_v0.2.md`.
-- Interní časový a scope rámec je v `ETAPIZACE_v0.2.md`; nejde o školní měsíční seznam úkolů.
-- Schválený kandidát koordinace souběžných relací je popsán v `NAVRH_WORKSPACE_AWARENESS_v0.1.md` a musí být zapracován do kandidáta PRD v1.0.
+- Aktuální produktovou autoritou je `docs/product/PRD_v0.2.md`.
+- Důvody uzavřených rozhodnutí jsou v `docs/product/REGISTR_ROZHODNUTI_v0.2.md`.
+- Interní časový a scope rámec je v `docs/product/ETAPIZACE_v0.2.md`; nejde o školní měsíční seznam úkolů.
+- Schválený kandidát koordinace souběžných relací je popsán v `docs/product/NAVRH_WORKSPACE_AWARENESS_v0.1.md` a musí být zapracován do kandidáta PRD v1.0.
 - Subagenti smějí už v O1 přímo zapisovat do společného workspace; platí pro ně stejná hashová ochrana, provenance a koordinace stavových operací jako pro samostatné relace.
 - Koordinační `taskSummary` vzniká v O1 automaticky z aktuálního zadání a plánu agenta a uživatel jej může upravit nebo vypnout; lehký sumarizační model je pozdější rozšíření pro dlouhé relace.
 - `recently_writing` trvá pět minut od posledního zápisu; potom relace s nevrácenými změnami přechází do `idle_with_changes`, jinak přestává být aktivní pro koordinaci.
 - Koordinátor serializuje podle konkrétního zdroje stavové Git operace, změny balíčků/lockfilu a databázové migrace. Dev servery nezamyká; jejich runtime konflikty řeší běžný procesní výsledek.
 - Pokud se starší text níže nebo dřívější podklady rozcházejí s těmito třemi dokumenty, platí v0.2.
-- `PRD_v0.1.md` zůstává zachované jako historický snapshot.
+- `docs/product/PRD_v0.1.md` zůstává zachované jako historický snapshot.
 
 ## Školní kontext
 
@@ -394,9 +394,9 @@ funkce.
 
 - `Idea Paper Converted.txt` – původní stručný seznam funkcí a rozhodování
   Electron vs. Tauri.
-- `Vylepšení AI kódovacího nástroje.md` – předchozí brainstorming, vysvětlení
+- `docs/product/Vylepšení AI kódovacího nástroje.md` – předchozí brainstorming, vysvětlení
   AST, návrh rozdělení UI/orchestrátoru/harnessu/nástrojů a ukázková mapa.
-- `Analýza alternativních kódovacích nástrojů.md` – rešerše Aideru,
+- `docs/product/Analýza alternativních kódovacích nástrojů.md` – rešerše Aideru,
   OpenHands, Continue a MCP; slouží jako inspirace, nikoli jako bezvýhradně
   ověřený zdroj aktuálních technických či cenových údajů.
 
