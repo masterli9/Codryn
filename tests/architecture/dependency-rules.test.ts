@@ -47,8 +47,25 @@ describe('workspace boundaries', () => {
 });
 
 describe('production dependency boundaries', () => {
+  it('rejects a nested core-to-desktop import with the core boundary rule', async () => {
+    const root = await mkdtemp(join(workspaceRoot, 'tests', 'dependency-rules-'));
+    const coreDirectory = join(root, 'backend/core');
+    const desktopDirectory = join(root, 'apps/desktop');
+    try {
+      await mkdir(coreDirectory, { recursive: true });
+      await mkdir(desktopDirectory, { recursive: true });
+      await writeFile(join(desktopDirectory, 'index.ts'), 'export const desktop = true;\n');
+      await writeFile(join(coreDirectory, 'index.ts'), "import { desktop } from '../../apps/desktop/index';\nvoid desktop;\n");
+      const violations = await dependencyViolations(join(coreDirectory, 'index.ts'));
+      expect(violations).toContainEqual(expect.objectContaining({
+        rule: expect.objectContaining({ name: 'core-must-not-import-infrastructure' })
+      }));
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it.each([
-    'electron',
     'node:sqlite',
     'node:child_process',
     'node:fs/promises',
@@ -70,6 +87,13 @@ describe('production dependency boundaries', () => {
     } finally {
       await rm(fixture.directory, { recursive: true, force: true });
     }
+  });
+
+  it('declares Electron as a forbidden core runtime adapter', () => {
+    const rule = boundaryConfig.forbidden.find(({ name }) => name === 'core-must-not-import-runtime-adapters');
+    expect(rule).toBeDefined();
+    expect(new RegExp(rule?.to.path ?? '')).toMatchObject(expect.any(RegExp));
+    expect(new RegExp(rule?.to.path ?? '').test('electron')).toBe(true);
   });
 
   it('rejects a renderer import of a main-process module', async () => {

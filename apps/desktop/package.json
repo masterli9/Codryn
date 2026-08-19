@@ -1,6 +1,8 @@
 {
   "name": "@codryn/desktop",
   "version": "0.0.0",
+  "description": "Codryn desktop AI coding agent",
+  "author": "Andrej Zdvorak",
   "private": true,
   "main": ".webpack/main",
   "scripts": {

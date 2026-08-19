@@ -3,34 +3,34 @@ export default {
     {
       name: 'core-must-not-import-infrastructure',
       severity: 'error',
-      from: { path: '^backend/core/' },
-      to: { path: '^(backend/infrastructure/|apps/desktop/)' }
+      from: { path: '(^|/)backend/core/' },
+      to: { path: '(^|/)(backend/infrastructure/|apps/desktop/)' }
     },
     {
       name: 'core-must-not-import-runtime-adapters',
       severity: 'error',
-      from: { path: '^backend/core/' },
+      from: { path: '(^|/)backend/core/' },
       to: {
-        path: '^(electron|(?:node:)?sqlite|(?:node:)?child_process|(?:node:)?fs(?:/promises)?|simple-git|isomorphic-git|nodegit|dugite)$'
+        path: '((^|/)(node_modules/)?electron(/|$)|^(?:node:)?sqlite$|^(?:node:)?child_process$|^(?:node:)?fs(?:/promises)?$|^(simple-git|isomorphic-git|nodegit|dugite)$)'
       }
     },
     {
       name: 'shared-must-stay-independent',
       severity: 'error',
-      from: { path: '^shared/' },
-      to: { path: '^(backend/|apps/desktop/|tests/)' }
+      from: { path: '(^|/)shared/' },
+      to: { path: '(^|/)(backend/|apps/desktop/|tests/)' }
     },
     {
       name: 'renderer-must-use-preload',
       severity: 'error',
-      from: { path: '^apps/desktop/src/renderer/' },
-      to: { path: '^(backend/|apps/desktop/src/(?!renderer/|preload/))' }
+      from: { path: '(^|/)apps/desktop/src/renderer/' },
+      to: { path: '(^|/)(backend/|apps/desktop/src/(?!renderer/|preload/))' }
     },
     {
       name: 'production-must-not-import-test-support',
       severity: 'error',
-      from: { path: '^(apps/|backend/|shared/)' },
-      to: { path: '^tests/support/' }
+      from: { path: '(^|/)(apps/|backend/|shared/)' },
+      to: { path: '(^|/)tests/support/' }
     }
   ],
   options: {

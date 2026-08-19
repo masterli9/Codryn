@@ -2,7 +2,7 @@ import eslint from '@eslint/js';
 import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
-  { ignores: ['node_modules/**', 'out/**', 'dist/**', 'coverage/**'] },
+  { ignores: ['node_modules/**', 'out/**', 'dist/**', 'coverage/**', '**/.webpack/**'] },
   eslint.configs.recommended,
   ...tseslint.configs.strict,
   {
@@ -10,7 +10,9 @@ export default tseslint.config(
     languageOptions: {
       globals: {
         console: 'readonly',
-        process: 'readonly'
+        process: 'readonly',
+        setTimeout: 'readonly',
+        clearTimeout: 'readonly'
       }
     }
   },
