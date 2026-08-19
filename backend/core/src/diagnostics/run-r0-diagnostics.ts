@@ -296,7 +296,10 @@ export class RunR0Diagnostics {
     if (result.termination === 'spawn_failed') {
       throw new R0DiagnosticFailure('R0_PROCESS_SPAWN_FAILED');
     }
-    if (result.termination !== 'output_limit_exceeded' || !result.stdoutTruncated || !result.stderrTruncated) {
+    if (
+      result.termination !== 'output_limit_exceeded' ||
+      (!result.stdoutTruncated && !result.stderrTruncated)
+    ) {
       throw new R0DiagnosticFailure('R0_PROCESS_OUTPUT_LIMIT');
     }
     if (!result.treeTerminated) {
