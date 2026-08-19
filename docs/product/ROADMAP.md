@@ -3,7 +3,7 @@
 | Položka | Hodnota |
 | --- | --- |
 | Stav | Schválený pracovní postup vývoje |
-| Verze návaznosti | PRD v0.3 |
+| Verze návaznosti | PRD v1.0 |
 | Časový formát | Záměrně bez kalendářních dat |
 | Závazný konec | Finální školní verze a obhajovací build |
 
@@ -14,9 +14,9 @@ Tento dokument určuje pořadí, v jakém se Codryn staví a ověřuje. Každý 
 Dokumenty mají rozdílné odpovědnosti:
 
 - `PROJECT_CONTEXT.md` je zdroj pravdy pro současný stav a dosavadní rozhodnutí;
-- `PRD_v0.3.md` určuje, co a proč má produkt umět, včetně priorit a akceptačních kritérií;
-- `REGISTR_ROZHODNUTI_v0.3.md` uchovává přijatá rozhodnutí a jejich důvody;
-- `ETAPIZACE_v0.3.md` řídí rozsah, rizika a vazbu na O1, ŠF a PŠ;
+- `PRD_v1.0.md` určuje, co a proč má produkt umět, včetně priorit a akceptačních kritérií;
+- `REGISTR_ROZHODNUTI_v1.0.md` uchovává přijatá rozhodnutí a jejich důvody;
+- `ETAPIZACE_v1.0.md` řídí rozsah, rizika a vazbu na O1, ŠF a PŠ;
 - `ROADMAP.md` určuje pořadí implementačních přírůstků bez datumů;
 - oblastní implementační specifikace budou před zahájením příslušné oblasti určovat přesné kontrakty, soubory, migrace, knihovny a testovací kroky;
 - traceability matice bude během vývoje spojovat požadavek, implementaci, test, důkaz, omezení a stav.
@@ -82,7 +82,7 @@ Existuje minimální technický řez, který na Windows spustí Electron spike, 
 
 ### Závislosti
 
-- schválené hranice PRD v0.3;
+- schválené hranice PRD v1.0;
 - cílové prostředí Windows 11;
 - rozhodnutí DR-05, DR-06, DR-10, DR-16 a DR-21.
 
@@ -301,7 +301,7 @@ Doplnit rozlišující schopnosti a povinný funkční rozsah první obhajoby na
 
 ### Pozorovatelný výsledek
 
-Codryn dokončí reálný úkol nad malým TypeScript/React projektem, použije relevantní kontext a strukturální nástroje, bezpečně pracuje s Gitem a zobrazuje koordinaci souběžné práce.
+Codryn dokončí reálný úkol nad malým TypeScript/React projektem, použije relevantní a auditovatelný kontext, strukturální nástroje a bezpečný lokální Git tok. Když chybí rozhodnutí, položí obnovitelnou strukturovanou otázku bez obcházení oprávnění. Každý zápis a ověření respektuje aktuální workspace i při souběžné externí změně.
 
 ### Zahrnutý rozsah
 
@@ -309,13 +309,14 @@ Codryn dokončí reálný úkol nad malým TypeScript/React projektem, použije 
 - TypeScript profil: rozpoznání, definice, reference, typy, diagnostika a import/export vazby;
 - rychlý deterministický základ repo mapy, cílené prohlubování, invalidace a hlubší inicializace;
 - finální O1 `@` reference na soubory a složky a audit sestaveného kontextu;
-- kompaktní Git workspace: stav, staged/unstaged soubory, diff, historie, branch, commit, AI návrh commit message, fetch, pull a push;
-- čerstvé Git preflighty, credential mechanismus, serializace a zákaz automatického force push;
-- Workspace State, koordinační snapshot souběžných relací, `WorkIntent` a stupně překryvu;
-- základ subagenta, viditelný strom, provenance a přímý expected-hash zápis;
-- lokální kurátorovaný katalog a bezpečný náhled ručního importu manifestu;
-- offline experiment E0 epizodické paměti bez automatického rozšíření produktového scope;
-- ruční obrázek a jednoduchá kreslená anotace pouze tehdy, pokud neohrozí kritickou cestu O1.
+- kompaktní lokální Git workspace: stav, staged/unstaged soubory, diff, historie, branch, commit a AI návrh commit message;
+- čerstvé Git preflighty, resource-key serializace a audit stavových operací;
+- Workspace State, `workspaceRevision`, expected-hash/revision ochrana všech zápisů, provenience aktéra a pravdivá invalidace verification recordu;
+- `.codrynignore` a výchozí ochranná politika jednotně použitá při crawlu, hledání, TypeScript indexování, repo mapě, hlubší inicializaci a sestavování kontextu;
+- strukturované otázky s důvodem, dvěma až pěti možnostmi a vlastní odpovědí, trvalý stav `waiting_for_user_input`, právě jedno pokračování původní relace a samostatné oprávnění případné rizikové akce;
+- interní registry a dva vestavěné workflows: nejméně jeden planning nebo brainstorming skill a jeden ověřovací workflow.
+
+**Volitelný cíl S/O1:** `fetch`, `pull` a `push`; bezpečný náhled ručního importu lokálního manifestu; `taskSummary`, koordinační snapshot, `WorkIntent`, stupně překryvu, viditelný strom a skuteční subagenti; offline E0 bez automatického rozšíření produktového scope; ruční obrázek a jednoduchá kreslená anotace. Nesplněná volitelná schopnost neblokuje R4 ani O1.
 
 ### Vědomě nezahrnutý rozsah
 
@@ -328,27 +329,32 @@ Codryn dokončí reálný úkol nad malým TypeScript/React projektem, použije 
 ### Závislosti
 
 - dokončené R3;
-- samostatné oblastní specifikace pro provider adapter, TypeScript profil, kontext, Git a koordinaci;
+- samostatné oblastní specifikace pro provider adapter, TypeScript profil, kontext, lokální Git a bezpečnostní jádro workspace;
 - verzované eval datasety a fixtures.
 
 ### Vazba na PRD
 
 - `FR-TS-01` až `FR-TS-08`;
 - `FR-CTX-01` až `FR-CTX-06`;
-- O1 Git požadavky;
-- `FR-COORD-01` až `FR-COORD-14`;
-- `FR-EXT-01` až `FR-EXT-04`;
-- požadavky experimentu E0.
+- M/O1 Git požadavky;
+- `FR-CTX-12` až `FR-CTX-17`;
+- M/O1 bezpečnostní jádro `FR-COORD-01`, `FR-COORD-02`, `FR-COORD-08` až `FR-COORD-10` a `FR-COORD-14`;
+- `FR-CHAT-19` až `FR-CHAT-21` a `FR-ORCH-11`;
+- `FR-EXT-01` a `FR-EXT-02`;
+- volitelné S/O1 požadavky pouze tehdy, pokud jsou v alfu skutečně zařazeny.
 
 ### Povinné ověření
 
 - provider eval na shodné sadě tool-calling úloh;
 - nejméně malá ručně ověřená sada TypeScript strukturálních dotazů;
 - repo mapa proti baseline na stejných fixture úlohách;
-- lokální Git remote scénáře pro ahead/behind, pull s lokální změnou, konflikt a non-fast-forward push;
-- souběžný stale patch a resource-key konflikt;
-- subagent provenance a rodičovská kontrola výsledku;
-- reprodukovatelný E0 report a explicitní rozhodnutí podle jeho gate.
+- lokální Git scénáře pro status, diff, stage/unstage, branch a commit včetně externě změněného indexu;
+- souběžný nebo simulovaný stale patch a resource-key konflikt bez požadavku na produktově dostupný subagent;
+- `.codrynignore` security suite včetně výchozí ochrany, neplatného pravidla, jednorázové souborové výjimky, tajemství a invalidace odvozených dat;
+- E2E strukturované otázky včetně restartu rendereru, duplicitní odpovědi, právě jednoho pokračování a odděleného permission requestu podle `AC-O1-31`;
+- kontraktní test vestavěného registry a obou povinných workflows.
+
+Každá skutečně zařazená S/O1 schopnost dostane vlastní důkaz: remote Git fixture, importní fixture, koordinaci a subagent provenance, E0 report nebo canvas round-trip. Její absence nesmí být skryta v souhrnu O1.
 
 ### Dokončovací brána
 
@@ -356,7 +362,7 @@ R4 je dokončeno, když všechna M/O1 funkční kritéria zařazená do široké
 
 ### Důkaz a porozumění autora
 
-- provider eval report, TypeScript eval, Git fixture report, concurrency trace a E0 report;
+- provider eval report, TypeScript eval, lokální Git fixture report, `.codrynignore` report a concurrency trace bezpečnostního jádra; případné S/O1 reporty jsou označeny jako volitelné;
 - autor vysvětlí sestavení kontextu, invalidaci repo mapy, bezpečný Git preflight a rozdíl mezi awareness a optimistic concurrency.
 
 ## 9. R5 – stabilizace první obhajoby
@@ -418,7 +424,7 @@ Rozšířit stabilní lokální jádro o povinné produktové schopnosti ŠF bez
 
 ### Pozorovatelný výsledek
 
-Nový uživatel projde onboardingem, přizpůsobí pracovní plochu, použije dva modelové adaptéry, bezpečné režimy oprávnění, multimodální vstup, účet a omezenou cloudovou synchronizaci, zatímco lokální agentní jádro zůstane funkční offline.
+Nový uživatel projde onboardingem, přizpůsobí pracovní plochu, použije dva modelové adaptéry, bezpečné režimy oprávnění, multimodální vstup, účet a omezenou cloudovou synchronizaci, zatímco lokální agentní jádro zůstane funkční offline. U podporovaného vizuálního úkolu Codryn doloží výsledek screenshotem aktuální revize a vision-checkem, nebo jej pravdivě označí jako vizuálně neověřený.
 
 ### Zahrnutý rozsah
 
@@ -431,7 +437,10 @@ Nový uživatel projde onboardingem, přizpůsobí pracovní plochu, použije dv
 - explicitní zákaz běžné synchronizace zdrojového kódu, snapshotů a API klíčů;
 - obecné textové a obrazové přílohy, drag-and-drop a vložení obrázku ze schránky;
 - multimodální canvas;
+- povinný Playwright screenshot a vision-check pro podporované úkoly závislé na vykresleném UI, včetně vazby na workspace revizi, viewport a zadání, opravné smyčky a stavu „vizuálně neověřeno“ při nedostupné kontrole;
 - kurátorovaný katalog, bezpečný manifest, zapnutí, vypnutí a minimální MCP životní cyklus;
+- vzdálené Git operace `fetch`, `pull` a `push` přes Git CLI a systémový credential helper nebo SSH, pokud nevznikly už jako S/O1;
+- `taskSummary`, koordinační snapshot, vyhodnocení překryvu, viditelný strom a skuteční subagenti, pokud nevznikli už jako S/O1;
 - graf větví a historie navazující na O1 Git workspace;
 - rozdílový snapshot obnovené relace a registr spolehlivě sledovaných procesů.
 
@@ -448,6 +457,12 @@ Nový uživatel projde onboardingem, přizpůsobí pracovní plochu, použije dv
 - samostatné threat modely a specifikace pro Auto režim, cloud, pluginy a multimodální data;
 - úspěšné technické experimenty pro podmíněné části.
 
+### Vazba na PRD
+
+- `FR-TERM-08` až `FR-TERM-11`;
+- `US-23` a `AC-SF-22`;
+- ostatní M/ŠF požadavky přidělené produktizaci podle traceability matice.
+
 ### Povinné ověření
 
 - úplná O1 regresní sada po každé nové vrstvě;
@@ -457,15 +472,18 @@ Nový uživatel projde onboardingem, přizpůsobí pracovní plochu, použije dv
 - kontrola cloudového schématu a exportu proti zakázaným datům;
 - obnovitelnost layoutu bez ztráty chatů nebo změn;
 - izolace neplatného manifestu a pádu MCP serveru;
-- multimodální round-trip původního obrázku, kresby a textu.
+- bezpečné odmítnutí rizikového pull/push toku, nepodporovaného credential promptu a úniku Git tajemství;
+- stale zápis subagenta, audit provenience a rodičovská kontrola výsledku;
+- multimodální round-trip původního obrázku, kresby a textu;
+- webová fixture podle `AC-SF-22`: známý vizuální nesoulad, strukturovaný výsledek, oprava, screenshot aktuální revize, invalidace stale screenshotu a fallback při nedostupném preview, Playwrightu nebo obrazové capability.
 
 ### Dokončovací brána
 
-R6 je dokončeno, když povinné ŠF funkce pracují nad stejným lokálním jádrem, cloud ani plugin nesmí blokovat lokální agentní úkol a O1 regresní sada zůstává zelená.
+R6 je dokončeno, když povinné ŠF funkce pracují nad stejným lokálním jádrem, cloud ani plugin nesmí blokovat lokální agentní úkol, podporovaný vizuální úkol nelze označit za vizuálně ověřený bez aktuálního důkazu a O1 regresní sada zůstává zelená.
 
 ### Důkaz a porozumění autora
 
-- kontraktní report adapterů, Auto security eval, cloud data-flow diagram, recovery test a plugin permission trace;
+- kontraktní report adapterů, Auto security eval, cloud data-flow diagram, recovery test, plugin permission trace a report vizuálního ověření;
 - autor vysvětlí hranici lokální/cloud, pořadí pevné politiky a klasifikátoru a izolaci externího rozšíření.
 
 ## 11. R7 – finální kvalita a release candidate
@@ -482,7 +500,7 @@ Release candidate je čitelný, ovladatelný, měřený a zdokumentovaný; kriti
 
 - finální vizuální směr při zachování autorovy kontroly identity;
 - světlé a tmavé schéma, focus, klávesová navigace a reduced motion;
-- Playwright screenshot a navazující multimodální ověřovací tok;
+- stabilizace Playwright/vision toku na známých nesouladech, stale revizích a reprezentativních šířkách viewportu;
 - uživatelské testování a prioritizované opravy;
 - TypeScript profil, repo mapa a Auto režim proti schváleným baseline;
 - výkon, limity výstupů, retence a diagnostický export;
@@ -508,6 +526,7 @@ Release candidate je čitelný, ovladatelný, měřený a zdokumentovaný; kriti
 - uživatelské testy nad hlavním scénářem;
 - instalace, migrace, recovery a diagnostický export;
 - měřené eval reporty podle PRD;
+- kontrola vizuálních důkazů, jejich vazby na aktuální revizi a zveřejněných omezení;
 - kontrola dokumentace proti aktuálnímu buildu.
 
 ### Dokončovací brána
@@ -576,7 +595,7 @@ Tato část není závazným implementačním pořadím. Nápad se přesune do a
 - další jazykové a frameworkové capability profily;
 - širší podpora lokálních modelů a model routing;
 - pokročilá dlouhodobá paměť a background agenti;
-- veřejný nebo komunitní marketplace, podpisy, aktualizace a reputace zdrojů;
+- instalace skillů nebo pluginů z GitHubu či jiné URL, veřejný nebo komunitní marketplace, podpisy, aktualizace a reputace zdrojů;
 - týmové účty, sdílené politiky a kolaborace;
 - silnější procesní a síťový sandbox;
 - bezpečný handoff rozpracované práce mezi zařízeními;

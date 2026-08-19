@@ -5,6 +5,17 @@
 > významném rozhodnutí ho aktualizuj. Nezaměňuj zde označené nápady za hotová
 > rozhodnutí.
 
+## Aktualizace po vydání PRD v1.0 – 14. srpna 2026
+
+- Aktuální produktovou autoritou je `PRD_v1.0.md`. `docs/product/PRD_v0.3.md`, `docs/product/PRD_v0.2.md` a `docs/product/PRD_v0.1.md` jsou neměnné historické snapshoty.
+- Důvody schválených rozhodnutí jsou v `docs/product/REGISTR_ROZHODNUTI_v1.0.md`, řízení rozsahu v `docs/product/ETAPIZACE_v1.0.md` a pořadí implementačních přírůstků bez kalendářních dat v `docs/product/ROADMAP.md`.
+- PRD v1.0 je schválený implementačně připravený produktový kontrakt, nikoli tvrzení, že je celý produkt hotový. Významná změna rozsahu, priority, etapy, bezpečnosti, dat nebo akceptačního kritéria vyžaduje novou verzi PRD.
+- První funkční průřez nadále vzniká bez produktového UI přes interní headless/CLI driver nad stejnými aplikačními službami, které později používá Electron. Současně vzniká pouze minimální Electron spike pro včasné ověření balení, úzkého IPC, SQLite a procesního runneru.
+- Povinný O1 Git rozsah je lokální; `fetch`, `pull` a `push` jsou volitelný rozsah S/O1 a nejpozději M/ŠF. Vzdálené Git operace používají nainstalovaný Git CLI a systémovou autentizaci; Codryn hesla, tokeny ani privátní klíče nečte ani neukládá.
+- Bezpečnostní jádro Workspace Intelligence v O1 tvoří `workspaceRevision`, ochrana zápisů očekávaným hashem/revizí, invalidace zastaralých ověřovacích záznamů, serializace podle zdroje a audit původu změny. Koordinace více relací a skuteční subagenti jsou volitelný rozsah.
+- `.codrynignore` je M/O1 hranice automatického procházení projektu, hledání, indexování a sestavování kontextu. E0 epizodická paměť je volitelný experiment a produktová epizodická paměť vyžaduje samostatné rozhodnutí.
+- Pokud se starší text níže nebo starší dokumenty rozcházejí s v1.0 sadou, platí v1.0.
+
 ## Aktualizace po schválení návrhu R0 – 17. srpna 2026
 
 - Návrhová specifikace prvního implementačního kroku je schválená v `docs/superpowers/specs/2026-08-17-r0-technicke-zaklady-design.md`; detailní implementační plán na ni může přímo navázat.
@@ -14,7 +25,7 @@
 - Viditelný výsledek R0 je pravdivá diagnostika databáze, procesního runneru a lokálního Git fixture se stavy `pass`, `fail` a `skipped`. Stejnou backendovou službu volá test, IPC i interní packaged smoke režim.
 - Procesní spike R0 ověří ukončení podporovaného stromu přes explicitní Windows mechanismus, ale nebude jej vydávat za bezpečnostní sandbox. Povinná O1 volba Windows Job Object nebo ověřeného ekvivalentu zůstává před obecným shell toolem samostatnou branou.
 
-## Aktualizace po revizi PRD v0.3 – 12. srpna 2026
+## Historická aktualizace po revizi PRD v0.3 – 12. srpna 2026
 
 - Aktuální produktovou autoritou je `PRD_v0.3.md`; `docs/product/PRD_v0.2.md` a `docs/product/PRD_v0.1.md` jsou historické snapshoty.
 - Důvody uzavřených rozhodnutí jsou v `docs/product/REGISTR_ROZHODNUTI_v0.3.md` a interní rámec je v `docs/product/ETAPIZACE_v0.3.md`.
@@ -31,7 +42,7 @@
 - Neveřejný nebo uniklý proprietární codebase se nepoužívá jako implementační podklad. Technická rešerše čerpá z veřejných dokumentací a repozitářů s ověřenou licencí a u převzatých praktik eviduje původ a vlastní odůvodnění.
 - Pokud se starší text níže nebo dřívější podklady rozcházejí s v0.3 dokumenty, platí v0.3.
 
-## Aktualizace po revizi PRD v0.2 – 11. srpna 2026
+## Historická aktualizace po revizi PRD v0.2 – 11. srpna 2026
 
 - Aktuálním pracovním názvem produktu je **Codryn**; Codey je předchozí pracovní název.
 - Aktuální produktovou autoritou je `docs/product/PRD_v0.2.md`.
