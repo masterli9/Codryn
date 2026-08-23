@@ -20,9 +20,9 @@ Při vzniku PRD byly použity následující podklady v tomto pořadí autority:
 
 1. `PROJECT_CONTEXT.md` – zdroj pravdy pro dosavadní rozhodnutí;
 2. aktuální zadání autora projektu, včetně rozhodnutí přijatých při revizi PRD v0.2;
-3. `REGISTR_ROZHODNUTI_v0.3.md` a `ETAPIZACE_v0.3.md` jako doprovodné dokumenty;
-4. `NAVRH_WORKSPACE_AWARENESS_v0.1.md` v rozsahu schváleném pro tuto revizi;
-5. `NAVRH_EPIZODICKE_PAMETI_KONTEXTU_v0.1.md` pouze jako podklad experimentu E0, nikoli jako schválená produktová funkce;
+3. `docs/product/REGISTR_ROZHODNUTI_v0.3.md` a `docs/product/ETAPIZACE_v0.3.md` jako doprovodné dokumenty;
+4. `docs/product/NAVRH_WORKSPACE_AWARENESS_v0.1.md` v rozsahu schváleném pro tuto revizi;
+5. `docs/product/NAVRH_EPIZODICKE_PAMETI_KONTEXTU_v0.1.md` pouze jako podklad experimentu E0, nikoli jako schválená produktová funkce;
 6. starší idea a analytické dokumenty.
 
 Starší podklady jsou inspirací. Jejich tvrzení o cenách, modelech, schopnostech konkurence, uniklých implementacích nebo budoucích standardech nejsou bez dalšího ověření považována za fakta ani závazné požadavky. Pokud se podklady rozcházejí, platí `PROJECT_CONTEXT.md`.

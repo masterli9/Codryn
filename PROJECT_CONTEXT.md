@@ -7,27 +7,29 @@
 
 ## Aktualizace po vydání PRD v1.0 – 14. srpna 2026
 
-- Aktuální produktovou autoritou je `PRD_v1.0.md`. `PRD_v0.3.md`, `PRD_v0.2.md` a `PRD_v0.1.md` jsou neměnné historické snapshoty.
-- Důvody schválených rozhodnutí jsou v `REGISTR_ROZHODNUTI_v1.0.md`, řízení rozsahu v `ETAPIZACE_v1.0.md` a pořadí implementačních přírůstků bez kalendářních dat v `ROADMAP.md`.
-- v1.0 znamená schválený implementačně připravený produktový kontrakt, nikoli hotovou implementaci. Po vydání se nemění; významná změna rozsahu, priority, etapy, bezpečnosti, dat nebo akceptačního kritéria vyžaduje novou verzi nejméně v1.1.
+- Aktuální produktovou autoritou je `PRD_v1.0.md`. `docs/product/PRD_v0.3.md`, `docs/product/PRD_v0.2.md` a `docs/product/PRD_v0.1.md` jsou neměnné historické snapshoty.
+- Důvody schválených rozhodnutí jsou v `docs/product/REGISTR_ROZHODNUTI_v1.0.md`, řízení rozsahu v `docs/product/ETAPIZACE_v1.0.md` a pořadí implementačních přírůstků bez kalendářních dat v `docs/product/ROADMAP.md`.
+- PRD v1.0 je schválený implementačně připravený produktový kontrakt, nikoli tvrzení, že je celý produkt hotový. Významná změna rozsahu, priority, etapy, bezpečnosti, dat nebo akceptačního kritéria vyžaduje novou verzi PRD.
 - První funkční průřez nadále vzniká bez produktového UI přes interní headless/CLI driver nad stejnými aplikačními službami, které později používá Electron. Současně vzniká pouze minimální Electron spike pro včasné ověření balení, úzkého IPC, SQLite a procesního runneru.
-- Povinný O1 Git rozsah je lokální: status, diff, historie, stage/unstage celého souboru, branch, commit a upravitelný AI návrh commit message. `fetch`, `pull` a `push` jsou S/O1 a M/ŠF.
-- Vzdálené Git operace používají nainstalovaný Git CLI a autentizaci ponechají systémovému credential helperu nebo SSH. Codryn hesla, tokeny ani privátní klíče nečte ani neukládá; nepodporovaný interaktivní prompt bezpečně skončí s návodem přihlásit se mimo agentní relaci.
-- Povinné bezpečnostní jádro Workspace Intelligence v O1 tvoří `workspaceRevision`, expected-hash/revision ochrana zápisů, invalidace zastaralých verification recordů, resource-key serializace a audit provenience. `taskSummary`, snapshot aktivních relací, překryv, viditelný strom a skuteční subagenti jsou S/O1 a M/ŠF.
-- `.codrynignore` je M/O1 a spolu s bezpečnými výchozími pravidly jednotně chrání automatický crawl, hledání, TypeScript index, repo mapu, hlubší inicializaci a context assembly. `.gitignore` je jen doplňkový signál; změna pravidel invaliduje dotčená odvozená data.
-- Strukturované upřesňující otázky jsou M/O1: obsahují důvod, dvě až pět možností a vlastní odpověď, trvale pozastaví stejný běh ve `waiting_for_user_input` a po první platné odpovědi jej obnoví právě jednou. `UserQuestion` nikdy nenahrazuje `PermissionRequest`, nevyžaduje tajemství a navazující riziková akce znovu prochází permission enginem.
-- O1 povinně obsahuje interní registry a dva vestavěné workflows: planning/brainstorming a ověření. Import cizího lokálního manifestu je S/O1 a M/ŠF; minimální MCP klient a správa rozšíření jsou M/ŠF; instalace z GitHubu nebo URL je S/PŠ.
-- Playwright screenshot a vision-check jsou M/ŠF pro podporované úkoly závislé na vykresleném UI. „Vizuálně ověřeno“ vyžaduje screenshot aktuální relevantní workspace revize, záměr, viewport, výsledek a omezení; nesoulad se vrací do opravné smyčky a nedostupná kontrola se vždy označí „vizuálně neověřeno“.
-- Vývoj probíhá přes krátkodobé pracovní branche nad stabilní `main`; přímý vývoj funkcí na `main` se nepoužívá. Před obhajobami vzniknou stabilizační branche `release/o1` a `release/sf`. Přesný commit skutečně použitého obhajovacího buildu se vždy uzamkne neměnným anotovaným tagem `obhajoba/o1-vN` nebo `obhajoba/sf-vN` a archivuje se s instalačním artefaktem, checksumem, test reportem a známými omezeními. Pozdější vývoj tak může pokračovat bez ztráty možnosti obnovit přesnou obhajovací verzi.
-- E0 epizodické paměti je volitelný experiment S/O1 a neblokuje O1 ani ŠF. Produktová epizodická paměť je nejdříve C/PŠ, pouze po úspěšném E0 a samostatném rozhodnutí.
-- Neveřejný, uniklý nebo licenčně nejasný proprietární codebase se nepoužívá jako implementační podklad. Přípustná inspirace vychází z veřejného chování, oficiální dokumentace a veřejných repozitářů s ověřenou licencí; významný vliv eviduje původ a vlastní odůvodnění.
+- Povinný O1 Git rozsah je lokální; `fetch`, `pull` a `push` jsou volitelný rozsah S/O1 a nejpozději M/ŠF. Vzdálené Git operace používají nainstalovaný Git CLI a systémovou autentizaci; Codryn hesla, tokeny ani privátní klíče nečte ani neukládá.
+- Bezpečnostní jádro Workspace Intelligence v O1 tvoří `workspaceRevision`, ochrana zápisů očekávaným hashem/revizí, invalidace zastaralých ověřovacích záznamů, serializace podle zdroje a audit původu změny. Koordinace více relací a skuteční subagenti jsou volitelný rozsah.
+- `.codrynignore` je M/O1 hranice automatického procházení projektu, hledání, indexování a sestavování kontextu. E0 epizodická paměť je volitelný experiment a produktová epizodická paměť vyžaduje samostatné rozhodnutí.
 - Pokud se starší text níže nebo starší dokumenty rozcházejí s v1.0 sadou, platí v1.0.
 
-## Aktualizace po revizi PRD v0.3 – 12. srpna 2026
+## Aktualizace po schválení návrhu R0 – 17. srpna 2026
 
-- Aktuální produktovou autoritou je `PRD_v0.3.md`; `PRD_v0.2.md` a `PRD_v0.1.md` jsou historické snapshoty.
-- Důvody uzavřených rozhodnutí jsou v `REGISTR_ROZHODNUTI_v0.3.md` a interní rámec je v `ETAPIZACE_v0.3.md`.
-- Pořadí skutečné implementace bez kalendářních dat určuje `ROADMAP.md`. Roadmap nenahrazuje produktový rozsah PRD ani řízení rizika v etapizaci.
+- Návrhová specifikace prvního implementačního kroku je schválená v `docs/superpowers/specs/2026-08-17-r0-technicke-zaklady-design.md`; detailní implementační plán na ni může přímo navázat.
+- R0 použije npm workspaces. Srozumitelné kořenové hranice jsou `apps/desktop`, `backend/core`, `backend/infrastructure`, `shared` a `tests/support`; všechny interní workspace zůstanou privátní.
+- Electron spike použije Electron Forge se stabilní Webpack + TypeScript cestou. R0 renderer je pouze statická diagnostická stránka bez Reactu; produktové UI zůstává pro R3.
+- SQLite adapter použije vestavěné `node:sqlite` za vlastním backendovým rozhraním. R0 povinně ověří WAL, migraci, znovuotevření i obsahovou zálohu v Node testu a zabaleném Electron buildu.
+- Viditelný výsledek R0 je pravdivá diagnostika databáze, procesního runneru a lokálního Git fixture se stavy `pass`, `fail` a `skipped`. Stejnou backendovou službu volá test, IPC i interní packaged smoke režim.
+- Procesní spike R0 ověří ukončení podporovaného stromu přes explicitní Windows mechanismus, ale nebude jej vydávat za bezpečnostní sandbox. Povinná O1 volba Windows Job Object nebo ověřeného ekvivalentu zůstává před obecným shell toolem samostatnou branou.
+
+## Historická aktualizace po revizi PRD v0.3 – 12. srpna 2026
+
+- Aktuální produktovou autoritou je `PRD_v0.3.md`; `docs/product/PRD_v0.2.md` a `docs/product/PRD_v0.1.md` jsou historické snapshoty.
+- Důvody uzavřených rozhodnutí jsou v `docs/product/REGISTR_ROZHODNUTI_v0.3.md` a interní rámec je v `docs/product/ETAPIZACE_v0.3.md`.
+- Pořadí skutečné implementace bez kalendářních dat určuje `docs/product/ROADMAP.md`. Roadmap nenahrazuje produktový rozsah PRD ani řízení rizika v etapizaci.
 - První funkční vertikální průřez agentního jádra vznikne přes interní headless/CLI driver bez produktového UI. CLI není samostatný produkt ani druhé trvale udržované uživatelské rozhraní; používá stejné aplikační služby jako pozdější Electron renderer.
 - Současně s headless průřezem vznikne pouze minimální Electron spike pro včasné ověření Windows balení, úzkého IPC, SQLite a procesního runneru. Minimální produktové UI se připojí až ke stabilnímu jádru.
 - PRD v0.3 je technicky konkrétní na úrovni odpovědností komponent, stavových automatů, invariantů, datových toků, chyb a testů. Přesné TypeScript interface, SQL migrace, adresářová struktura a volba každé knihovny patří do navazujících implementačních specifikací.
@@ -36,23 +38,23 @@
 - O1 zahrnuje kompaktní Git workspace: stav, staged/unstaged změny, diff, historii, branch, commit, AI návrh commit message, fetch, pull a push. Operace jsou explicitní, používají čerstvý preflight, systémový Git credential mechanismus, resource-key serializaci a neprovádějí automatický force push.
 - Dřívější pevná volba Gemini `gemini-2.5-flash` jako prvního adaptéru je nahrazena provider evalem. Počáteční kandidáti jsou GPT-5.6 Luna a Gemini `gemini-2.5-flash`; rozhoduje agentní kvalita, latence, cena celého úkolu, dostupnost a aktuální datové podmínky.
 - Workspace Intelligence, koordinace relací a přímé zápisy subagentů jsou zapracovány do O1 v0.3. Awareness nenahrazuje expected-hash/revision kontrolu každého zápisu.
-- `NAVRH_EPIZODICKE_PAMETI_KONTEXTU_v0.1.md` zůstává kandidátní architekturou. Schválen je pouze offline experiment E0; produktová implementace, FTS5, reranking ani embeddings nejsou automaticky součástí O1.
+- `docs/product/NAVRH_EPIZODICKE_PAMETI_KONTEXTU_v0.1.md` zůstává kandidátní architekturou. Schválen je pouze offline experiment E0; produktová implementace, FTS5, reranking ani embeddings nejsou automaticky součástí O1.
 - Neveřejný nebo uniklý proprietární codebase se nepoužívá jako implementační podklad. Technická rešerše čerpá z veřejných dokumentací a repozitářů s ověřenou licencí a u převzatých praktik eviduje původ a vlastní odůvodnění.
 - Pokud se starší text níže nebo dřívější podklady rozcházejí s v0.3 dokumenty, platí v0.3.
 
-## Aktualizace po revizi PRD v0.2 – 11. srpna 2026
+## Historická aktualizace po revizi PRD v0.2 – 11. srpna 2026
 
 - Aktuálním pracovním názvem produktu je **Codryn**; Codey je předchozí pracovní název.
-- Aktuální produktovou autoritou je `PRD_v0.2.md`.
-- Důvody uzavřených rozhodnutí jsou v `REGISTR_ROZHODNUTI_v0.2.md`.
-- Interní časový a scope rámec je v `ETAPIZACE_v0.2.md`; nejde o školní měsíční seznam úkolů.
-- Schválený kandidát koordinace souběžných relací je popsán v `NAVRH_WORKSPACE_AWARENESS_v0.1.md` a musí být zapracován do kandidáta PRD v1.0.
+- Aktuální produktovou autoritou je `docs/product/PRD_v0.2.md`.
+- Důvody uzavřených rozhodnutí jsou v `docs/product/REGISTR_ROZHODNUTI_v0.2.md`.
+- Interní časový a scope rámec je v `docs/product/ETAPIZACE_v0.2.md`; nejde o školní měsíční seznam úkolů.
+- Schválený kandidát koordinace souběžných relací je popsán v `docs/product/NAVRH_WORKSPACE_AWARENESS_v0.1.md` a musí být zapracován do kandidáta PRD v1.0.
 - Subagenti smějí už v O1 přímo zapisovat do společného workspace; platí pro ně stejná hashová ochrana, provenance a koordinace stavových operací jako pro samostatné relace.
 - Koordinační `taskSummary` vzniká v O1 automaticky z aktuálního zadání a plánu agenta a uživatel jej může upravit nebo vypnout; lehký sumarizační model je pozdější rozšíření pro dlouhé relace.
 - `recently_writing` trvá pět minut od posledního zápisu; potom relace s nevrácenými změnami přechází do `idle_with_changes`, jinak přestává být aktivní pro koordinaci.
 - Koordinátor serializuje podle konkrétního zdroje stavové Git operace, změny balíčků/lockfilu a databázové migrace. Dev servery nezamyká; jejich runtime konflikty řeší běžný procesní výsledek.
 - Pokud se starší text níže nebo dřívější podklady rozcházejí s těmito třemi dokumenty, platí v0.2.
-- `PRD_v0.1.md` zůstává zachované jako historický snapshot.
+- `docs/product/PRD_v0.1.md` zůstává zachované jako historický snapshot.
 
 ## Školní kontext
 
@@ -403,9 +405,9 @@ funkce.
 
 - `Idea Paper Converted.txt` – původní stručný seznam funkcí a rozhodování
   Electron vs. Tauri.
-- `Vylepšení AI kódovacího nástroje.md` – předchozí brainstorming, vysvětlení
+- `docs/product/Vylepšení AI kódovacího nástroje.md` – předchozí brainstorming, vysvětlení
   AST, návrh rozdělení UI/orchestrátoru/harnessu/nástrojů a ukázková mapa.
-- `Analýza alternativních kódovacích nástrojů.md` – rešerše Aideru,
+- `docs/product/Analýza alternativních kódovacích nástrojů.md` – rešerše Aideru,
   OpenHands, Continue a MCP; slouží jako inspirace, nikoli jako bezvýhradně
   ověřený zdroj aktuálních technických či cenových údajů.
 

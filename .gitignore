@@ -1,2 +1,13 @@
 .superpowers/
+node_modules/
+dist/
+out/
+.webpack/
+coverage/
+*.log
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+.r0-artifacts/
+Dokumentace_priklady/
 Dokumentace příklady/

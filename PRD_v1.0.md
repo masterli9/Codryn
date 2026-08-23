@@ -20,10 +20,10 @@ Při vzniku PRD byly použity následující podklady v tomto pořadí autority:
 
 1. `PROJECT_CONTEXT.md` – zdroj pravdy pro dosavadní rozhodnutí;
 2. aktuální zadání autora projektu, včetně rozhodnutí přijatých při finální revizi v1.0;
-3. `REGISTR_ROZHODNUTI_v1.0.md` a `ETAPIZACE_v1.0.md` jako doprovodné dokumenty;
-4. `ROADMAP.md` jako schválené pořadí implementačních přírůstků bez kalendářních dat;
-5. `NAVRH_WORKSPACE_AWARENESS_v0.1.md` pouze jako podrobný podklad v rozsahu výslovně přijatém v tomto PRD;
-6. `NAVRH_EPIZODICKE_PAMETI_KONTEXTU_v0.1.md` pouze jako podklad volitelného experimentu E0, nikoli jako schválená produktová funkce;
+3. `docs/product/REGISTR_ROZHODNUTI_v1.0.md` a `docs/product/ETAPIZACE_v1.0.md` jako doprovodné dokumenty;
+4. `docs/product/ROADMAP.md` jako schválené pořadí implementačních přírůstků bez kalendářních dat;
+5. `docs/product/NAVRH_WORKSPACE_AWARENESS_v0.1.md` pouze jako podrobný podklad v rozsahu výslovně přijatém v tomto PRD;
+6. `docs/product/NAVRH_EPIZODICKE_PAMETI_KONTEXTU_v0.1.md` pouze jako podklad volitelného experimentu E0, nikoli jako schválená produktová funkce;
 7. starší idea a analytické dokumenty.
 
 Starší podklady jsou inspirací. Jejich tvrzení o cenách, modelech, schopnostech konkurence, uniklých implementacích nebo budoucích standardech nejsou bez dalšího ověření považována za fakta ani závazné požadavky. Při konsolidaci historického rozporu platilo aktuální rozhodnutí autora zachycené v `PROJECT_CONTEXT.md`; po vydání je produktovým kontraktem tento PRD a jeho význam lze změnit pouze novou verzí podle 0.2.2.
