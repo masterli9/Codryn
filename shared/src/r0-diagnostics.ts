@@ -47,7 +47,16 @@ export const r0DiagnosticReportSchema = z.object({
   finishedAt: isoTimestampSchema,
   durationMs: z.number().int().nonnegative(),
   checks: z.array(r0CheckResultSchema).min(1)
-}).strict();
+}).strict().superRefine((report, context) => {
+  const expectedStatus = report.checks.every((check) => check.status === 'pass') ? 'passed' : 'failed';
+  if (report.overallStatus !== expectedStatus) {
+    context.addIssue({
+      code: 'custom',
+      path: ['overallStatus'],
+      message: `overallStatus must be ${expectedStatus} for the supplied checks.`
+    });
+  }
+});
 
 export type R0DiagnosticRequest = z.infer<typeof r0DiagnosticRequestSchema>;
 export type R0CheckResult = z.infer<typeof r0CheckResultSchema>;

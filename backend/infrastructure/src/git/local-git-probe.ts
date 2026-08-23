@@ -1,4 +1,4 @@
-import { rm, writeFile } from 'node:fs/promises';
+import { writeFile } from 'node:fs/promises';
 import { isAbsolute, join, resolve } from 'node:path';
 import type {
   CredentialHelperCategory,
@@ -12,7 +12,12 @@ export interface LocalGitProbeOptions {
   readonly runner: ProcessRunner;
   readonly gitExecutable: string;
   readonly env: Readonly<Record<string, string>>;
-  readonly tempDirectoryFactory: () => Promise<string>;
+  readonly tempDirectoryFactory: () => Promise<OwnedTemporaryDirectory>;
+}
+
+export interface OwnedTemporaryDirectory {
+  readonly path: string;
+  cleanup(): Promise<void>;
 }
 
 const timeoutMs = 15_000;
@@ -41,13 +46,13 @@ export class LocalGitProbe {
   }
 
   async inspect(): Promise<GitEvidence> {
-    const createdDirectory = await this.options.tempDirectoryFactory();
-    if (!isAbsolute(createdDirectory)) throw stableFailure('temporary directory creation');
-    const fixtureDirectory = resolve(createdDirectory);
-
-    const remoteDirectory = join(fixtureDirectory, 'remote.git');
-    const workDirectory = join(fixtureDirectory, 'work');
+    const temporaryDirectory = await this.options.tempDirectoryFactory();
     try {
+      if (!isAbsolute(temporaryDirectory.path)) throw stableFailure('temporary directory creation');
+      const fixtureDirectory = resolve(temporaryDirectory.path);
+      const remoteDirectory = join(fixtureDirectory, 'remote.git');
+      const workDirectory = join(fixtureDirectory, 'work');
+
       const versionResult = await this.run(fixtureDirectory, ['--version']);
       requireSuccess(versionResult, 'version');
       const version = versionResult.stdout.trim();
@@ -91,7 +96,7 @@ export class LocalGitProbe {
         credentialHelperCategory: helperCategory
       };
     } finally {
-      await rm(fixtureDirectory, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+      await temporaryDirectory.cleanup();
     }
   }
 

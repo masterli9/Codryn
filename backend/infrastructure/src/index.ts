@@ -12,7 +12,7 @@ export type { RedactionPolicy } from './logging/redact.js';
 export { WindowsProcessRunner } from './process/windows-process-runner.js';
 export { categorizeCredentialHelpers } from './git/credential-helper-category.js';
 export { LocalGitProbe } from './git/local-git-probe.js';
-export type { LocalGitProbeOptions } from './git/local-git-probe.js';
+export type { LocalGitProbeOptions, OwnedTemporaryDirectory } from './git/local-git-probe.js';
 export { SystemClock } from './system/system-clock.js';
 export { UuidGenerator } from './system/uuid-generator.js';
 export { createR0Infrastructure } from './create-r0-infrastructure.js';

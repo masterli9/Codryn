@@ -40,6 +40,14 @@ class RecordingRunner implements ProcessRunner {
   }
 }
 
+async function createOwnedTemporaryDirectory(prefix: string) {
+  const path = await mkdtemp(join(tmpdir(), prefix));
+  return {
+    path,
+    cleanup: () => rm(path, { recursive: true, force: true })
+  };
+}
+
 describe('categorizeCredentialHelpers', () => {
   it.each([
     [[], 'none'],
@@ -73,8 +81,9 @@ describe('LocalGitProbe', () => {
       gitExecutable: 'git',
       env: { SystemRoot: 'C:\\Windows', PATH: 'C:\\Git\\cmd' },
       tempDirectoryFactory: async () => {
-        fixtureDirectory = await mkdtemp(join(tmpdir(), 'codryn-r0-git-recording-'));
-        return fixtureDirectory;
+        const temporaryDirectory = await createOwnedTemporaryDirectory('codryn-r0-git-recording-');
+        fixtureDirectory = temporaryDirectory.path;
+        return temporaryDirectory;
       }
     });
 
@@ -125,7 +134,7 @@ describe('LocalGitProbe', () => {
       runner,
       gitExecutable: 'git',
       env: { SystemRoot: 'C:\\Windows' },
-      tempDirectoryFactory: () => mkdtemp(join(tmpdir(), 'codryn-r0-git-none-'))
+      tempDirectoryFactory: () => createOwnedTemporaryDirectory('codryn-r0-git-none-')
     });
 
     await expect(probe.inspect()).resolves.toMatchObject({ credentialHelperCategory: 'none' });
@@ -148,8 +157,9 @@ describe('LocalGitProbe', () => {
       gitExecutable: 'git',
       env: { SystemRoot: 'C:\\Windows' },
       tempDirectoryFactory: async () => {
-        fixtureDirectory = await mkdtemp(join(tmpdir(), 'codryn-r0-git-failure-'));
-        return fixtureDirectory;
+        const temporaryDirectory = await createOwnedTemporaryDirectory('codryn-r0-git-failure-');
+        fixtureDirectory = temporaryDirectory.path;
+        return temporaryDirectory;
       }
     });
 
@@ -175,13 +185,45 @@ describe('LocalGitProbe', () => {
       runner,
       gitExecutable: 'git',
       env: { SystemRoot: 'C:\\Windows' },
-      tempDirectoryFactory: async () => relative(process.cwd(), directory)
+      tempDirectoryFactory: async () => ({
+        path: relative(process.cwd(), directory),
+        cleanup: async () => undefined
+      })
     });
 
     await expect(probe.inspect()).rejects.toThrow('Git probe failed at temporary directory creation');
     expect(runner.specs).toHaveLength(0);
     await expect(access(marker)).resolves.toBeUndefined();
     await rm(directory, { recursive: true, force: true });
+  });
+
+  it('does not remove an absolute directory when cleanup capability leaves it intact', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'codryn-r0-git-external-'));
+    const marker = join(directory, 'keep.txt');
+    await writeFile(marker, 'keep', 'utf8');
+    const runner = new RecordingRunner();
+    runner.run = async (spec: ProcessSpec) => {
+      runner.specs.push(spec);
+      if (spec.args[0] === '--version') return exited('git version 2.51.0\n');
+      if (spec.args[0] === 'init' && spec.args[1] === '--bare') return exited('secret detail', 2);
+      return exited();
+    };
+    const probe = new LocalGitProbe({
+      runner,
+      gitExecutable: 'git',
+      env: { SystemRoot: 'C:\\Windows' },
+      tempDirectoryFactory: async () => ({
+        path: directory,
+        cleanup: async () => undefined
+      })
+    });
+
+    try {
+      await expect(probe.inspect()).rejects.toThrow('Git probe failed at init bare remote.');
+      await expect(access(marker)).resolves.toBeUndefined();
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
   });
 });
 
@@ -199,7 +241,7 @@ describeWindows('LocalGitProbe system Git integration', () => {
         TEMP: tmpdir(),
         TMP: tmpdir()
       },
-      tempDirectoryFactory: () => mkdtemp(join(tmpdir(), 'codryn-r0-git-integration-'))
+      tempDirectoryFactory: () => createOwnedTemporaryDirectory('codryn-r0-git-integration-')
     });
 
     const evidence = await probe.inspect();

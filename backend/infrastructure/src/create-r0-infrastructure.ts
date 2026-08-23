@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import type { R0DiagnosticProfile, RunR0DiagnosticsDependencies } from '@codryn/core';
 import { LocalGitProbe } from './git/local-git-probe.js';
@@ -81,7 +81,13 @@ export async function createR0Infrastructure(options: {
         runner: processRunner,
         gitExecutable: 'git.exe',
         env,
-        tempDirectoryFactory: () => mkdtemp(join(userDataPath, 'git-probe-'))
+        tempDirectoryFactory: async () => {
+          const path = await mkdtemp(join(userDataPath, 'git-probe-'));
+          return {
+            path,
+            cleanup: () => rm(path, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 })
+          };
+        }
       }),
       logger: new JsonlDiagnosticLogger({
         directory: logs,

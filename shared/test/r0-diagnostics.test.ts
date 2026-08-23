@@ -50,6 +50,17 @@ describe('R0 diagnostic contracts', () => {
     expect(r0DiagnosticReportSchema.parse(report)).toEqual(report);
   });
 
+  it('rejects a report whose overall status disagrees with its checks', () => {
+    expect(() => r0DiagnosticReportSchema.parse({
+      ...report,
+      checks: [{ ...report.checks[0], status: 'fail', code: 'R0_INTERNAL_ERROR' }]
+    })).toThrow();
+    expect(() => r0DiagnosticReportSchema.parse({
+      ...report,
+      overallStatus: 'failed'
+    })).toThrow();
+  });
+
   it('rejects unknown report fields', () => {
     expect(r0DiagnosticReportSchema).toBeDefined();
     expect(() => r0DiagnosticReportSchema.parse({ ...report, unexpected: true })).toThrow();
