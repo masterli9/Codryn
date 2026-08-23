@@ -37,6 +37,16 @@ Při rozporu má přednost `PROJECT_CONTEXT.md`, poté aktuální PRD a registr 
 10. Reálná LLM API doplňují deterministické testy, ale nenahrazují fake adapter ani fixture.
 11. Neveřejný, uniklý nebo licenčně nejasný proprietární codebase se nepoužívá jako implementační podklad. Významná inspirace z veřejného zdroje eviduje původ a licenci.
 12. Pokud volitelná funkce ohrožuje dokončení kroku, odloží se podle pravidel škrtání rozsahu v etapizaci.
+13. Implementační změny vznikají na krátkodobých pracovních branchích; `main` zůstává stabilní integrační linií a funkce se do ní začleňuje až po relevantním testu a kontrole dokončovací brány.
+14. Před každou obhajobou se z ověřeného stavu oddělí stabilizační branch a přesný použitý commit se po generální zkoušce uzamkne anotovaným obhajovacím tagem.
+
+### 2.1 Branche a obnovitelné obhajovací verze
+
+- Pracovní branche používají stručný účel a vazbu na krok roadmapy, například `feat/r0-process-runner`, `fix/r2-restore-conflict` nebo `docs/r4-provider-eval`.
+- `main` obsahuje pouze integrovaný stav, který prošel relevantními testy; rozpracovaná funkce se na něm nevyvíjí přímo.
+- Pro stabilizaci první obhajoby vznikne `release/o1`, pro finální školní verzi `release/sf`. Po jejich založení přijímají jen opravy nutné pro příslušnou obhajobu; další vývoj může pokračovat na nových pracovních branchích nad `main`.
+- Přesný commit použitý při generální zkoušce a obhajobě dostane neměnný anotovaný tag `obhajoba/o1-vN` nebo `obhajoba/sf-vN`. Tag se zpětně nepřesouvá; nová oprava vytváří další verzi tagu.
+- K tagu se archivuje instalační build, checksum, test report, známá omezení, použitý fixture projekt a verze demonstračního scénáře. Obnova pro obhajobu používá checkout tagu nebo dočasnou branch vytvořenou z tagu, nikoli odhad podle aktuální větve.
 
 ## 3. Přehled kritické cesty
 
