@@ -2,7 +2,7 @@
 
 | Položka | Hodnota |
 | --- | --- |
-| Stav | Návrh k autorské kontrole |
+| Stav | Schváleno pro implementační plán |
 | Datum | 23. srpna 2026 |
 | Implementační krok | `R1 – interní headless/CLI agentní smyčka` |
 | Produktová autorita | `PRD_v1.0.md` |
