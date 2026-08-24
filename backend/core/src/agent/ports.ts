@@ -3,11 +3,19 @@ import type {
   EventEnvelope,
   IsoTimestamp,
   JsonValue,
+  ModelDescriptor,
+  ModelRequest,
+  ModelStreamEvent,
   Uuid
 } from '@codryn/shared';
 import type { AgentRunState } from '../state/agent-run.js';
 import type { ToolCallState } from '../state/tool-call.js';
 import type { AgentRunRecord, ToolCallRecord } from './model.js';
+
+export interface ModelAdapter {
+  readonly descriptor: ModelDescriptor;
+  stream(request: ModelRequest, signal: AbortSignal): AsyncIterable<ModelStreamEvent>;
+}
 
 export interface AgentRunStore {
   createWithInitialEvent(run: AgentRunRecord, event: EventEnvelope): Promise<void>;

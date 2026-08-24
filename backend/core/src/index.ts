@@ -51,4 +51,10 @@ export type {
 } from './diagnostics/ports.js';
 export { R1PersistenceFailure } from './agent/model.js';
 export type { AgentRunRecord, ToolCallRecord } from './agent/model.js';
-export type { AgentRunStore, ToolCallStore } from './agent/ports.js';
+export type { AgentRunStore, ModelAdapter, ToolCallStore } from './agent/ports.js';
+export { collectModelResponse, ModelResponseFailure } from './agent/model-response-collector.js';
+export type {
+  CollectedModelResponse,
+  ModelResponseFailureCode,
+  ModelUsage
+} from './agent/model-response-collector.js';
