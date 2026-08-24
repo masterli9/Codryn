@@ -151,6 +151,43 @@ describe('collectModelResponse', () => {
     );
   });
 
+  it('does not trust a ModelResponseFailure rejected by the adapter next method', async () => {
+    const events = {
+      [Symbol.asyncIterator]() {
+        return {
+          next: async () => Promise.reject(new ModelResponseFailure('R1_CANCELLED'))
+        };
+      }
+    } as unknown as AsyncIterable<ModelStreamEvent>;
+
+    await expectFailure(
+      collectModelResponse(events, new AbortController().signal),
+      'R1_MODEL_ADAPTER_FAILED',
+      'Model adapter failed.'
+    );
+  });
+
+  it('does not trust a ModelResponseFailure thrown by an IteratorResult getter', async () => {
+    const events = {
+      [Symbol.asyncIterator]() {
+        return {
+          next: async () => ({
+            get done() {
+              throw new ModelResponseFailure('R1_MODEL_RESPONSE_UNSUPPORTED');
+            },
+            value: { type: 'completed' }
+          })
+        };
+      }
+    } as unknown as AsyncIterable<ModelStreamEvent>;
+
+    await expectFailure(
+      collectModelResponse(events, new AbortController().signal),
+      'R1_MODEL_ADAPTER_FAILED',
+      'Model adapter failed.'
+    );
+  });
+
   it('keeps the original normalized failure when the iterator return getter throws', async () => {
     const events = {
       [Symbol.asyncIterator]() {

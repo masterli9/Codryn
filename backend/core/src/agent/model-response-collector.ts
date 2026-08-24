@@ -62,10 +62,7 @@ function parseEvent(value: unknown): ModelStreamEvent {
       fail('R1_MODEL_ADAPTER_FAILED');
     }
     return parsed.data;
-  } catch (error) {
-    if (error instanceof ModelResponseFailure) {
-      throw error;
-    }
+  } catch {
     return fail('R1_MODEL_ADAPTER_FAILED');
   }
 }
@@ -81,10 +78,7 @@ interface AsyncIteratorHandle {
   readonly next: () => unknown;
 }
 
-function normalizeAdapterBoundaryError(error: unknown): never {
-  if (error instanceof ModelResponseFailure) {
-    throw error;
-  }
+function normalizeAdapterBoundaryError(): never {
   return fail('R1_MODEL_ADAPTER_FAILED');
 }
 
@@ -102,8 +96,8 @@ function openIterator(events: AsyncIterable<unknown>): AsyncIteratorHandle {
       target,
       next: () => Reflect.apply(next, target, [])
     };
-  } catch (error) {
-    return normalizeAdapterBoundaryError(error);
+  } catch {
+    return normalizeAdapterBoundaryError();
   }
 }
 
@@ -127,9 +121,9 @@ async function readIteratorResult(
       return fail('R1_MODEL_ADAPTER_FAILED');
     }
     return { done: false, value: Reflect.get(result, 'value') };
-  } catch (error) {
+  } catch {
     checkAbort(signal);
-    return normalizeAdapterBoundaryError(error);
+    return normalizeAdapterBoundaryError();
   }
 }
 
