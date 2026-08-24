@@ -50,8 +50,10 @@ export type {
   SessionRepository
 } from './diagnostics/ports.js';
 export { R1PersistenceFailure } from './agent/model.js';
-export type { AgentRunRecord, ToolCallRecord } from './agent/model.js';
+export type { AgentRunRecord, ToolCallRecord, AssembledContext, ContextSourceAudit } from './agent/model.js';
 export type { AgentRunStore, ModelAdapter, ToolCallStore } from './agent/ports.js';
+export { ContextAssembler, ContextAssemblyFailure } from './agent/context-assembler.js';
+export type { ContextAssemblyInput } from './agent/context-assembler.js';
 export { collectModelResponse, ModelResponseFailure } from './agent/model-response-collector.js';
 export type {
   CollectedModelResponse,

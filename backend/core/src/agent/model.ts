@@ -2,6 +2,7 @@ import type {
   AgentRunFailureCode,
   IsoTimestamp,
   JsonValue,
+  ModelContextSource,
   Uuid
 } from '@codryn/shared';
 import type { AgentRunState } from '../state/agent-run.js';
@@ -43,4 +44,17 @@ export class R1PersistenceFailure extends Error {
     super(message);
     this.name = 'R1PersistenceFailure';
   }
+}
+
+export interface ContextSourceAudit {
+  readonly path: string;
+  readonly contentHash: string;
+  readonly byteLength: number;
+  readonly reason: 'explicit_reference';
+}
+
+export interface AssembledContext {
+  readonly modelContent: readonly ModelContextSource[];
+  readonly sources: readonly ContextSourceAudit[];
+  readonly totalBytes: number;
 }
