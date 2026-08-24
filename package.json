@@ -21,7 +21,8 @@
     "test:watch": "vitest",
     "package": "npm run package --workspace @codryn/desktop",
     "make": "npm run make --workspace @codryn/desktop",
-    "verify:r0": "node scripts/verify-r0.mjs"
+    "verify:r0": "node scripts/verify-r0.mjs",
+    "test:r1-repeatability": "node scripts/verify-r1-repeatability.mjs"
   },
   "devDependencies": {
     "@eslint/js": "9.39.5",

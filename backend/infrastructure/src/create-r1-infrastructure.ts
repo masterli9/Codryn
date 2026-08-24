@@ -5,6 +5,7 @@ import {
   textSearchTool, ToolExecutionHarness, ToolRegistry
 } from '@codryn/core';
 import type { EventStore } from '@codryn/core';
+import type { Clock, IdGenerator } from '@codryn/core';
 import type { FakeScenario } from './model/scripted-model-adapter.js';
 import { ProjectFilesystem } from './filesystem/project-filesystem.js';
 import { JsonlDiagnosticLogger } from './logging/jsonl-diagnostic-logger.js';
@@ -27,14 +28,16 @@ export async function createR1Infrastructure(options: {
   readonly userDataPath: string;
   readonly projectRoot: string;
   readonly scenario: FakeScenario;
+  readonly clock?: Clock;
+  readonly ids?: IdGenerator;
 }): Promise<R1Infrastructure> {
   const userDataPath = resolve(options.userDataPath);
   await mkdir(userDataPath, { recursive: true });
   const database = openR0Database(join(userDataPath, 'codryn.sqlite'));
   let closed = false;
   try {
-    const clock = new SystemClock();
-    const ids = new UuidGenerator();
+    const clock = options.clock ?? new SystemClock();
+    const ids = options.ids ?? new UuidGenerator();
     runMigrations(database, clock.now());
     const filesystem = new ProjectFilesystem(resolve(options.projectRoot));
     const registry = new ToolRegistry([

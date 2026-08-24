@@ -98,7 +98,7 @@ export class ToolExecutionHarness {
 
   private async transition(callId: Uuid, runId: Uuid, from: ToolCallState, to: ToolCallState, data: { readonly permissionResult?: 'allowed_by_rule' | 'denied'; readonly safeResult?: JsonValue; readonly errorCode?: string } = {}): Promise<ToolCallState> {
     const eventType = to === 'failed' || to === 'denied' || to === 'cancelled' ? 'tool_call.rejected' : to === 'running' ? 'tool_call.started' : `tool_call.${to}`;
-    await this.dependencies.toolCallStore.transitionWithEvent({ callId, from, to, updatedAt: this.timestamp(), ...data, event: this.event(runId, eventType, { callId, from, to, ...('errorCode' in data ? { errorCode: data.errorCode ?? null } : {}) }) });
+    await this.dependencies.toolCallStore.transitionWithEvent({ callId, from, to, updatedAt: this.timestamp(), ...data, event: this.event(runId, eventType, { callId, from, to, ...('permissionResult' in data ? { permissionResult: data.permissionResult ?? null } : {}), ...('errorCode' in data ? { errorCode: data.errorCode ?? null } : {}) }) });
     return to;
   }
 
