@@ -24,6 +24,7 @@ describe('R1 agent contracts', () => {
     expect(() => runAgentRequestSchema.parse({ ...request, unexpected: true })).toThrow();
     expect(() => runAgentRequestSchema.parse({ ...request, contextReferences: ['/README.md'] })).toThrow();
     expect(() => runAgentRequestSchema.parse({ ...request, contextReferences: ['C:\\README.md'] })).toThrow();
+    expect(() => runAgentRequestSchema.parse({ ...request, contextReferences: ['C:outside.md'] })).toThrow();
   });
 
   it.each([0, 33, 1.5])('rejects a maxSteps value outside the 1..32 integer range: %s', (maxSteps) => {

@@ -56,6 +56,17 @@ describe('R1 model contracts', () => {
     expect(() => modelDescriptorSchema.parse({ ...descriptor, unexpected: true })).toThrow();
   });
 
+  it('rejects absolute and drive-relative context source paths', () => {
+    expect(() => modelRequestSchema.parse({
+      ...request,
+      context: [{ ...request.context[0], path: 'C:\\Users\\andre\\secret.md' }]
+    })).toThrow();
+    expect(() => modelRequestSchema.parse({
+      ...request,
+      context: [{ ...request.context[0], path: 'C:outside.md' }]
+    })).toThrow();
+  });
+
   it.each([
     { type: 'text_delta', text: 'Část odpovědi.' },
     {

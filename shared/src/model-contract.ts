@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { uuidSchema } from './ids.js';
 import { jsonValueSchema } from './json-value.js';
+import { projectRelativePathSchema } from './r1-agent.js';
 import { modelToolCallSchema, toolResultSchema } from './tool-contract.js';
 
 export const modelCapabilityStatusSchema = z.enum(['supported', 'unsupported', 'unknown']);
@@ -22,7 +23,7 @@ export const modelDescriptorSchema = z.object({
 }).strict();
 
 export const modelContextSourceSchema = z.object({
-  path: z.string().min(1),
+  path: projectRelativePathSchema,
   content: z.string(),
   contentHash: z.string().regex(/^[a-f0-9]{64}$/),
   byteLength: z.number().int().nonnegative(),

@@ -1,16 +1,16 @@
 import { z } from 'zod';
 import { uuidSchema } from './ids.js';
 
-const relativeContextReferenceSchema = z.string().min(1).refine(
-  (reference) => !/^(?:[A-Za-z]:[\\/]|[\\/])/.test(reference),
-  'Context references must be relative paths.'
+export const projectRelativePathSchema = z.string().min(1).refine(
+  (path) => !/^(?:[A-Za-z]:|[\\/])/.test(path),
+  'Project paths must be relative.'
 );
 
 export const runAgentRequestSchema = z.object({
   requestId: uuidSchema,
   projectRoot: z.string().min(1),
   task: z.string().trim().min(1).max(16_384),
-  contextReferences: z.array(relativeContextReferenceSchema).max(8),
+  contextReferences: z.array(projectRelativePathSchema).max(8),
   maxSteps: z.number().int().min(1).max(32)
 }).strict();
 
