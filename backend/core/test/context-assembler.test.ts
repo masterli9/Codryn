@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { ProjectFilesystem } from '../src/agent/ports.js';
-import { ContextAssembler, ContextAssemblyFailure } from '../src/index.js';
+import { ContextAssembler } from '../src/index.js';
+import type { ContextAssemblyFailure } from '../src/index.js';
 
 function filesystem(files: Record<string, string>): ProjectFilesystem {
   return {
