@@ -48,13 +48,13 @@ describe('ProjectFilesystem', () => {
     const { root, outside } = await fixture();
     await Promise.all([
       mkdir(join(root, 'folder')),
-      mkdir(join(root, '.git')),
       writeFile(join(root, 'binary.bin'), Buffer.from([0x61, 0, 0x62])),
       writeFile(join(root, 'invalid.txt'), Buffer.from([0xc3, 0x28])),
       writeFile(join(root, '.env'), 'SECRET=value'),
-      writeFile(join(root, '.git', 'config'), 'secret'),
       writeFile(join(outside, 'secret.txt'), 'outside')
     ]);
+    await mkdir(join(root, '.git'));
+    await writeFile(join(root, '.git', 'config'), 'secret');
     const filesystem = new ProjectFilesystem(root);
     const signal = new AbortController().signal;
 

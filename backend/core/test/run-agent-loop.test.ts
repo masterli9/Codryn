@@ -18,6 +18,7 @@ const validRequest: RunAgentRequest = { requestId, projectRoot: 'logical-root', 
 function loopFor(overrides: Partial<RunAgentLoopDependencies> = {}) {
   const events: EventEnvelope[] = [];
   const transitions: string[] = [];
+  const logs: unknown[] = [];
   const dependencies: RunAgentLoopDependencies = {
     contextAssembler: { async assemble() { return { modelContent: [], sources: [], totalBytes: 0 }; } },
     model: { descriptor: { adapterId: 'fake', modelId: 'fake', capabilities: capabilities() }, stream() { return stream({ type: 'text_delta', text: 'done' }, { type: 'completed' }); } },
@@ -25,9 +26,9 @@ function loopFor(overrides: Partial<RunAgentLoopDependencies> = {}) {
     toolExecutionHarness: { async execute() { return { ok: false, callId, error: { code: 'R1_TOOL_UNKNOWN', message: 'Tool is not registered.' } }; } },
     agentRunStore: { async createWithInitialEvent(_run, event) { events.push(event); }, async transitionWithEvent(input) { transitions.push(input.to); events.push(input.event); }, async findById() { return null; } },
     eventStore: { async append(event) { events.push(event); }, async findBySessionId() { return []; } },
-    clock, ids: { next: () => runId }, ...overrides
+    clock, ids: { next: () => runId }, logger: { async write(entry) { logs.push(entry); } }, ...overrides
   };
-  return { loop: new RunAgentLoop(dependencies), events, transitions };
+  return { loop: new RunAgentLoop(dependencies), events, transitions, logs };
 }
 
 describe('RunAgentLoop', () => {
@@ -47,7 +48,7 @@ describe('RunAgentLoop', () => {
     const registry = new ToolRegistry([fileReadTool(async () => ({ path: 'README.md', content: 'fixture secret', startLine: 1, endLine: 1, totalLines: 1, truncated: false, contentHash: 'a'.repeat(64) })), textSearchTool(async () => ({ matches: [], truncated: false, filesSearched: 1, bytesSearched: 14 }))]);
     const harness = new ToolExecutionHarness({ registry, permissionPolicy: new ControlledPermissionPolicy(), toolCallStore, clock, ids: { next: () => runId } });
     const eventStore = { async append(event: EventEnvelope) { events.push(event); }, async findBySessionId() { return []; } };
-    const loop = new RunAgentLoop({ contextAssembler: { async assemble() { return { modelContent: [{ path: 'README.md', content: 'fixture secret', contentHash: 'a'.repeat(64), byteLength: 14, reason: 'explicit_reference' as const }], sources: [{ path: 'README.md', contentHash: 'a'.repeat(64), byteLength: 14, reason: 'explicit_reference' as const }], totalBytes: 14 }; } }, model, registry, toolExecutionHarness: harness, agentRunStore, eventStore, clock, ids: { next: () => runId } });
+    const loop = new RunAgentLoop({ contextAssembler: { async assemble() { return { modelContent: [{ path: 'README.md', content: 'fixture secret', contentHash: 'a'.repeat(64), byteLength: 14, reason: 'explicit_reference' as const }], sources: [{ path: 'README.md', contentHash: 'a'.repeat(64), byteLength: 14, reason: 'explicit_reference' as const }], totalBytes: 14 }; } }, model, registry, toolExecutionHarness: harness, agentRunStore, eventStore, clock, ids: { next: () => runId }, logger: { async write() {} } });
 
     await expect(loop.execute({ requestId, projectRoot: 'C:\\Users\\secret\\project', task: 'Read it', contextReferences: ['README.md'], maxSteps: 3 }, new AbortController().signal)).resolves.toMatchObject({ status: 'completed', runId, stepCount: 3, finalText: 'Hotovo.', verification: { status: 'not_applicable', reason: 'R1_READ_ONLY_RUN' } });
     expect(requests).toHaveLength(3);
@@ -59,7 +60,7 @@ describe('RunAgentLoop', () => {
 
   it('stops at max steps before an extra adapter call', async () => {
     let calls = 0;
-    const loop = new RunAgentLoop({ contextAssembler: { async assemble() { return { modelContent: [], sources: [], totalBytes: 0 }; } }, model: { descriptor: { adapterId: 'fake', modelId: 'fake', capabilities: { streaming: 'supported', toolCalling: 'supported', structuredOutput: 'unknown', imageInput: 'unknown', usageMetadata: 'unknown', contextLimit: 'unknown', compaction: 'unknown' } }, stream() { calls++; return stream({ type: 'tool_call', call: { callId, toolId: 'unknown', toolVersion: 1, arguments: {} } }, { type: 'completed' }); } }, registry: new ToolRegistry([]), toolExecutionHarness: { async execute() { return { ok: false as const, callId, error: { code: 'R1_TOOL_UNKNOWN', message: 'Tool is not registered.' } }; } }, agentRunStore: { async createWithInitialEvent() {}, async transitionWithEvent() {}, async findById() { return null; } }, eventStore: { async append() {}, async findBySessionId() { return []; } }, clock, ids: { next: () => runId } });
+    const loop = new RunAgentLoop({ contextAssembler: { async assemble() { return { modelContent: [], sources: [], totalBytes: 0 }; } }, model: { descriptor: { adapterId: 'fake', modelId: 'fake', capabilities: { streaming: 'supported', toolCalling: 'supported', structuredOutput: 'unknown', imageInput: 'unknown', usageMetadata: 'unknown', contextLimit: 'unknown', compaction: 'unknown' } }, stream() { calls++; return stream({ type: 'tool_call', call: { callId, toolId: 'unknown', toolVersion: 1, arguments: {} } }, { type: 'completed' }); } }, registry: new ToolRegistry([]), toolExecutionHarness: { async execute() { return { ok: false as const, callId, error: { code: 'R1_TOOL_UNKNOWN', message: 'Tool is not registered.' } }; } }, agentRunStore: { async createWithInitialEvent() {}, async transitionWithEvent() {}, async findById() { return null; } }, eventStore: { async append() {}, async findBySessionId() { return []; } }, clock, ids: { next: () => runId }, logger: { async write() {} } });
     await expect(loop.execute({ requestId, projectRoot: 'logical-root', task: 'Read it', contextReferences: [], maxSteps: 1 }, new AbortController().signal)).resolves.toMatchObject({ status: 'failed', failure: { code: 'R1_STEP_LIMIT_EXCEEDED' } });
     expect(calls).toBe(1);
   });
@@ -84,6 +85,16 @@ describe('RunAgentLoop', () => {
   ] as const)('maps %s to stable failure', async (_name, overrides, failure) => {
     const { loop } = loopFor(overrides);
     await expect(loop.execute(validRequest, new AbortController().signal)).resolves.toMatchObject({ status: 'failed', failure: { code: failure } });
+  });
+
+  it('redacts an unknown failure in the injected logger without allowing logger failure to alter the result', async () => {
+    const { loop, logs } = loopFor({ contextAssembler: { async assemble() { throw new Error('E:\\private\\secret'); } } });
+    await expect(loop.execute(validRequest, new AbortController().signal)).resolves.toMatchObject({ status: 'failed', failure: { code: 'R1_INTERNAL_ERROR' } });
+    expect(JSON.stringify(logs)).toContain('R1_INTERNAL_ERROR');
+    expect(JSON.stringify(logs)).not.toContain('E:\\private\\secret');
+
+    const failingLogger = loopFor({ contextAssembler: { async assemble() { throw new Error('E:\\private\\secret'); } }, logger: { async write() { throw new Error('logger failed'); } } });
+    await expect(failingLogger.loop.execute(validRequest, new AbortController().signal)).resolves.toMatchObject({ status: 'failed', failure: { code: 'R1_INTERNAL_ERROR' } });
   });
 
   it('feeds a failed tool result to the next model turn', async () => {

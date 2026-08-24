@@ -1,5 +1,5 @@
 import { runAgentRequestSchema, type AgentRunFailureCode, type EventEnvelope, type ModelRequest, type RunAgentRequest, type RunAgentResult, type ToolResult, type Uuid } from '@codryn/shared';
-import type { Clock, EventStore, IdGenerator } from '../diagnostics/ports.js';
+import type { Clock, DiagnosticLogger, EventStore, IdGenerator } from '../diagnostics/ports.js';
 import { collectModelResponse, ModelResponseFailure } from './model-response-collector.js';
 import type { ContextAssembler } from './context-assembler.js';
 import type { AgentRunStore, ModelAdapter } from './ports.js';
@@ -17,6 +17,7 @@ export interface RunAgentLoopDependencies {
   readonly eventStore: EventStore;
   readonly clock: Clock;
   readonly ids: IdGenerator;
+  readonly logger: DiagnosticLogger;
 }
 
 const messages: Readonly<Record<AgentRunFailureCode, string>> = Object.freeze({
@@ -82,6 +83,7 @@ export class RunAgentLoop {
       }
     } catch (error) {
       const failure = signal.aborted || code(error) === 'R1_CANCELLED' ? 'R1_CANCELLED' : code(error);
+      if (failure === 'R1_INTERNAL_ERROR') await this.logUnknownFailure(request.requestId);
       if (failure === 'R1_PERSISTENCE_FAILED') return this.unpersisted(request.requestId, failure, runId, steps);
       try {
         const terminal = failure === 'R1_CANCELLED' ? 'cancelled' : 'failed';
@@ -106,6 +108,9 @@ export class RunAgentLoop {
     catch { throw new R1PersistenceFailure('AGENT_RUN_WRITE_FAILED'); }
   }
   private abort(signal: AbortSignal): void { if (signal.aborted) throw { code: 'R1_CANCELLED' }; }
+  private async logUnknownFailure(correlationId: Uuid): Promise<void> {
+    try { await this.dependencies.logger.write({ level: 'error', event: 'r1.agent_run.unknown_failure', occurredAt: this.timestamp(), correlationId, data: { code: 'R1_INTERNAL_ERROR' } }); } catch { /* Logging is never allowed to replace the stable result. */ }
+  }
   private event(runId: Uuid, requestId: Uuid, eventType: string, payload: EventEnvelope['payload']): EventEnvelope { return { eventId: this.dependencies.ids.next(), eventType, eventVersion: 1, correlationId: requestId, occurredAt: this.timestamp(), source: 'core', sessionId: runId, payload }; }
   private timestamp() { return this.dependencies.clock.now() as EventEnvelope['occurredAt']; }
 }

@@ -55,8 +55,8 @@ describe('runCli', () => {
     const root = await mkdtemp(join(tmpdir(), 'codryn-r1-cli-'));
     try {
       await mkdir(join(root, 'src'));
-      await writeFile(join(root, 'README.md'), 'Small project.');
-      await writeFile(join(root, 'src', 'greeting.ts'), 'export function formatGreeting(name: string) { return name; }');
+      await writeFile(join(root, 'README.md'), '# R1 fixture\n\nMalý TypeScriptový projekt pro ověření čtení zdrojů a hledání symbolů.\n');
+      await writeFile(join(root, 'src', 'greeting.ts'), 'export function formatGreeting(name: string): string {\n  return `Ahoj, ${name}!`;\n}\n');
       await writeFile(join(root, 'src', 'index.ts'), "import { formatGreeting as greeting } from './greeting.js';\ngreeting('A');");
       await writeFile(join(root, 'src', 'preview.ts'), "import { formatGreeting as greeting } from './greeting.js';\ngreeting('B');");
       const child = spawn(process.execPath, ['--no-warnings', '--experimental-loader', pathToFileURL(resolve('apps/cli/src/typescript-resolution-loader.mjs')).href, '--experimental-transform-types', 'apps/cli/src/index.ts', '--user-data', join(root, 'data'), '--project', root, '--task', 'Summarize', '--context', 'README.md'], { cwd: resolve('.'), shell: false });
@@ -67,7 +67,9 @@ describe('runCli', () => {
       expect(exitCode, `${stderr}\n${stdout}`).toBe(0);
       expect(stdout.trim().split('\n')).toHaveLength(1);
       expect(JSON.parse(stdout)).toMatchObject({ status: 'completed', stepCount: 3 });
-      expect([stderr, stdout]).not.toContain(root);
+      expect(stdout).not.toContain(root);
+      expect(stderr).not.toContain(root);
+      expect(stderr).toBe('');
     } finally { await rm(root, { recursive: true, force: true }); }
   });
 });

@@ -49,9 +49,9 @@ export async function createR1Infrastructure(options: {
       registry, permissionPolicy: new ControlledPermissionPolicy(), toolCallStore: new SqliteToolCallStore(database), clock, ids
     });
     // Constructed here so all R1 runtime collaborators share this single database lifetime.
-    new JsonlDiagnosticLogger({ directory: join(userDataPath, 'logs'), redactionPolicy: { sensitiveRoots: [userDataPath, resolve(options.projectRoot)] } });
+    const logger = new JsonlDiagnosticLogger({ directory: join(userDataPath, 'logs'), redactionPolicy: { sensitiveRoots: [userDataPath, resolve(options.projectRoot)] } });
     return {
-      agentLoop: new RunAgentLoop({ contextAssembler: new ContextAssembler(filesystem), model: new ScriptedModelAdapter(options.scenario), registry, toolExecutionHarness, agentRunStore: new SqliteAgentRunStore(database), eventStore, clock, ids }),
+      agentLoop: new RunAgentLoop({ contextAssembler: new ContextAssembler(filesystem), model: new ScriptedModelAdapter(options.scenario), registry, toolExecutionHarness, agentRunStore: new SqliteAgentRunStore(database), eventStore, clock, ids, logger }),
       eventStore,
       close() { if (!closed) { closed = true; database.close(); } }
     };
