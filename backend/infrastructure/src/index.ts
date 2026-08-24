@@ -24,3 +24,6 @@ export type {
   FakeScenario,
   FakeScenarioStep
 } from './model/scripted-model-adapter.js';
+export { ProjectFilesystem, ProjectFilesystemFailure } from './filesystem/project-filesystem.js';
+export { decideSensitivePath } from './filesystem/sensitive-path-policy.js';
+export type { SensitivePathDecision } from './filesystem/sensitive-path-policy.js';

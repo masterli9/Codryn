@@ -17,6 +17,40 @@ export interface ModelAdapter {
   stream(request: ModelRequest, signal: AbortSignal): AsyncIterable<ModelStreamEvent>;
 }
 
+export interface ProjectFileReadInput {
+  readonly path: string;
+  readonly startLine?: number;
+  readonly maxLines?: number;
+}
+
+export interface ProjectFileReadResult {
+  readonly path: string;
+  readonly content: string;
+  readonly startLine: number;
+  readonly endLine: number;
+  readonly totalLines: number;
+  readonly truncated: boolean;
+  readonly contentHash: string;
+}
+
+export interface ProjectTextSearchInput {
+  readonly query: string;
+  readonly path?: string;
+  readonly maxResults?: number;
+}
+
+export interface ProjectTextSearchResult {
+  readonly matches: readonly { readonly path: string; readonly line: number; readonly column: number; readonly preview: string }[];
+  readonly truncated: boolean;
+  readonly filesSearched: number;
+  readonly bytesSearched: number;
+}
+
+export interface ProjectFilesystem {
+  readFile(input: ProjectFileReadInput, signal: AbortSignal): Promise<ProjectFileReadResult>;
+  searchText(input: ProjectTextSearchInput, signal: AbortSignal): Promise<ProjectTextSearchResult>;
+}
+
 export interface AgentRunStore {
   createWithInitialEvent(run: AgentRunRecord, event: EventEnvelope): Promise<void>;
   transitionWithEvent(input: {
