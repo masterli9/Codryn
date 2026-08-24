@@ -54,6 +54,11 @@ export type { AgentRunRecord, ToolCallRecord, AssembledContext, ContextSourceAud
 export type { AgentRunStore, ModelAdapter, ToolCallStore } from './agent/ports.js';
 export { ContextAssembler, ContextAssemblyFailure } from './agent/context-assembler.js';
 export type { ContextAssemblyInput } from './agent/context-assembler.js';
+export { ToolRegistry, ToolRegistryFailure } from './tools/tool-registry.js';
+export type { ToolDefinition, ToolRisk } from './tools/tool-registry.js';
+export { fileReadTool, textSearchTool, fileReadInputSchema, fileReadOutputSchema, textSearchInputSchema, textSearchOutputSchema } from './tools/read-only-contracts.js';
+export { ControlledPermissionPolicy } from './tools/controlled-permission-policy.js';
+export type { PermissionDecision, PermissionInput } from './tools/controlled-permission-policy.js';
 export { collectModelResponse, ModelResponseFailure } from './agent/model-response-collector.js';
 export type {
   CollectedModelResponse,
