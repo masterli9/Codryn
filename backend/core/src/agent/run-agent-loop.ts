@@ -34,7 +34,7 @@ export class RunAgentLoop {
 
   async execute(input: RunAgentRequest, signal: AbortSignal): Promise<RunAgentResult> {
     const parsed = runAgentRequestSchema.safeParse(input);
-    if (!parsed.success) return this.unpersisted(input.requestId, 'R1_INPUT_INVALID');
+    if (!parsed.success) return this.unpersisted(this.dependencies.ids.next(), 'R1_INPUT_INVALID');
     const request = parsed.data;
     const runId = this.dependencies.ids.next();
     let state: AgentRunState = 'idle';

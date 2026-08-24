@@ -1,5 +1,6 @@
 import type { ToolRisk } from './tool-registry.js';
 import { z } from 'zod';
+import { isR1SensitiveRelativePath, isValidR1RelativePath } from './r1-sensitive-path-policy.js';
 
 export interface PermissionDecision {
   readonly result: 'allowed_by_rule' | 'denied';
@@ -25,7 +26,8 @@ const permissionInputSchema = z.object({
 
 export class ControlledPermissionPolicy {
   decide(input: PermissionInput): PermissionDecision {
-    if (!permissionInputSchema.safeParse(input).success) return denied;
+    const parsed = permissionInputSchema.safeParse(input);
+    if (!parsed.success || !isValidR1RelativePath(parsed.data.pathEvidence.path) || isR1SensitiveRelativePath(parsed.data.pathEvidence.path)) return denied;
     return {
       result: 'allowed_by_rule',
       ruleId: 'R1_SAFE_READ_WITHIN_PROJECT',

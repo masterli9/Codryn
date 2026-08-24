@@ -20,4 +20,8 @@ describe('ControlledPermissionPolicy', () => {
       result: 'denied', ruleId: 'R1_PERMISSION_DENIED', reason: 'Read permission requires validated non-sensitive project path evidence.'
     });
   });
+
+  it.each(['.GIT/config', 'node_modules/pkg/index.js', 'keys/id_rsa', 'keys/secret.pem', 'keys/secret.KEY', 'C:/outside.txt', '../outside.txt'])('denies fixed-sensitive or invalid paths even when evidence claims they are safe: %s', (path) => {
+    expect(new ControlledPermissionPolicy().decide({ risk: 'read_project', pathEvidence: { path, withinProject: true, sensitive: false } })).toMatchObject({ result: 'denied', ruleId: 'R1_PERMISSION_DENIED' });
+  });
 });

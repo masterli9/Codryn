@@ -59,6 +59,7 @@ export type { ToolDefinition, ToolRisk } from './tools/tool-registry.js';
 export { fileReadTool, textSearchTool, fileReadInputSchema, fileReadOutputSchema, textSearchInputSchema, textSearchOutputSchema } from './tools/read-only-contracts.js';
 export { ControlledPermissionPolicy } from './tools/controlled-permission-policy.js';
 export type { PermissionDecision, PermissionInput } from './tools/controlled-permission-policy.js';
+export { isR1SensitiveRelativePath, isValidR1RelativePath } from './tools/r1-sensitive-path-policy.js';
 export { ToolExecutionHarness } from './tools/tool-execution-harness.js';
 export type { ToolExecutionHarnessDependencies } from './tools/tool-execution-harness.js';
 export { RunAgentLoop } from './agent/run-agent-loop.js';

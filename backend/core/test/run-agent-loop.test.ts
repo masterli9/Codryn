@@ -70,6 +70,12 @@ describe('RunAgentLoop', () => {
     expect(events).toEqual([]);
   });
 
+  it('normalizes malformed runtime input without reading request fields or persisting', async () => {
+    const { loop, events } = loopFor();
+    await expect(loop.execute(null as unknown as RunAgentRequest, new AbortController().signal)).resolves.toMatchObject({ status: 'failed', failure: { code: 'R1_INPUT_INVALID' } });
+    expect(events).toEqual([]);
+  });
+
   it.each([
     ['context failure', { contextAssembler: { async assemble() { throw { code: 'R1_CONTEXT_REFERENCE_INVALID' }; } } }, 'R1_CONTEXT_REFERENCE_INVALID'],
     ['missing capability', { model: { descriptor: { adapterId: 'fake', modelId: 'fake', capabilities: capabilities('unsupported') }, stream() { return stream(); } } }, 'R1_MODEL_CAPABILITY_MISSING'],

@@ -67,4 +67,10 @@ describe('ToolExecutionHarness', () => {
     await expect(harness(handler).execute(call, runId, controller.signal)).resolves.toMatchObject({ ok: false, error: { code: 'R1_CANCELLED' } });
     expect(handler).not.toHaveBeenCalled();
   });
+
+  it.each(['.GIT/config', 'keys/id_rsa', 'keys/secret.pem'])('does not invoke a handler for a fixed-sensitive path: %s', async (path) => {
+    const handler = vi.fn<ReadHandler>();
+    await expect(harness(handler).execute({ ...call, arguments: { path } }, runId, new AbortController().signal)).resolves.toMatchObject({ ok: false, error: { code: 'R1_TOOL_PERMISSION_DENIED' } });
+    expect(handler).not.toHaveBeenCalled();
+  });
 });
