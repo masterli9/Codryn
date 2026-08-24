@@ -19,6 +19,8 @@ export { SystemClock } from './system/system-clock.js';
 export { UuidGenerator } from './system/uuid-generator.js';
 export { createR0Infrastructure } from './create-r0-infrastructure.js';
 export type { R0Infrastructure } from './create-r0-infrastructure.js';
+export { createR1Infrastructure } from './create-r1-infrastructure.js';
+export type { R1Infrastructure } from './create-r1-infrastructure.js';
 export { ScriptedModelAdapter } from './model/scripted-model-adapter.js';
 export type {
   FakeScenario,
