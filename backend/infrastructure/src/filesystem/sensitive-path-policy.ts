@@ -10,7 +10,7 @@ const blockedSegments = new Set(['.git', 'node_modules', 'dist', 'build', 'out',
 const blockedNames = new Set(['id_rsa', 'id_ed25519', 'credentials', 'credentials.json', 'credential', 'credential.json']);
 
 export function decideSensitivePath(relativePath: string): SensitivePathDecision {
-  const segments = relativePath.replaceAll('\\', '/').split('/');
+  const segments = relativePath.replaceAll('\\', '/').split('/').map((segment) => segment.toLowerCase());
   if (segments.some((segment) => blockedSegments.has(segment))) {
     return { allowed: false, code: 'R1_PATH_SENSITIVE', reason: 'Path is inside a fixed sensitive directory.' };
   }

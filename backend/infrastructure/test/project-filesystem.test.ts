@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { mkdtemp, mkdir, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { ProjectFilesystem } from '../src/index.js';
+import { decideSensitivePath, ProjectFilesystem } from '../src/index.js';
 
 const roots: string[] = [];
 
@@ -61,22 +61,48 @@ describe('ProjectFilesystem', () => {
     for (const path of ['/absolute.txt', '..\\outside\\secret.txt', 'bad\0path', 'missing.txt', 'folder', 'binary.bin', 'invalid.txt', '.env', '.git/config']) {
       await expect(filesystem.readFile({ path }, signal)).rejects.toMatchObject({ code: expect.any(String) });
     }
+    expect(decideSensitivePath('.GIT/config')).toMatchObject({ allowed: false, code: 'R1_PATH_SENSITIVE' });
+    expect(decideSensitivePath('Node_Modules/package.json')).toMatchObject({ allowed: false, code: 'R1_PATH_SENSITIVE' });
   });
 
-  it('allows a symlink whose canonical target remains inside root and rejects external symlink and Windows junction escapes', async (context) => {
+  it('allows an in-root file symlink and rejects an external file symlink when Windows grants fixture symlink privilege', async (context) => {
     const { root, outside } = await fixture();
     await writeFile(join(root, 'inside.txt'), 'inside');
     await writeFile(join(outside, 'secret.txt'), 'outside');
     const insideLink = await createLink(join(root, 'inside.txt'), join(root, 'inside-link.txt'), 'file');
     const outsideLink = await createLink(join(outside, 'secret.txt'), join(root, 'outside-link.txt'), 'file');
-    await symlink(outside, join(root, 'outside-junction'), 'junction');
     if (!insideLink || !outsideLink) context.skip('Windows denied fixture symlink privilege; this is not a product pass.');
     const filesystem = new ProjectFilesystem(root);
     const signal = new AbortController().signal;
 
     await expect(filesystem.readFile({ path: 'inside-link.txt' }, signal)).resolves.toMatchObject({ content: 'inside' });
     await expect(filesystem.readFile({ path: 'outside-link.txt' }, signal)).rejects.toMatchObject({ code: 'R1_PATH_OUTSIDE_ROOT' });
-    await expect(filesystem.readFile({ path: 'outside-junction/secret.txt' }, signal)).rejects.toMatchObject({ code: 'R1_PATH_OUTSIDE_ROOT' });
+  });
+
+  it('always rejects a Windows junction whose target escapes the project root', async () => {
+    const { root, outside } = await fixture();
+    await writeFile(join(outside, 'secret.txt'), 'outside');
+    await symlink(outside, join(root, 'outside-junction'), 'junction');
+    await expect(new ProjectFilesystem(root).readFile({ path: 'outside-junction/secret.txt' }, new AbortController().signal))
+      .rejects.toMatchObject({ code: 'R1_PATH_OUTSIDE_ROOT' });
+  });
+
+  it('accepts exactly 1 MiB but rejects one byte more and bounds read output to 64 KiB', async () => {
+    const { root } = await fixture();
+    const exactFile = 'x'.repeat(1024 * 1024);
+    await writeFile(join(root, 'exact.txt'), exactFile);
+    await writeFile(join(root, 'over.txt'), `${exactFile}x`);
+    await writeFile(join(root, 'output-exact.txt'), 'x'.repeat(64 * 1024));
+    await writeFile(join(root, 'output-over.txt'), `${'x'.repeat(64 * 1024)}\nx`);
+    const filesystem = new ProjectFilesystem(root);
+    const signal = new AbortController().signal;
+
+    await expect(filesystem.readFile({ path: 'exact.txt' }, signal)).resolves.toMatchObject({ truncated: true });
+    await expect(filesystem.readFile({ path: 'over.txt' }, signal)).rejects.toMatchObject({ code: 'R1_FILE_TOO_LARGE' });
+    await expect(filesystem.readFile({ path: 'output-exact.txt' }, signal)).resolves.toMatchObject({ content: 'x'.repeat(64 * 1024), truncated: false });
+    const overOutput = await filesystem.readFile({ path: 'output-over.txt', maxLines: 2 }, signal);
+    expect(Buffer.byteLength(overOutput.content, 'utf8')).toBeLessThanOrEqual(64 * 1024);
+    expect(overOutput.truncated).toBe(true);
   });
 
   it('searches literal text in lexicographic path order with case-sensitive columns and bounded previews', async () => {
@@ -97,6 +123,47 @@ describe('ProjectFilesystem', () => {
     ]);
     expect(result.matches[0]?.preview.length).toBeLessThanOrEqual(400);
     expect(result.filesSearched).toBe(3);
+  });
+
+  it('supports a file or directory search scope without widening it', async () => {
+    const { root } = await fixture();
+    await mkdir(join(root, 'scope'));
+    await Promise.all([
+      writeFile(join(root, 'scope.txt'), 'Needle'),
+      writeFile(join(root, 'scope', 'nested.txt'), 'Needle'),
+      writeFile(join(root, 'outside-scope.txt'), 'Needle')
+    ]);
+    const filesystem = new ProjectFilesystem(root);
+    await expect(filesystem.searchText({ query: 'Needle', path: 'scope.txt' }, new AbortController().signal))
+      .resolves.toMatchObject({ matches: [{ path: 'scope.txt' }] });
+    await expect(filesystem.searchText({ query: 'Needle', path: 'scope' }, new AbortController().signal))
+      .resolves.toMatchObject({ matches: [{ path: 'scope/nested.txt' }] });
+  });
+
+  it('treats exact search file and byte limits as complete and marks only over-limit searches truncated', async () => {
+    const { root } = await fixture();
+    const filesRoot = join(root, 'files');
+    await mkdir(filesRoot);
+    for (let index = 499; index >= 0; index -= 1) {
+      await writeFile(join(filesRoot, `${String(index).padStart(3, '0')}.txt`), 'x');
+    }
+    const filesystem = new ProjectFilesystem(root);
+    await expect(filesystem.searchText({ query: 'Needle', path: 'files' }, new AbortController().signal))
+      .resolves.toMatchObject({ filesSearched: 500, bytesSearched: 500, truncated: false });
+    await writeFile(join(filesRoot, '500.txt'), 'x');
+    await expect(filesystem.searchText({ query: 'Needle', path: 'files' }, new AbortController().signal))
+      .resolves.toMatchObject({ filesSearched: 500, bytesSearched: 500, truncated: true });
+
+    const bytesRoot = join(root, 'bytes');
+    await mkdir(bytesRoot);
+    for (let index = 0; index < 8; index += 1) {
+      await writeFile(join(bytesRoot, `${index}.txt`), 'x'.repeat(1024 * 1024));
+    }
+    await expect(filesystem.searchText({ query: 'Needle', path: 'bytes' }, new AbortController().signal))
+      .resolves.toMatchObject({ filesSearched: 8, bytesSearched: 8 * 1024 * 1024, truncated: false });
+    await writeFile(join(bytesRoot, '8.txt'), 'x');
+    await expect(filesystem.searchText({ query: 'Needle', path: 'bytes' }, new AbortController().signal))
+      .resolves.toMatchObject({ filesSearched: 8, bytesSearched: 8 * 1024 * 1024, truncated: true });
   });
 
   it('does not follow symlink directories, skips fixed ignored directories and binary files, observes limits, and aborts', async () => {

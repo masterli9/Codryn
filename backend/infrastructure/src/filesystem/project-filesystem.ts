@@ -144,18 +144,22 @@ export class ProjectFilesystem {
     if (!isWithin(root, start)) throw new ProjectFilesystemFailure('R1_PATH_OUTSIDE_ROOT', 'Project path resolves outside root.');
     rejectSensitivePath(path);
     const paths: string[] = [];
+    let fileLimitExceeded = false;
     const visit = async (current: string): Promise<void> => {
       abortIfNeeded(signal);
       const info = await lstat(current);
       if (info.isSymbolicLink()) return;
       const rel = relative(root, current).replaceAll('\\', '/') || '.';
       if (!decideSensitivePath(rel).allowed) return;
-      if (info.isFile()) { paths.push(current); return; }
+      if (info.isFile()) {
+        if (paths.length >= MAX_SEARCH_FILES) fileLimitExceeded = true;
+        else paths.push(current);
+        return;
+      }
       if (!info.isDirectory()) return;
       const entries = await readdir(current, { withFileTypes: true });
       entries.sort((left, right) => left.name.localeCompare(right.name));
       for (const entry of entries) {
-        if (paths.length >= MAX_SEARCH_FILES) return;
         await visit(resolve(current, entry.name));
       }
     };
@@ -165,7 +169,7 @@ export class ProjectFilesystem {
     }
     const matches: { path: string; line: number; column: number; preview: string }[] = [];
     let bytesSearched = 0;
-    let truncated = paths.length >= MAX_SEARCH_FILES;
+    let truncated = fileLimitExceeded;
     let filesSearched = 0;
     for (const file of paths) {
       abortIfNeeded(signal);
