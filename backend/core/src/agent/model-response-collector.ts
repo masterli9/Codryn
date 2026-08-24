@@ -76,18 +76,86 @@ function failedEventCode(event: Extract<ModelStreamEvent, { type: 'failed' }>): 
     : 'R1_MODEL_ADAPTER_FAILED';
 }
 
+interface AsyncIteratorHandle {
+  readonly target: object;
+  readonly next: () => unknown;
+}
+
+function normalizeAdapterBoundaryError(error: unknown): never {
+  if (error instanceof ModelResponseFailure) {
+    throw error;
+  }
+  return fail('R1_MODEL_ADAPTER_FAILED');
+}
+
+function openIterator(events: AsyncIterable<unknown>): AsyncIteratorHandle {
+  try {
+    const target: unknown = events[Symbol.asyncIterator]();
+    if (typeof target !== 'object' || target === null) {
+      return fail('R1_MODEL_ADAPTER_FAILED');
+    }
+    const next: unknown = Reflect.get(target, 'next');
+    if (typeof next !== 'function') {
+      return fail('R1_MODEL_ADAPTER_FAILED');
+    }
+    return {
+      target,
+      next: () => Reflect.apply(next, target, [])
+    };
+  } catch (error) {
+    return normalizeAdapterBoundaryError(error);
+  }
+}
+
+async function readIteratorResult(
+  iterator: AsyncIteratorHandle,
+  signal: AbortSignal
+): Promise<{ readonly done: true } | { readonly done: false; readonly value: unknown }> {
+  try {
+    const result: unknown = await iterator.next();
+    if (typeof result !== 'object' || result === null) {
+      return fail('R1_MODEL_ADAPTER_FAILED');
+    }
+    const done: unknown = Reflect.get(result, 'done');
+    if (typeof done !== 'boolean') {
+      return fail('R1_MODEL_ADAPTER_FAILED');
+    }
+    if (done) {
+      return { done: true };
+    }
+    if (!Object.hasOwn(result, 'value')) {
+      return fail('R1_MODEL_ADAPTER_FAILED');
+    }
+    return { done: false, value: Reflect.get(result, 'value') };
+  } catch (error) {
+    checkAbort(signal);
+    return normalizeAdapterBoundaryError(error);
+  }
+}
+
+async function closeIteratorWithoutMaskingFailure(iterator: AsyncIteratorHandle): Promise<void> {
+  let close: unknown;
+  try {
+    close = Reflect.get(iterator.target, 'return');
+  } catch {
+    return;
+  }
+  if (typeof close !== 'function') {
+    return;
+  }
+  try {
+    await Reflect.apply(close, iterator.target, []);
+  } catch {
+    // Cleanup is best-effort and must not replace the normalized primary failure.
+  }
+}
+
 export async function collectModelResponse(
   events: AsyncIterable<unknown>,
   signal: AbortSignal
 ): Promise<CollectedModelResponse> {
   checkAbort(signal);
-
-  let iterator: AsyncIterator<unknown>;
-  try {
-    iterator = events[Symbol.asyncIterator]();
-  } catch {
-    return fail('R1_MODEL_ADAPTER_FAILED');
-  }
+  const iterator = openIterator(events);
 
   const textParts: string[] = [];
   let textBytes = 0;
@@ -101,13 +169,7 @@ export async function collectModelResponse(
     while (true) {
       checkAbort(signal);
 
-      let next: IteratorResult<unknown>;
-      try {
-        next = await iterator.next();
-      } catch {
-        checkAbort(signal);
-        return fail('R1_MODEL_ADAPTER_FAILED');
-      }
+      const next = await readIteratorResult(iterator, signal);
 
       checkAbort(signal);
       if (next.done) {
@@ -151,12 +213,8 @@ export async function collectModelResponse(
       }
     }
   } finally {
-    if (!iteratorFinished && iterator.return !== undefined) {
-      try {
-        await iterator.return();
-      } catch {
-        // The original normalized failure remains authoritative.
-      }
+    if (!iteratorFinished) {
+      await closeIteratorWithoutMaskingFailure(iterator);
     }
   }
 

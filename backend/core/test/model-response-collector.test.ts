@@ -110,6 +110,66 @@ describe('collectModelResponse', () => {
     );
   });
 
+  it.each([
+    ['null result', null],
+    ['missing done and value', {}],
+    ['missing yielded value', { done: false }]
+  ])('normalizes a malformed iterator %s', async (_name, malformedResult) => {
+    const events = {
+      [Symbol.asyncIterator]() {
+        return {
+          next: async () => malformedResult
+        };
+      }
+    } as unknown as AsyncIterable<ModelStreamEvent>;
+
+    await expectFailure(
+      collectModelResponse(events, new AbortController().signal),
+      'R1_MODEL_ADAPTER_FAILED',
+      'Model adapter failed.'
+    );
+  });
+
+  it('normalizes an IteratorResult whose done getter throws', async () => {
+    const events = {
+      [Symbol.asyncIterator]() {
+        return {
+          next: async () => ({
+            get done() {
+              throw new Error('C:\\Users\\private\\done-getter-secret.txt');
+            },
+            value: { type: 'completed' }
+          })
+        };
+      }
+    } as unknown as AsyncIterable<ModelStreamEvent>;
+
+    await expectFailure(
+      collectModelResponse(events, new AbortController().signal),
+      'R1_MODEL_ADAPTER_FAILED',
+      'Model adapter failed.'
+    );
+  });
+
+  it('keeps the original normalized failure when the iterator return getter throws', async () => {
+    const events = {
+      [Symbol.asyncIterator]() {
+        return {
+          next: async () => ({ done: false, value: { type: 'unknown' } }),
+          get return() {
+            throw new Error('C:\\Users\\private\\cleanup-getter-secret.txt');
+          }
+        };
+      }
+    } as unknown as AsyncIterable<ModelStreamEvent>;
+
+    await expectFailure(
+      collectModelResponse(events, new AbortController().signal),
+      'R1_MODEL_ADAPTER_FAILED',
+      'Model adapter failed.'
+    );
+  });
+
   it('rejects a stream without a terminal event', async () => {
     await expectFailure(collectModelResponse(stream(
       { type: 'text_delta', text: 'Incomplete' }
