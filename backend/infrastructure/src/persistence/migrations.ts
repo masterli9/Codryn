@@ -129,8 +129,11 @@ CREATE TABLE tool_calls (
   error_code TEXT CHECK (error_code IS NULL OR length(error_code) > 0),
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
+  CHECK (parent_call_id IS NULL OR parent_call_id <> call_id),
+  UNIQUE (run_id, call_id),
   FOREIGN KEY (run_id) REFERENCES agent_runs(run_id) ON DELETE CASCADE,
-  FOREIGN KEY (parent_call_id) REFERENCES tool_calls(call_id) ON DELETE SET NULL
+  FOREIGN KEY (run_id, parent_call_id)
+    REFERENCES tool_calls(run_id, call_id) ON DELETE CASCADE
 ) STRICT;
 
 CREATE INDEX tool_calls_run_created_idx ON tool_calls(run_id, created_at, call_id);`;

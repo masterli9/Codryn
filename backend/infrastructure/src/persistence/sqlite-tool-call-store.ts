@@ -7,9 +7,9 @@ import {
 } from '@codryn/core';
 import { isoTimestampSchema, uuidSchema, type JsonValue } from '@codryn/shared';
 import {
+  canonicalizeJsonValue,
   insertEvent,
-  validateEvent,
-  validateJsonValue
+  validateEvent
 } from './sqlite-event-store.js';
 
 type ToolCallTransition = Parameters<ToolCallStore['transitionWithEvent']>[0];
@@ -136,8 +136,7 @@ function validateTransition(input: unknown): ToolCallTransition {
 }
 
 function validatedJson(value: unknown): JsonValue {
-  validateJsonValue(value);
-  return value;
+  return canonicalizeJsonValue(value);
 }
 
 function serializeOptionalJson(record: ToolCallRecord): string | null {

@@ -440,6 +440,162 @@ describe('R1 SQLite persistence', () => {
       database.close();
     }
   });
+
+  it('rejects tool arguments with a hidden toJSON before persisting the call or event', async () => {
+    const filename = await createDatabasePath();
+    const database = openR0Database(filename);
+
+    try {
+      runMigrations(database, firstTimestamp);
+      await new SqliteAgentRunStore(database).createWithInitialEvent(run, runInitialEvent);
+      const argumentsWithHiddenToJson = { path: 'README.md' };
+      Object.defineProperty(argumentsWithHiddenToJson, 'toJSON', {
+        enumerable: false,
+        value: () => ({ unexpected: 'serialized instead of validated arguments' })
+      });
+
+      await expect(new SqliteToolCallStore(database).createWithInitialEvent(
+        { ...toolCall, arguments: argumentsWithHiddenToJson },
+        toolCallInitialEvent
+      )).rejects.toMatchObject({ code: 'R1_PERSISTENCE_FAILED' });
+
+      expect(database.prepare('SELECT COUNT(*) AS count FROM tool_calls').get()).toEqual({ count: 0 });
+      await expect(new SqliteEventStore(database).findBySessionId(run.runId)).resolves.toEqual([runInitialEvent]);
+    } finally {
+      database.close();
+    }
+  });
+
+  it('rejects an accessor-backed safe result without changing the call projection or event log', async () => {
+    const filename = await createDatabasePath();
+    const database = openR0Database(filename);
+
+    try {
+      runMigrations(database, firstTimestamp);
+      await new SqliteAgentRunStore(database).createWithInitialEvent(run, runInitialEvent);
+      const calls = new SqliteToolCallStore(database);
+      await calls.createWithInitialEvent(toolCall, toolCallInitialEvent);
+      let reads = 0;
+      const changingSafeResult: Array<string | { unexpected: boolean }> = ['validated'];
+      Object.defineProperty(changingSafeResult, '0', {
+        enumerable: true,
+        configurable: true,
+        get: () => {
+          reads += 1;
+          return reads === 1 ? 'validated' : { unexpected: true };
+        }
+      });
+      const transitionEvent = {
+        ...toolCallInitialEvent,
+        eventId: '50000000-0000-4000-8000-000000000001',
+        eventType: 'tool_call.schema_validated',
+        occurredAt: secondTimestamp,
+        payload: { from: 'received', to: 'schema_validated' }
+      };
+
+      await expect(calls.transitionWithEvent({
+        callId: toolCall.callId,
+        from: 'received',
+        to: 'schema_validated',
+        safeResult: changingSafeResult,
+        updatedAt: secondTimestamp,
+        event: transitionEvent
+      })).rejects.toMatchObject({ code: 'R1_PERSISTENCE_FAILED' });
+
+      expect(database.prepare(
+        'SELECT state, safe_result_json, updated_at FROM tool_calls WHERE call_id = ?'
+      ).get(toolCall.callId)).toEqual({
+        state: 'received',
+        safe_result_json: null,
+        updated_at: firstTimestamp
+      });
+      await expect(new SqliteEventStore(database).findBySessionId(run.runId)).resolves.toEqual([
+        runInitialEvent,
+        toolCallInitialEvent
+      ]);
+    } finally {
+      database.close();
+    }
+  });
+
+  it('rolls back a tool call whose parent belongs to another agent run', async () => {
+    const filename = await createDatabasePath();
+    const database = openR0Database(filename);
+
+    try {
+      runMigrations(database, firstTimestamp);
+      const runs = new SqliteAgentRunStore(database);
+      const calls = new SqliteToolCallStore(database);
+      const events = new SqliteEventStore(database);
+      await runs.createWithInitialEvent(run, runInitialEvent);
+      await calls.createWithInitialEvent(toolCall, toolCallInitialEvent);
+      const secondRun = {
+        ...run,
+        runId: '60000000-0000-4000-8000-000000000001',
+        requestId: '60000000-0000-4000-8000-000000000002'
+      };
+      const secondRunEvent = {
+        ...runInitialEvent,
+        eventId: '60000000-0000-4000-8000-000000000003',
+        correlationId: secondRun.requestId,
+        sessionId: secondRun.runId
+      };
+      await runs.createWithInitialEvent(secondRun, secondRunEvent);
+      const crossRunCall = {
+        ...toolCall,
+        callId: '60000000-0000-4000-8000-000000000004',
+        runId: secondRun.runId,
+        parentCallId: toolCall.callId
+      };
+      const crossRunEvent = {
+        ...toolCallInitialEvent,
+        eventId: '60000000-0000-4000-8000-000000000005',
+        correlationId: secondRun.requestId,
+        sessionId: secondRun.runId,
+        payload: { callId: crossRunCall.callId, toolId: crossRunCall.toolId }
+      };
+
+      await expect(calls.createWithInitialEvent(crossRunCall, crossRunEvent))
+        .rejects.toMatchObject({ code: 'R1_PERSISTENCE_FAILED' });
+
+      expect(database.prepare('SELECT call_id FROM tool_calls WHERE call_id = ?')
+        .get(crossRunCall.callId)).toBeUndefined();
+      await expect(events.findBySessionId(secondRun.runId)).resolves.toEqual([secondRunEvent]);
+    } finally {
+      database.close();
+    }
+  });
+
+  it('rejects a self-parented tool call before persisting its projection or event', async () => {
+    const filename = await createDatabasePath();
+    const database = openR0Database(filename);
+
+    try {
+      runMigrations(database, firstTimestamp);
+      await new SqliteAgentRunStore(database).createWithInitialEvent(run, runInitialEvent);
+      const selfParentedCall = {
+        ...toolCall,
+        callId: '70000000-0000-4000-8000-000000000001',
+        parentCallId: '70000000-0000-4000-8000-000000000001'
+      };
+      const selfParentedEvent = {
+        ...toolCallInitialEvent,
+        eventId: '70000000-0000-4000-8000-000000000002',
+        payload: { callId: selfParentedCall.callId, toolId: selfParentedCall.toolId }
+      };
+
+      await expect(new SqliteToolCallStore(database).createWithInitialEvent(
+        selfParentedCall,
+        selfParentedEvent
+      )).rejects.toMatchObject({ code: 'R1_PERSISTENCE_FAILED' });
+
+      expect(database.prepare('SELECT call_id FROM tool_calls WHERE call_id = ?')
+        .get(selfParentedCall.callId)).toBeUndefined();
+      await expect(new SqliteEventStore(database).findBySessionId(run.runId)).resolves.toEqual([runInitialEvent]);
+    } finally {
+      database.close();
+    }
+  });
 });
 
 describe('R0 SQLite persistence', () => {
