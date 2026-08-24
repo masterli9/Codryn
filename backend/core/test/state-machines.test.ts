@@ -12,13 +12,14 @@ import {
   transitionToolCall
 } from '../src/index.js';
 
-describe('R0 state machines', () => {
+describe('canonical state machines', () => {
   it.each([
     ['idle', 'preparing_context'],
     ['preparing_context', 'waiting_for_model'],
     ['preparing_context', 'cancelled'],
     ['preparing_context', 'failed'],
     ['waiting_for_model', 'executing_tool'],
+    ['waiting_for_model', 'waiting_for_user_input'],
     ['waiting_for_model', 'waiting_for_approval'],
     ['waiting_for_model', 'verifying'],
     ['waiting_for_model', 'completed'],
@@ -32,6 +33,9 @@ describe('R0 state machines', () => {
     ['waiting_for_approval', 'waiting_for_model'],
     ['waiting_for_approval', 'cancelled'],
     ['waiting_for_approval', 'failed'],
+    ['waiting_for_user_input', 'preparing_context'],
+    ['waiting_for_user_input', 'cancelled'],
+    ['waiting_for_user_input', 'failed'],
     ['verifying', 'waiting_for_model'],
     ['verifying', 'completed'],
     ['verifying', 'cancelled'],
@@ -56,11 +60,14 @@ describe('R0 state machines', () => {
   });
 
   it.each([
-    ['proposed', 'waiting_for_approval'],
-    ['proposed', 'running'],
-    ['proposed', 'cancelled'],
-    ['waiting_for_approval', 'running'],
-    ['waiting_for_approval', 'cancelled'],
+    ['received', 'schema_validated'],
+    ['received', 'failed'],
+    ['schema_validated', 'permission_decided'],
+    ['schema_validated', 'failed'],
+    ['permission_decided', 'queued'],
+    ['permission_decided', 'denied'],
+    ['queued', 'running'],
+    ['queued', 'cancelled'],
     ['running', 'succeeded'],
     ['running', 'failed'],
     ['running', 'timed_out'],
@@ -73,8 +80,11 @@ describe('R0 state machines', () => {
     ['succeeded', 'running'],
     ['failed', 'running'],
     ['timed_out', 'running'],
-    ['cancelled', 'proposed'],
-    ['proposed', 'succeeded']
+    ['cancelled', 'received'],
+    ['denied', 'running'],
+    ['received', 'succeeded'],
+    ['schema_validated', 'queued'],
+    ['permission_decided', 'running']
   ] as const)('rejects forbidden ToolCall %s -> %s', (from, to) => {
     expect(transitionToolCall(from, to)).toEqual({
       ok: false,
@@ -190,7 +200,7 @@ describe('R0 state machines', () => {
 
   it.each([
     ['AgentRun', agentRunGraph, ['completed', 'cancelled', 'failed']],
-    ['ToolCall', toolCallGraph, ['succeeded', 'failed', 'timed_out', 'cancelled']],
+    ['ToolCall', toolCallGraph, ['succeeded', 'failed', 'denied', 'timed_out', 'cancelled']],
     ['PermissionRequest', permissionRequestGraph, ['approved', 'denied', 'expired', 'cancelled']],
     ['ChangeSet', changeSetGraph, ['reverted', 'conflicted', 'recovery_required']],
     ['GitOperation', gitOperationGraph, ['succeeded', 'failed', 'stale', 'cancelled']]
