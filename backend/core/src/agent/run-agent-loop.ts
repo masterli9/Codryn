@@ -1,5 +1,5 @@
 import { runAgentRequestSchema, type AgentRunFailureCode, type EventEnvelope, type ModelRequest, type RunAgentRequest, type RunAgentResult, type ToolResult, type Uuid } from '@codryn/shared';
-import type { Clock, IdGenerator } from '../diagnostics/ports.js';
+import type { Clock, EventStore, IdGenerator } from '../diagnostics/ports.js';
 import { collectModelResponse, ModelResponseFailure } from './model-response-collector.js';
 import type { ContextAssembler } from './context-assembler.js';
 import type { AgentRunStore, ModelAdapter } from './ports.js';
@@ -14,6 +14,7 @@ export interface RunAgentLoopDependencies {
   readonly registry: ToolRegistry;
   readonly toolExecutionHarness: Pick<ToolExecutionHarness, 'execute'>;
   readonly agentRunStore: AgentRunStore;
+  readonly eventStore: EventStore;
   readonly clock: Clock;
   readonly ids: IdGenerator;
 }
@@ -45,14 +46,24 @@ export class RunAgentLoop {
       this.abort(signal);
       const context = await this.dependencies.contextAssembler.assemble({ task: request.task, project: { id: 'project' }, contextReferences: request.contextReferences }, signal);
       this.abort(signal);
+      await this.append(runId, request.requestId, 'context.assembled', { sources: context.sources.map((source) => ({ path: source.path, contentHash: source.contentHash, byteLength: source.byteLength, reason: source.reason })), totalBytes: context.totalBytes });
       if (this.dependencies.model.descriptor.capabilities.toolCalling !== 'supported') throw { code: 'R1_MODEL_CAPABILITY_MISSING' };
       const results: ToolResult[] = [];
+      const observedCallIds = new Set<Uuid>();
       while (true) {
         this.abort(signal);
         if (steps >= request.maxSteps) throw { code: 'R1_STEP_LIMIT_EXCEEDED' };
         state = await this.transition(runId, request.requestId, state, 'waiting_for_model', steps);
         const modelRequest: ModelRequest = { runId, task: request.task, project: { id: 'project' }, context: [...context.modelContent], tools: [...this.dependencies.registry.descriptors], previousToolResults: [...results] };
-        const response = await collectModelResponse(this.dependencies.model.stream(modelRequest, signal), signal);
+        await this.append(runId, request.requestId, 'model.requested', { step: steps + 1, toolCount: modelRequest.tools.length, contextSourceCount: modelRequest.context.length, previousToolResultCount: modelRequest.previousToolResults.length });
+        let response;
+        try { response = await collectModelResponse(this.dependencies.model.stream(modelRequest, signal), signal); }
+        catch (error) {
+          const failure = code(error);
+          await this.append(runId, request.requestId, 'model.failed', { step: steps + 1, code: failure });
+          throw error;
+        }
+        await this.append(runId, request.requestId, 'model.response_received', { step: steps + 1, kind: response.kind, ...(response.kind === 'final' ? { textLength: response.text.length } : { toolCallCount: response.calls.length }) });
         steps++;
         this.abort(signal);
         if (response.kind === 'final') {
@@ -62,6 +73,8 @@ export class RunAgentLoop {
         }
         state = await this.transition(runId, request.requestId, state, 'executing_tool', steps);
         for (const toolCall of response.calls) {
+          if (observedCallIds.has(toolCall.callId)) throw { code: 'R1_MODEL_RESPONSE_UNSUPPORTED' };
+          observedCallIds.add(toolCall.callId);
           this.abort(signal);
           results.push(await this.dependencies.toolExecutionHarness.execute(toolCall, runId, signal));
           this.abort(signal);
@@ -87,6 +100,10 @@ export class RunAgentLoop {
 
   private unpersisted(requestId: Uuid, failure: AgentRunFailureCode, runId = requestId, stepCount = 0): RunAgentResult {
     return { schemaVersion: 1, status: 'failed', runId, stepCount, failure: { code: failure, message: messages[failure] }, verification: { status: 'not_applicable', reason: 'R1_READ_ONLY_RUN' } };
+  }
+  private async append(runId: Uuid, requestId: Uuid, eventType: string, payload: EventEnvelope['payload']): Promise<void> {
+    try { await this.dependencies.eventStore.append(this.event(runId, requestId, eventType, payload)); }
+    catch { throw new R1PersistenceFailure('AGENT_RUN_WRITE_FAILED'); }
   }
   private abort(signal: AbortSignal): void { if (signal.aborted) throw { code: 'R1_CANCELLED' }; }
   private event(runId: Uuid, requestId: Uuid, eventType: string, payload: EventEnvelope['payload']): EventEnvelope { return { eventId: this.dependencies.ids.next(), eventType, eventVersion: 1, correlationId: requestId, occurredAt: this.timestamp(), source: 'core', sessionId: runId, payload }; }
