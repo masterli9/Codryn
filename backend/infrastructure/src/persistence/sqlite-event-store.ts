@@ -14,7 +14,7 @@ function isPlainRecord(value: object): boolean {
   return prototype === Object.prototype || prototype === null;
 }
 
-function requirePersistableJson(value: unknown, seen = new Set<object>()): asserts value is JsonValue {
+export function validateJsonValue(value: unknown, seen = new Set<object>()): asserts value is JsonValue {
   if (value === null || typeof value === 'string' || typeof value === 'boolean') return;
   if (typeof value === 'number') {
     if (!Number.isFinite(value)) throw new TypeError('EVENT_PAYLOAD_NOT_JSON');
@@ -25,14 +25,14 @@ function requirePersistableJson(value: unknown, seen = new Set<object>()): asser
   seen.add(value);
   try {
     if (Array.isArray(value)) {
-      for (const item of value) requirePersistableJson(item, seen);
+      for (const item of value) validateJsonValue(item, seen);
       return;
     }
     if (!isPlainRecord(value)) throw new TypeError('EVENT_PAYLOAD_NOT_JSON');
     for (const key of Object.keys(value)) {
       const descriptor = Object.getOwnPropertyDescriptor(value, key);
       if (descriptor === undefined || !('value' in descriptor)) throw new TypeError('EVENT_PAYLOAD_NOT_JSON');
-      requirePersistableJson(descriptor.value, seen);
+      validateJsonValue(descriptor.value, seen);
     }
   } finally {
     seen.delete(value);
@@ -42,7 +42,7 @@ function requirePersistableJson(value: unknown, seen = new Set<object>()): asser
 export function validateEvent(event: unknown): EventEnvelope {
   if (typeof event !== 'object' || event === null) throw new TypeError('EVENT_ENVELOPE_INVALID');
   const payload = Reflect.get(event, 'payload');
-  requirePersistableJson(payload);
+  validateJsonValue(payload);
   if (Object.prototype.hasOwnProperty.call(event, 'sessionId') && Reflect.get(event, 'sessionId') === undefined) {
     throw new TypeError('EVENT_ENVELOPE_INVALID');
   }
@@ -72,7 +72,7 @@ function requireString(value: SQLOutputValue | undefined): string {
 function eventFromRow(row: Record<string, SQLOutputValue>): EventEnvelope {
   const payloadJson = requireString(row.payload_json);
   const payload: unknown = JSON.parse(payloadJson);
-  requirePersistableJson(payload);
+  validateJsonValue(payload);
   const sessionId = row.session_id;
   if (sessionId !== null && typeof sessionId !== 'string') throw new TypeError('EVENT_ROW_INVALID');
 

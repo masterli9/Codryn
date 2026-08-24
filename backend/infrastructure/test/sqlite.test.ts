@@ -1,11 +1,14 @@
 import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import type { DatabaseSync } from 'node:sqlite';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
+  SqliteAgentRunStore,
   SqliteDiagnostics,
   SqliteEventStore,
   SqliteSessionRepository,
+  SqliteToolCallStore,
   migrations,
   openR0Database,
   runMigrations
@@ -13,6 +16,7 @@ import {
 
 const firstTimestamp = '2026-08-17T08:00:00.000Z';
 const secondTimestamp = '2026-08-17T08:00:01.000Z';
+const thirdTimestamp = '2026-08-17T08:00:02.000Z';
 
 const session = {
   id: '00000000-0000-4000-8000-000000000001',
@@ -34,6 +38,76 @@ const initialEvent = {
 
 const temporaryDirectories: string[] = [];
 
+function applyVersionOneSchema(database: DatabaseSync): void {
+  const ledgerMigration = migrations[0];
+  const diagnosticMigration = migrations[1];
+  if (ledgerMigration === undefined || diagnosticMigration === undefined) {
+    throw new Error('R0 migration fixture is incomplete.');
+  }
+
+  database.exec('BEGIN IMMEDIATE;');
+  try {
+    database.exec(ledgerMigration.sql);
+    database.prepare(
+      'INSERT INTO schema_migrations (version, name, checksum, applied_at) VALUES (?, ?, ?, ?)'
+    ).run(ledgerMigration.version, ledgerMigration.name, ledgerMigration.checksum, firstTimestamp);
+    database.exec(diagnosticMigration.sql);
+    database.prepare(
+      'INSERT INTO schema_migrations (version, name, checksum, applied_at) VALUES (?, ?, ?, ?)'
+    ).run(diagnosticMigration.version, diagnosticMigration.name, diagnosticMigration.checksum, firstTimestamp);
+    database.exec('COMMIT;');
+  } catch (error) {
+    if (database.isTransaction) database.exec('ROLLBACK;');
+    throw error;
+  }
+}
+
+const run = {
+  runId: '10000000-0000-4000-8000-000000000001',
+  requestId: '10000000-0000-4000-8000-000000000002',
+  state: 'idle' as const,
+  task: 'Inspect the referenced project files.',
+  maxSteps: 8,
+  stepCount: 0,
+  adapterId: 'scripted-fake',
+  modelId: 'r1-fixture',
+  createdAt: firstTimestamp,
+  updatedAt: firstTimestamp
+};
+
+const runInitialEvent = {
+  eventId: '10000000-0000-4000-8000-000000000003',
+  eventType: 'agent_run.created',
+  eventVersion: 1 as const,
+  correlationId: run.requestId,
+  occurredAt: firstTimestamp,
+  source: 'core' as const,
+  sessionId: run.runId,
+  payload: { state: 'idle' }
+};
+
+const toolCall = {
+  callId: '20000000-0000-4000-8000-000000000001',
+  runId: run.runId,
+  toolId: 'read_file',
+  toolVersion: 1,
+  state: 'received' as const,
+  arguments: { path: 'README.md' },
+  createdAt: firstTimestamp,
+  updatedAt: firstTimestamp
+};
+
+const toolCallInitialEvent = {
+  eventId: '20000000-0000-4000-8000-000000000002',
+  eventType: 'tool_call.received',
+  eventVersion: 1 as const,
+  correlationId: run.requestId,
+  occurredAt: firstTimestamp,
+  source: 'core' as const,
+  sessionId: run.runId,
+  payload: { callId: toolCall.callId, toolId: toolCall.toolId }
+};
+
 async function createDatabasePath(): Promise<string> {
   const directory = await mkdtemp(join(tmpdir(), 'codryn-r0-sqlite-'));
   temporaryDirectories.push(directory);
@@ -45,6 +119,327 @@ afterEach(async () => {
   await Promise.all(temporaryDirectories.splice(0).map(async (directory) => {
     await rm(directory, { recursive: true, force: true });
   }));
+});
+
+describe('R1 SQLite persistence', () => {
+  it('migrates a version-1 diagnostic session and event without changing their identity or payload', async () => {
+    const filename = await createDatabasePath();
+    const database = openR0Database(filename);
+
+    try {
+      applyVersionOneSchema(database);
+      database.prepare(`INSERT INTO diagnostic_sessions (
+        id, status, created_at, updated_at
+      ) VALUES (?, ?, ?, ?)`).run(session.id, session.status, session.createdAt, session.updatedAt);
+      database.prepare(`INSERT INTO events (
+        event_id, event_type, event_version, correlation_id, occurred_at, source, session_id, payload_json
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`).run(
+        initialEvent.eventId,
+        initialEvent.eventType,
+        initialEvent.eventVersion,
+        initialEvent.correlationId,
+        initialEvent.occurredAt,
+        initialEvent.source,
+        initialEvent.sessionId,
+        JSON.stringify(initialEvent.payload)
+      );
+      const eventBeforeMigration = database.prepare(`SELECT
+        sequence, event_id, event_type, event_version, correlation_id,
+        occurred_at, source, session_id, payload_json
+        FROM events`).get();
+
+      runMigrations(database, secondTimestamp);
+
+      expect(database.prepare('SELECT id, kind FROM sessions').all()).toEqual([
+        { id: session.id, kind: 'diagnostic' }
+      ]);
+      expect(database.prepare('SELECT id, created_at, updated_at FROM sessions').all()).toEqual([
+        { id: session.id, created_at: session.createdAt, updated_at: session.updatedAt }
+      ]);
+      await expect(new SqliteSessionRepository(database).findById(session.id)).resolves.toEqual(session);
+      await expect(new SqliteEventStore(database).findBySessionId(session.id)).resolves.toEqual([initialEvent]);
+      expect(database.prepare(`SELECT
+        sequence, event_id, event_type, event_version, correlation_id,
+        occurred_at, source, session_id, payload_json
+        FROM events`).get()).toEqual(eventBeforeMigration);
+      expect(database.prepare('PRAGMA foreign_key_check').all()).toEqual([]);
+
+      const migrationRows = database.prepare(
+        'SELECT version, name, applied_at FROM schema_migrations ORDER BY version ASC'
+      ).all();
+      expect(migrationRows).toEqual([
+        { version: 0, name: 'schema_migrations', applied_at: firstTimestamp },
+        { version: 1, name: 'r0_diagnostic_data', applied_at: firstTimestamp },
+        { version: 2, name: 'generic_agent_sessions', applied_at: secondTimestamp }
+      ]);
+
+      runMigrations(database, thirdTimestamp);
+
+      expect(database.prepare(
+        'SELECT version, name, applied_at FROM schema_migrations ORDER BY version ASC'
+      ).all()).toEqual(migrationRows);
+      expect(database.prepare('SELECT COUNT(*) AS count FROM sessions').get()).toEqual({ count: 1 });
+      expect(database.prepare('SELECT COUNT(*) AS count FROM events').get()).toEqual({ count: 1 });
+    } finally {
+      database.close();
+    }
+  });
+
+  it('atomically creates and transitions an agent run while rolling back failed event writes', async () => {
+    const filename = await createDatabasePath();
+    const database = openR0Database(filename);
+
+    try {
+      runMigrations(database, firstTimestamp);
+      const runs = new SqliteAgentRunStore(database);
+      const events = new SqliteEventStore(database);
+      await runs.createWithInitialEvent(run, runInitialEvent);
+
+      await expect(runs.findById(run.runId)).resolves.toEqual(run);
+
+      const preparingEvent = {
+        ...runInitialEvent,
+        eventId: '10000000-0000-4000-8000-000000000004',
+        eventType: 'agent_run.preparing_context',
+        occurredAt: secondTimestamp,
+        payload: { from: 'idle', to: 'preparing_context' }
+      };
+      await runs.transitionWithEvent({
+        runId: run.runId,
+        from: 'idle',
+        to: 'preparing_context',
+        stepCount: 1,
+        updatedAt: secondTimestamp,
+        event: preparingEvent
+      });
+      const preparedRun = { ...run, state: 'preparing_context' as const, stepCount: 1, updatedAt: secondTimestamp };
+      await expect(runs.findById(run.runId)).resolves.toEqual(preparedRun);
+
+      await expect(runs.transitionWithEvent({
+        runId: run.runId,
+        from: 'preparing_context',
+        to: 'waiting_for_model',
+        stepCount: 2,
+        updatedAt: thirdTimestamp,
+        event: { ...preparingEvent, eventType: 'agent_run.waiting_for_model', occurredAt: thirdTimestamp }
+      })).rejects.toMatchObject({ code: 'R1_PERSISTENCE_FAILED' });
+
+      await expect(runs.findById(run.runId)).resolves.toEqual(preparedRun);
+      await expect(events.findBySessionId(run.runId)).resolves.toEqual([runInitialEvent, preparingEvent]);
+
+      const mismatchedFromEvent = {
+        ...preparingEvent,
+        eventId: '10000000-0000-4000-8000-000000000005',
+        eventType: 'agent_run.waiting_for_model',
+        occurredAt: thirdTimestamp
+      };
+      await expect(runs.transitionWithEvent({
+        runId: run.runId,
+        from: 'idle',
+        to: 'preparing_context',
+        stepCount: 2,
+        updatedAt: thirdTimestamp,
+        event: mismatchedFromEvent
+      })).rejects.toMatchObject({ code: 'R1_PERSISTENCE_FAILED' });
+      await expect(events.findBySessionId(run.runId)).resolves.toEqual([runInitialEvent, preparingEvent]);
+
+      const secondRun = {
+        ...run,
+        runId: '10000000-0000-4000-8000-000000000006',
+        requestId: '10000000-0000-4000-8000-000000000007'
+      };
+      await expect(runs.createWithInitialEvent(secondRun, {
+        ...runInitialEvent,
+        sessionId: secondRun.runId,
+        correlationId: secondRun.requestId
+      })).rejects.toMatchObject({ code: 'R1_PERSISTENCE_FAILED' });
+      await expect(runs.findById(secondRun.runId)).resolves.toBeNull();
+      expect(database.prepare('SELECT id FROM sessions WHERE id = ?').get(secondRun.runId)).toBeUndefined();
+    } finally {
+      database.close();
+    }
+  });
+
+  it('does not roll back a caller-owned transaction when an agent run store cannot begin', async () => {
+    const filename = await createDatabasePath();
+    const database = openR0Database(filename);
+
+    try {
+      runMigrations(database, firstTimestamp);
+      database.exec('BEGIN IMMEDIATE;');
+
+      await expect(new SqliteAgentRunStore(database).createWithInitialEvent(run, runInitialEvent))
+        .rejects.toMatchObject({ code: 'R1_PERSISTENCE_FAILED' });
+      expect(database.isTransaction).toBe(true);
+    } finally {
+      if (database.isTransaction) database.exec('ROLLBACK;');
+      database.close();
+    }
+  });
+
+  it('rejects an invalid persisted agent run row through a stable persistence failure', async () => {
+    const filename = await createDatabasePath();
+    const database = openR0Database(filename);
+
+    try {
+      runMigrations(database, firstTimestamp);
+      const runs = new SqliteAgentRunStore(database);
+      await runs.createWithInitialEvent(run, runInitialEvent);
+      database.prepare('UPDATE agent_runs SET request_id = ? WHERE run_id = ?').run('not-a-uuid', run.runId);
+
+      await expect(runs.findById(run.runId)).rejects.toMatchObject({ code: 'R1_PERSISTENCE_FAILED' });
+    } finally {
+      database.close();
+    }
+  });
+
+  it('atomically creates and transitions a tool call while preserving SQL NULL versus JSON null', async () => {
+    const filename = await createDatabasePath();
+    const database = openR0Database(filename);
+
+    try {
+      runMigrations(database, firstTimestamp);
+      await new SqliteAgentRunStore(database).createWithInitialEvent(run, runInitialEvent);
+      const calls = new SqliteToolCallStore(database);
+      const events = new SqliteEventStore(database);
+
+      await calls.createWithInitialEvent(toolCall, toolCallInitialEvent);
+      expect(database.prepare(`SELECT
+        call_id, run_id, parent_call_id, tool_id, tool_version, state, arguments_json,
+        permission_result, safe_result_json, error_code, created_at, updated_at
+        FROM tool_calls WHERE call_id = ?`).get(toolCall.callId)).toEqual({
+        call_id: toolCall.callId,
+        run_id: toolCall.runId,
+        parent_call_id: null,
+        tool_id: toolCall.toolId,
+        tool_version: toolCall.toolVersion,
+        state: 'received',
+        arguments_json: JSON.stringify(toolCall.arguments),
+        permission_result: null,
+        safe_result_json: null,
+        error_code: null,
+        created_at: toolCall.createdAt,
+        updated_at: toolCall.updatedAt
+      });
+
+      const validatedEvent = {
+        ...toolCallInitialEvent,
+        eventId: '20000000-0000-4000-8000-000000000003',
+        eventType: 'tool_call.schema_validated',
+        occurredAt: secondTimestamp,
+        payload: { from: 'received', to: 'schema_validated' }
+      };
+      await calls.transitionWithEvent({
+        callId: toolCall.callId,
+        from: 'received',
+        to: 'schema_validated',
+        safeResult: null,
+        updatedAt: secondTimestamp,
+        event: validatedEvent
+      });
+      expect(database.prepare(
+        `SELECT state, permission_result, safe_result_json, error_code, updated_at
+        FROM tool_calls WHERE call_id = ?`
+      ).get(toolCall.callId)).toEqual({
+        state: 'schema_validated',
+        permission_result: null,
+        safe_result_json: 'null',
+        error_code: null,
+        updated_at: secondTimestamp
+      });
+
+      await expect(calls.transitionWithEvent({
+        callId: toolCall.callId,
+        from: 'schema_validated',
+        to: 'permission_decided',
+        permissionResult: 'allowed_by_rule',
+        updatedAt: thirdTimestamp,
+        event: { ...validatedEvent, eventType: 'tool_call.permission_decided', occurredAt: thirdTimestamp }
+      })).rejects.toMatchObject({ code: 'R1_PERSISTENCE_FAILED' });
+      expect(database.prepare(
+        `SELECT state, permission_result, safe_result_json, error_code, updated_at
+        FROM tool_calls WHERE call_id = ?`
+      ).get(toolCall.callId)).toEqual({
+        state: 'schema_validated',
+        permission_result: null,
+        safe_result_json: 'null',
+        error_code: null,
+        updated_at: secondTimestamp
+      });
+      await expect(events.findBySessionId(run.runId)).resolves.toEqual([
+        runInitialEvent,
+        toolCallInitialEvent,
+        validatedEvent
+      ]);
+
+      const mismatchedFromEvent = {
+        ...validatedEvent,
+        eventId: '20000000-0000-4000-8000-000000000004',
+        eventType: 'tool_call.permission_decided',
+        occurredAt: thirdTimestamp
+      };
+      await expect(calls.transitionWithEvent({
+        callId: toolCall.callId,
+        from: 'received',
+        to: 'schema_validated',
+        permissionResult: 'allowed_by_rule',
+        updatedAt: thirdTimestamp,
+        event: mismatchedFromEvent
+      })).rejects.toMatchObject({ code: 'R1_PERSISTENCE_FAILED' });
+      await expect(events.findBySessionId(run.runId)).resolves.toHaveLength(3);
+
+      const childCall = {
+        ...toolCall,
+        callId: '20000000-0000-4000-8000-000000000005',
+        parentCallId: toolCall.callId
+      };
+      const childEvent = {
+        ...toolCallInitialEvent,
+        eventId: '20000000-0000-4000-8000-000000000006',
+        occurredAt: thirdTimestamp,
+        payload: { callId: childCall.callId, toolId: childCall.toolId }
+      };
+      await calls.createWithInitialEvent(childCall, childEvent);
+      expect(database.prepare(
+        'SELECT parent_call_id, tool_id, tool_version, arguments_json FROM tool_calls WHERE call_id = ?'
+      ).get(childCall.callId)).toEqual({
+        parent_call_id: toolCall.callId,
+        tool_id: childCall.toolId,
+        tool_version: childCall.toolVersion,
+        arguments_json: JSON.stringify(childCall.arguments)
+      });
+
+      const failedCall = {
+        ...childCall,
+        callId: '20000000-0000-4000-8000-000000000007'
+      };
+      await expect(calls.createWithInitialEvent(failedCall, {
+        ...toolCallInitialEvent,
+        payload: { callId: failedCall.callId, toolId: failedCall.toolId }
+      })).rejects.toMatchObject({ code: 'R1_PERSISTENCE_FAILED' });
+      expect(database.prepare('SELECT call_id FROM tool_calls WHERE call_id = ?').get(failedCall.callId)).toBeUndefined();
+    } finally {
+      database.close();
+    }
+  });
+
+  it('does not roll back a caller-owned transaction when a tool call store cannot begin', async () => {
+    const filename = await createDatabasePath();
+    const database = openR0Database(filename);
+
+    try {
+      runMigrations(database, firstTimestamp);
+      await new SqliteAgentRunStore(database).createWithInitialEvent(run, runInitialEvent);
+      database.exec('BEGIN IMMEDIATE;');
+
+      await expect(new SqliteToolCallStore(database).createWithInitialEvent(toolCall, toolCallInitialEvent))
+        .rejects.toMatchObject({ code: 'R1_PERSISTENCE_FAILED' });
+      expect(database.isTransaction).toBe(true);
+    } finally {
+      if (database.isTransaction) database.exec('ROLLBACK;');
+      database.close();
+    }
+  });
 });
 
 describe('R0 SQLite persistence', () => {
@@ -72,7 +467,7 @@ describe('R0 SQLite persistence', () => {
         defensiveModeEnabled: true,
         extensionsEnabled: false,
         quickCheck: 'ok',
-        migrationVersions: [0, 1]
+        migrationVersions: [0, 1, 2]
       });
     } finally {
       database.close();
@@ -138,7 +533,8 @@ describe('R0 SQLite persistence', () => {
 
       expect(rows).toEqual([
         { version: 0, name: 'schema_migrations', applied_at: firstTimestamp },
-        { version: 1, name: 'r0_diagnostic_data', applied_at: firstTimestamp }
+        { version: 1, name: 'r0_diagnostic_data', applied_at: firstTimestamp },
+        { version: 2, name: 'generic_agent_sessions', applied_at: firstTimestamp }
       ]);
       expect(secondConnection.prepare('PRAGMA integrity_check').get()).toEqual({ integrity_check: 'ok' });
       await expect(new SqliteSessionRepository(secondConnection).findById(session.id)).resolves.toEqual(session);
@@ -167,7 +563,8 @@ describe('R0 SQLite persistence', () => {
         'SELECT version, checksum, applied_at FROM schema_migrations ORDER BY version ASC'
       ).all()).toEqual([
         expect.objectContaining({ version: 0, applied_at: firstTimestamp }),
-        { version: 1, checksum: 'tampered', applied_at: firstTimestamp }
+        { version: 1, checksum: 'tampered', applied_at: firstTimestamp },
+        expect.objectContaining({ version: 2, applied_at: firstTimestamp })
       ]);
     } finally {
       database.close();

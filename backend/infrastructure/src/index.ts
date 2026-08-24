@@ -4,6 +4,8 @@ export { openR0Database } from './persistence/open-database.js';
 export { runMigrations } from './persistence/run-migrations.js';
 export { SqliteSessionRepository } from './persistence/sqlite-session-repository.js';
 export { SqliteEventStore } from './persistence/sqlite-event-store.js';
+export { SqliteAgentRunStore } from './persistence/sqlite-agent-run-store.js';
+export { SqliteToolCallStore } from './persistence/sqlite-tool-call-store.js';
 export { SqliteDiagnostics } from './persistence/sqlite-diagnostics.js';
 export { JsonlDiagnosticLogger } from './logging/jsonl-diagnostic-logger.js';
 export type { JsonlDiagnosticLoggerOptions } from './logging/jsonl-diagnostic-logger.js';

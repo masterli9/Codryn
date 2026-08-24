@@ -49,3 +49,6 @@ export type {
   ProcessRunner,
   SessionRepository
 } from './diagnostics/ports.js';
+export { R1PersistenceFailure } from './agent/model.js';
+export type { AgentRunRecord, ToolCallRecord } from './agent/model.js';
+export type { AgentRunStore, ToolCallStore } from './agent/ports.js';

@@ -37,6 +37,14 @@ export class SqliteSessionRepository implements SessionRepository {
     try {
       this.database.exec('BEGIN IMMEDIATE;');
       transactionStarted = true;
+      this.database.prepare(`INSERT INTO sessions (
+        id, kind, created_at, updated_at
+      ) VALUES (?, ?, ?, ?)`).run(
+        session.id,
+        'diagnostic',
+        session.createdAt,
+        session.updatedAt
+      );
       this.database.prepare(`INSERT INTO diagnostic_sessions (
         id, status, created_at, updated_at
       ) VALUES (?, ?, ?, ?)`).run(session.id, session.status, session.createdAt, session.updatedAt);
