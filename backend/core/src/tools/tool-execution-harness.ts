@@ -1,0 +1,110 @@
+import type { EventEnvelope, JsonValue, ModelToolCall, ToolResult, Uuid } from '@codryn/shared';
+import type { Clock, IdGenerator } from '../diagnostics/ports.js';
+import type { ToolCallStore } from '../agent/ports.js';
+import { R1PersistenceFailure } from '../agent/model.js';
+import type { ControlledPermissionPolicy } from './controlled-permission-policy.js';
+import { ToolRegistryFailure } from './tool-registry.js';
+import type { ToolRegistry, ToolDefinition } from './tool-registry.js';
+import type { ToolCallState } from '../state/tool-call.js';
+
+export interface ToolExecutionHarnessDependencies {
+  readonly registry: ToolRegistry;
+  readonly permissionPolicy: ControlledPermissionPolicy;
+  readonly toolCallStore: ToolCallStore;
+  readonly clock: Clock;
+  readonly ids: IdGenerator;
+}
+
+const messages = Object.freeze({
+  R1_TOOL_UNKNOWN: 'Tool is not registered.',
+  R1_TOOL_INPUT_INVALID: 'Tool input is invalid.',
+  R1_TOOL_PERMISSION_DENIED: 'Tool permission was denied.',
+  R1_TOOL_OUTPUT_INVALID: 'Tool output is invalid.',
+  R1_TOOL_EXECUTION_FAILED: 'Tool execution failed.',
+  R1_CANCELLED: 'Tool execution cancelled.',
+  R1_PERSISTENCE_FAILED: 'Tool execution could not be persisted.'
+});
+type HarnessCode = keyof typeof messages;
+
+function failed(callId: Uuid, code: HarnessCode): ToolResult {
+  return { ok: false, callId, error: { code, message: messages[code] } };
+}
+
+function safeResult(result: ToolResult): JsonValue {
+  return result.ok
+    ? { ok: true, outputType: Array.isArray(result.output) ? 'array' : typeof result.output }
+    : { ok: false, code: result.error.code };
+}
+
+function pathEvidence(input: unknown): { readonly path: string; readonly withinProject: boolean; readonly sensitive: boolean } | undefined {
+  if (typeof input !== 'object' || input === null || !Object.hasOwn(input, 'path')) return undefined;
+  const candidate = input as { readonly path: unknown };
+  if (typeof candidate.path !== 'string') return undefined;
+  const path = candidate.path;
+  const leaf = path.replaceAll('\\', '/').split('/').at(-1)?.toLowerCase() ?? '';
+  return { path, withinProject: true, sensitive: leaf === '.env' || leaf.startsWith('.env.') || leaf.includes('credential') || leaf.includes('private_key') };
+}
+
+export class ToolExecutionHarness {
+  constructor(private readonly dependencies: ToolExecutionHarnessDependencies) {}
+
+  async execute(call: ModelToolCall, runId: Uuid, signal: AbortSignal): Promise<ToolResult> {
+    let state: ToolCallState = 'received';
+    try {
+      await this.dependencies.toolCallStore.createWithInitialEvent({
+        callId: call.callId, runId, toolId: call.toolId, toolVersion: call.toolVersion, state, arguments: call.arguments,
+        createdAt: this.timestamp(), updatedAt: this.timestamp()
+      }, this.event(runId, 'tool_call.received', { callId: call.callId, toolId: call.toolId, toolVersion: call.toolVersion }));
+      if (signal.aborted) return await this.reject(call, runId, state, 'cancelled', 'R1_CANCELLED');
+
+      let definition: ToolDefinition;
+      try { definition = this.dependencies.registry.lookup(call.toolId, call.toolVersion); }
+      catch (error) {
+        if (error instanceof ToolRegistryFailure) return await this.reject(call, runId, state, 'failed', 'R1_TOOL_UNKNOWN');
+        throw error;
+      }
+      const parsed = definition.inputSchema.safeParse(call.arguments);
+      if (!parsed.success) return await this.reject(call, runId, state, 'failed', 'R1_TOOL_INPUT_INVALID');
+      state = await this.transition(call.callId, runId, state, 'schema_validated');
+
+      const evidence = pathEvidence(parsed.data);
+      const decision = this.dependencies.permissionPolicy.decide({ risk: definition.risk, pathEvidence: evidence ?? {} });
+      state = await this.transition(call.callId, runId, state, 'permission_decided', { permissionResult: decision.result });
+      if (decision.result === 'denied') return await this.reject(call, runId, state, 'denied', 'R1_TOOL_PERMISSION_DENIED');
+      if (signal.aborted) return await this.reject(call, runId, state, 'cancelled', 'R1_CANCELLED');
+
+      state = await this.transition(call.callId, runId, state, 'queued');
+      state = await this.transition(call.callId, runId, state, 'running');
+      let output: unknown;
+      try { output = await definition.handler(parsed.data, signal); }
+      catch { return await this.reject(call, runId, state, signal.aborted ? 'cancelled' : 'failed', signal.aborted ? 'R1_CANCELLED' : 'R1_TOOL_EXECUTION_FAILED'); }
+      if (signal.aborted) return await this.reject(call, runId, state, 'cancelled', 'R1_CANCELLED');
+      const validated = definition.outputSchema.safeParse(output);
+      if (!validated.success) return await this.reject(call, runId, state, 'failed', 'R1_TOOL_OUTPUT_INVALID');
+      const result: ToolResult = { ok: true, callId: call.callId, output: validated.data as JsonValue };
+      await this.transition(call.callId, runId, state, 'succeeded', { safeResult: safeResult(result) });
+      return result;
+    } catch (error) {
+      if (error instanceof R1PersistenceFailure) return failed(call.callId, 'R1_PERSISTENCE_FAILED');
+      return failed(call.callId, 'R1_TOOL_EXECUTION_FAILED');
+    }
+  }
+
+  private async reject(call: ModelToolCall, runId: Uuid, from: ToolCallState, to: Extract<ToolCallState, 'failed' | 'denied' | 'cancelled'>, code: HarnessCode): Promise<ToolResult> {
+    const result = failed(call.callId, code);
+    await this.transition(call.callId, runId, from, to, { errorCode: code, ...(to === 'denied' ? { permissionResult: 'denied' as const } : {}), safeResult: safeResult(result) });
+    return result;
+  }
+
+  private async transition(callId: Uuid, runId: Uuid, from: ToolCallState, to: ToolCallState, data: { readonly permissionResult?: 'allowed_by_rule' | 'denied'; readonly safeResult?: JsonValue; readonly errorCode?: string } = {}): Promise<ToolCallState> {
+    const eventType = to === 'failed' || to === 'denied' || to === 'cancelled' ? 'tool_call.rejected' : to === 'running' ? 'tool_call.started' : `tool_call.${to}`;
+    await this.dependencies.toolCallStore.transitionWithEvent({ callId, from, to, updatedAt: this.timestamp(), ...data, event: this.event(runId, eventType, { callId, from, to, ...('errorCode' in data ? { errorCode: data.errorCode ?? null } : {}) }) });
+    return to;
+  }
+
+  private event(runId: Uuid, eventType: string, payload: JsonValue): EventEnvelope {
+    return { eventId: this.dependencies.ids.next(), eventType, eventVersion: 1, correlationId: runId, occurredAt: this.timestamp(), source: 'core', sessionId: runId, payload };
+  }
+
+  private timestamp() { return this.dependencies.clock.now() as EventEnvelope['occurredAt']; }
+}
