@@ -61,6 +61,8 @@ export { ControlledPermissionPolicy } from './tools/controlled-permission-policy
 export type { PermissionDecision, PermissionInput } from './tools/controlled-permission-policy.js';
 export { ToolExecutionHarness } from './tools/tool-execution-harness.js';
 export type { ToolExecutionHarnessDependencies } from './tools/tool-execution-harness.js';
+export { RunAgentLoop } from './agent/run-agent-loop.js';
+export type { RunAgentLoopDependencies } from './agent/run-agent-loop.js';
 export { collectModelResponse, ModelResponseFailure } from './agent/model-response-collector.js';
 export type {
   CollectedModelResponse,
