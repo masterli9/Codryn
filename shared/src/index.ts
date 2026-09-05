@@ -3,3 +3,6 @@ export * from './json-value.js';
 export * from './event-envelope.js';
 export * from './r0-diagnostics.js';
 export * from './ipc.js';
+export * from './r1-agent.js';
+export * from './model-contract.js';
+export * from './tool-contract.js';

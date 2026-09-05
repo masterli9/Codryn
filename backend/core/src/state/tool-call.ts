@@ -1,11 +1,14 @@
 import { transition, type TransitionResult } from './transition.js';
 
 export const toolCallGraph = {
-  proposed: ['waiting_for_approval', 'running', 'cancelled'],
-  waiting_for_approval: ['running', 'cancelled'],
+  received: ['schema_validated', 'failed'],
+  schema_validated: ['permission_decided', 'failed'],
+  permission_decided: ['queued', 'denied'],
+  queued: ['running', 'cancelled'],
   running: ['succeeded', 'failed', 'timed_out', 'cancelled'],
   succeeded: [],
   failed: [],
+  denied: [],
   timed_out: [],
   cancelled: []
 } as const;

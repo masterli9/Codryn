@@ -49,3 +49,24 @@ export type {
   ProcessRunner,
   SessionRepository
 } from './diagnostics/ports.js';
+export { R1PersistenceFailure } from './agent/model.js';
+export type { AgentRunRecord, ToolCallRecord, AssembledContext, ContextSourceAudit } from './agent/model.js';
+export type { AgentRunStore, ModelAdapter, ToolCallStore } from './agent/ports.js';
+export { ContextAssembler, ContextAssemblyFailure } from './agent/context-assembler.js';
+export type { ContextAssemblyInput } from './agent/context-assembler.js';
+export { ToolRegistry, ToolRegistryFailure } from './tools/tool-registry.js';
+export type { ToolDefinition, ToolRisk } from './tools/tool-registry.js';
+export { fileReadTool, textSearchTool, fileReadInputSchema, fileReadOutputSchema, textSearchInputSchema, textSearchOutputSchema } from './tools/read-only-contracts.js';
+export { ControlledPermissionPolicy } from './tools/controlled-permission-policy.js';
+export type { PermissionDecision, PermissionInput } from './tools/controlled-permission-policy.js';
+export { isR1SensitiveRelativePath, isValidR1RelativePath } from './tools/r1-sensitive-path-policy.js';
+export { ToolExecutionHarness } from './tools/tool-execution-harness.js';
+export type { ToolExecutionHarnessDependencies } from './tools/tool-execution-harness.js';
+export { RunAgentLoop } from './agent/run-agent-loop.js';
+export type { RunAgentLoopDependencies } from './agent/run-agent-loop.js';
+export { collectModelResponse, ModelResponseFailure } from './agent/model-response-collector.js';
+export type {
+  CollectedModelResponse,
+  ModelResponseFailureCode,
+  ModelUsage
+} from './agent/model-response-collector.js';

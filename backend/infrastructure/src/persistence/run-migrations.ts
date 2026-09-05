@@ -29,6 +29,12 @@ function requireKnownChecksums(rows: readonly MigrationRow[]): void {
   }
 }
 
+function requireValidForeignKeys(database: DatabaseSync): void {
+  if (database.prepare('PRAGMA foreign_key_check').all().length !== 0) {
+    throw new R0DiagnosticFailure('R0_DB_MIGRATION_FAILED', 'MIGRATION_FOREIGN_KEY_CHECK_FAILED');
+  }
+}
+
 export function runMigrations(database: DatabaseSync, now: string): void {
   try {
     isoTimestampSchema.parse(now);
@@ -66,7 +72,10 @@ export function runMigrations(database: DatabaseSync, now: string): void {
         'INSERT INTO schema_migrations (version, name, checksum, applied_at) VALUES (?, ?, ?, ?)'
       ).run(migration.version, migration.name, migration.checksum, now);
     }
+    requireValidForeignKeys(database);
     database.exec('COMMIT;');
+    transactionStarted = false;
+    requireValidForeignKeys(database);
   } catch (error) {
     if (transactionStarted) {
       try {

@@ -1,0 +1,8 @@
+{
+  "name": "@codryn/cli",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": { "typecheck": "tsc --noEmit -p tsconfig.json", "start:r1": "node --no-warnings --experimental-loader ./src/typescript-resolution-loader.mjs --experimental-transform-types src/index.ts" },
+  "dependencies": { "@codryn/core": "0.0.0", "@codryn/infrastructure": "0.0.0", "@codryn/shared": "0.0.0" }
+}

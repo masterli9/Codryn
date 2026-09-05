@@ -9,10 +9,16 @@ export default {
     {
       name: 'core-must-not-import-runtime-adapters',
       severity: 'error',
-      from: { path: '(^|/)backend/core/' },
+      from: { path: '(^|/)(backend/core/|apps/cli/src/.*\\.ts$)' },
       to: {
         path: '((^|/)(node_modules/)?electron(/|$)|^(?:node:)?sqlite$|^(?:node:)?child_process$|^(?:node:)?fs(?:/promises)?$|^(simple-git|isomorphic-git|nodegit|dugite)$)'
       }
+    },
+    {
+      name: 'cli-must-use-composition-root-for-infrastructure',
+      severity: 'error',
+      from: { path: '(^|/)apps/cli/src/(?!composition-root\\.ts$)' },
+      to: { path: '(^|/)backend/infrastructure/' }
     },
     {
       name: 'shared-must-stay-independent',

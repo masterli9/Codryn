@@ -14,35 +14,77 @@ function isPlainRecord(value: object): boolean {
   return prototype === Object.prototype || prototype === null;
 }
 
-function requirePersistableJson(value: unknown, seen = new Set<object>()): asserts value is JsonValue {
-  if (value === null || typeof value === 'string' || typeof value === 'boolean') return;
-  if (typeof value === 'number') {
-    if (!Number.isFinite(value)) throw new TypeError('EVENT_PAYLOAD_NOT_JSON');
-    return;
+function invalidJsonValue(): never {
+  throw new TypeError('EVENT_PAYLOAD_NOT_JSON');
+}
+
+function canonicalizeArray(value: unknown[], seen: Set<object>): JsonValue[] {
+  const ownKeys = Reflect.ownKeys(value);
+  if (ownKeys.some((key) => typeof key === 'symbol')) invalidJsonValue();
+
+  const lengthDescriptor = Object.getOwnPropertyDescriptor(value, 'length');
+  if (lengthDescriptor === undefined || !('value' in lengthDescriptor)
+    || typeof lengthDescriptor.value !== 'number') {
+    invalidJsonValue();
   }
-  if (typeof value !== 'object' || seen.has(value)) throw new TypeError('EVENT_PAYLOAD_NOT_JSON');
+  const length = lengthDescriptor.value;
+  const allowedKeys = new Set(['length']);
+  const canonical: JsonValue[] = [];
+  for (let index = 0; index < length; index += 1) {
+    const key = String(index);
+    allowedKeys.add(key);
+    const descriptor = Object.getOwnPropertyDescriptor(value, key);
+    if (descriptor === undefined || !descriptor.enumerable || !('value' in descriptor)) {
+      invalidJsonValue();
+    }
+    canonical.push(canonicalizeJsonValue(descriptor.value, seen));
+  }
+  if (ownKeys.some((key) => typeof key !== 'string' || !allowedKeys.has(key))) {
+    invalidJsonValue();
+  }
+  return canonical;
+}
+
+function canonicalizeRecord(value: object, seen: Set<object>): { [key: string]: JsonValue } {
+  if (!isPlainRecord(value)) invalidJsonValue();
+  const canonical = Object.create(null) as { [key: string]: JsonValue };
+  for (const key of Reflect.ownKeys(value)) {
+    if (typeof key !== 'string') invalidJsonValue();
+    const descriptor = Object.getOwnPropertyDescriptor(value, key);
+    if (descriptor === undefined || !descriptor.enumerable || !('value' in descriptor)) {
+      invalidJsonValue();
+    }
+    canonical[key] = canonicalizeJsonValue(descriptor.value, seen);
+  }
+  return canonical;
+}
+
+export function canonicalizeJsonValue(value: unknown, seen = new Set<object>()): JsonValue {
+  if (value === null || typeof value === 'string' || typeof value === 'boolean') return value;
+  if (typeof value === 'number') {
+    if (!Number.isFinite(value)) invalidJsonValue();
+    return value;
+  }
+  if (typeof value !== 'object' || seen.has(value)) return invalidJsonValue();
 
   seen.add(value);
   try {
-    if (Array.isArray(value)) {
-      for (const item of value) requirePersistableJson(item, seen);
-      return;
-    }
-    if (!isPlainRecord(value)) throw new TypeError('EVENT_PAYLOAD_NOT_JSON');
-    for (const key of Object.keys(value)) {
-      const descriptor = Object.getOwnPropertyDescriptor(value, key);
-      if (descriptor === undefined || !('value' in descriptor)) throw new TypeError('EVENT_PAYLOAD_NOT_JSON');
-      requirePersistableJson(descriptor.value, seen);
-    }
+    return Array.isArray(value)
+      ? canonicalizeArray(value, seen)
+      : canonicalizeRecord(value, seen);
   } finally {
     seen.delete(value);
   }
 }
 
+export function validateJsonValue(value: unknown): asserts value is JsonValue {
+  canonicalizeJsonValue(value);
+}
+
 export function validateEvent(event: unknown): EventEnvelope {
   if (typeof event !== 'object' || event === null) throw new TypeError('EVENT_ENVELOPE_INVALID');
   const payload = Reflect.get(event, 'payload');
-  requirePersistableJson(payload);
+  validateJsonValue(payload);
   if (Object.prototype.hasOwnProperty.call(event, 'sessionId') && Reflect.get(event, 'sessionId') === undefined) {
     throw new TypeError('EVENT_ENVELOPE_INVALID');
   }
@@ -72,7 +114,7 @@ function requireString(value: SQLOutputValue | undefined): string {
 function eventFromRow(row: Record<string, SQLOutputValue>): EventEnvelope {
   const payloadJson = requireString(row.payload_json);
   const payload: unknown = JSON.parse(payloadJson);
-  requirePersistableJson(payload);
+  validateJsonValue(payload);
   const sessionId = row.session_id;
   if (sessionId !== null && typeof sessionId !== 'string') throw new TypeError('EVENT_ROW_INVALID');
 

@@ -47,6 +47,27 @@ describe('workspace boundaries', () => {
 });
 
 describe('production dependency boundaries', () => {
+  it('rejects an infrastructure persistence import from the CLI entrypoint', async () => {
+    const entrypoint = join(workspaceRoot, 'apps/cli/src/index.ts');
+    const original = await readFile(entrypoint, 'utf8');
+
+    try {
+      await writeFile(
+        entrypoint,
+        `${original}\nimport '../../../backend/infrastructure/src/persistence/sqlite-agent-run-store.ts';\n`
+      );
+      const violations = await dependencyViolations(entrypoint);
+
+      expect(violations).toContainEqual(
+        expect.objectContaining({
+          rule: expect.objectContaining({ name: 'cli-must-use-composition-root-for-infrastructure' })
+        })
+      );
+    } finally {
+      await writeFile(entrypoint, original);
+    }
+  });
+
   it('rejects a nested core-to-desktop import with the core boundary rule', async () => {
     const root = await mkdtemp(join(workspaceRoot, 'tests', 'dependency-rules-'));
     const coreDirectory = join(root, 'backend/core');
@@ -82,6 +103,26 @@ describe('production dependency boundaries', () => {
           rule: expect.objectContaining({
             name: 'core-must-not-import-runtime-adapters'
           })
+        })
+      );
+    } finally {
+      await rm(fixture.directory, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects a production import of the R1 test fixture', async () => {
+    const fixture = await createFixture('apps/cli/src/test');
+
+    try {
+      await writeFile(
+        fixture.file,
+        "import '../../../../../tests/support/fixtures/r1-project/src/index';\n"
+      );
+      const violations = await dependencyViolations(fixture.file);
+
+      expect(violations).toContainEqual(
+        expect.objectContaining({
+          rule: expect.objectContaining({ name: 'production-must-not-import-test-support' })
         })
       );
     } finally {
