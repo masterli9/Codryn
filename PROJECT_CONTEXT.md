@@ -5,6 +5,14 @@
 > významném rozhodnutí ho aktualizuj. Nezaměňuj zde označené nápady za hotová
 > rozhodnutí.
 
+## Schválený směr R2 – 5. září 2026
+
+- Autor schválil R2 po částech: bezpečný zápis; diff a návrat; schvalování a ověření; obnova a celý scénář.
+- Výběr poskytovatele a první skutečný modelový adaptér se přesouvají z R4 do R2. Fake adapter zůstává základem automatických testů; R2 má také samostatnou živou dokončovací bránu.
+- Jde o změnu pořadí implementace uvnitř O1, nikoli změnu produktové etapy nebo akceptačních kritérií. PRD v1.0 se nepřepisuje. OD-04 se uzavře až podle provider evalu v R2.
+- Návrh k revizi je v `docs/superpowers/specs/2026-09-05-r2-change-lifecycle-design.md`; jeho detailní technické volby dosud nejsou označeny za schválené ani implementované.
+- R4 naváže rozšířenými scénáři a regresí již připojeného adaptéru. Historické zmínky o prvním připojení v R4/F3 čti podle tohoto rozhodnutí a ADR 0004.
+
 ## Aktualizace po vydání PRD v1.0 – 14. srpna 2026
 
 - Aktuální produktovou autoritou je `PRD_v1.0.md`. `docs/product/PRD_v0.3.md`, `docs/product/PRD_v0.2.md` a `docs/product/PRD_v0.1.md` jsou neměnné historické snapshoty.

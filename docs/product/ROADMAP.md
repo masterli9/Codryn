@@ -188,7 +188,7 @@ Doplnit headless jádro o bezpečnou změnu projektu, ověření aktuální revi
 
 ### Pozorovatelný výsledek
 
-Fake scénář analyzuje fixture projekt, provede cílený patch, spustí omezený ověřovací příkaz, zobrazí diff a stav ověření a následně změnu bezpečně vrátí. Stejný princip funguje nad Git i non-Git fixture.
+Fake scénář analyzuje fixture projekt, provede cílený patch, spustí omezený ověřovací příkaz, zobrazí diff a stav ověření a následně změnu bezpečně vrátí. Stejný princip funguje nad Git i non-Git fixture a s prvním skutečným modelem vybraným provider evalem. Přesun prvního adaptéru z R4 do R2 schválil autor 5. září 2026; viz ADR 0004.
 
 ### Zahrnutý rozsah
 
@@ -204,7 +204,8 @@ Fake scénář analyzuje fixture projekt, provede cílený patch, spustí omezen
 - timeout, zrušení, limity cest, výstupu a redakce tajemství;
 - trvalé eventy a obnova podporovaných stavů po pádu;
 - základ `WorkspaceState`, monotónní `workspaceRevision` a resource-key lease;
-- kontraktní sady nástrojů a adapterů.
+- kontraktní sady nástrojů a adapterů;
+- provider eval, první reálný modelový adapter a oddělený živý referenční scénář s omezenými náklady a syntetickým obsahem.
 
 ### Vědomě nezahrnutý rozsah
 
@@ -233,11 +234,12 @@ Fake scénář analyzuje fixture projekt, provede cílený patch, spustí omezen
 - test stejného scénáře v Git i non-Git fixture;
 - úspěšné i neúspěšné ověření a následná invalidace starého výsledku;
 - zamítnuté schválení, timeout a zrušení procesu;
-- obnova podporované přerušené relace bez duplicitního tool callu.
+- obnova podporované přerušené relace bez duplicitního tool callu;
+- provider eval dle FR-LLM-12 a živý scénář alespoň 4krát z 5 dle AC-O1-04; nedostupné API není úspěšný výsledek.
 
 ### Dokončovací brána
 
-R2 je dokončeno, když headless průchod opakovatelně naplní celý cyklus `analysis → change → verification → diff/result → safe return`, stale zápis se vždy zastaví a návrat nepoškodí změny mimo konkrétní change set.
+R2 je dokončeno, když headless průchod opakovatelně naplní celý cyklus `analysis → change → verification → diff/result → safe return`, stale zápis se vždy zastaví a návrat nepoškodí změny mimo konkrétní change set. Deterministická brána vyžaduje 10/10 v Git i non-Git fixture; samostatná živá brána vyžaduje první adaptér vybraný podle evalu a alespoň 4/5 úspěšných pokusů při dostupném API. Podrobný návrh je v `docs/superpowers/specs/2026-09-05-r2-change-lifecycle-design.md`.
 
 ### Důkaz a porozumění autora
 
@@ -315,7 +317,7 @@ Codryn dokončí reálný úkol nad malým TypeScript/React projektem, použije 
 
 ### Zahrnutý rozsah
 
-- provider eval a první reálný modelový adapter;
+- rozšířené scénáře a regrese prvního reálného modelového adaptéru vybraného a připojeného v R2;
 - TypeScript profil: rozpoznání, definice, reference, typy, diagnostika a import/export vazby;
 - rychlý deterministický základ repo mapy, cílené prohlubování, invalidace a hlubší inicializace;
 - finální O1 `@` reference na soubory a složky a audit sestaveného kontextu;
