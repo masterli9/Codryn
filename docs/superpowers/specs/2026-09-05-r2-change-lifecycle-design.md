@@ -2,7 +2,7 @@
 
 | Položka | Hodnota |
 | --- | --- |
-| Stav | Návrh k revizi; rozdělení fáze a skutečný model v R2 schváleny autorem |
+| Stav | Schváleno autorem pro implementační plán 5. září 2026; technické experimenty zůstávají povinnými branami |
 | Datum | 5. září 2026 |
 | Autorita | PRD v1.0, PROJECT_CONTEXT.md a rozhodnutí autora o pořadí R2/R4 |
 | Výchozí stav | `ae6cb49`, integrované R1, vyplněný autorský checklist |
@@ -234,6 +234,10 @@ R2 není dokončeno, dokud existuje nevyřešená bezpečnostní brána zápisu,
 procesů, obnovy nebo chybí důkaz prvního skutečného adaptéru.
 
 ## 11. Navazující plán a autorský důkaz
+
+Schválení návrhu je zaznamenáno 5. září 2026. Navazující rozpis je v
+`docs/superpowers/plans/2026-09-05-r2-implementation.md` a čtyřech dílčích
+plánech; jeho existence neznamená provedení implementace ani experimentů.
 
 Po revizi tohoto návrhu vzniknou čtyři dílčí implementační plány s přesnými
 kontrakty, soubory, migračními kroky a spustitelnými testy. Technické volby

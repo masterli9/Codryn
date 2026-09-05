@@ -10,8 +10,9 @@
 - Autor schválil R2 po částech: bezpečný zápis; diff a návrat; schvalování a ověření; obnova a celý scénář.
 - Výběr poskytovatele a první skutečný modelový adaptér se přesouvají z R4 do R2. Fake adapter zůstává základem automatických testů; R2 má také samostatnou živou dokončovací bránu.
 - Jde o změnu pořadí implementace uvnitř O1, nikoli změnu produktové etapy nebo akceptačních kritérií. PRD v1.0 se nepřepisuje. OD-04 se uzavře až podle provider evalu v R2.
-- Návrh k revizi je v `docs/superpowers/specs/2026-09-05-r2-change-lifecycle-design.md`; jeho detailní technické volby dosud nejsou označeny za schválené ani implementované.
+- Návrh v `docs/superpowers/specs/2026-09-05-r2-change-lifecycle-design.md` autor schválil pro implementační plán. Schválení návrhu není důkazem implementace; Windows zápis, procesy a konkrétní poskytovatel stále vyžadují předepsané experimenty a měření.
 - R4 naváže rozšířenými scénáři a regresí již připojeného adaptéru. Historické zmínky o prvním připojení v R4/F3 čti podle tohoto rozhodnutí a ADR 0004.
+- Implementační plán je v `docs/superpowers/plans/2026-09-05-r2-implementation.md` a čtyřech navazujících dílech. Obsahuje 18 úkolů; implementace zatím nezačala. Windows experimenty a provider eval jsou součástí plánu, nikoli již splněné podmínky.
 
 ## Aktualizace po vydání PRD v1.0 – 14. srpna 2026
 
