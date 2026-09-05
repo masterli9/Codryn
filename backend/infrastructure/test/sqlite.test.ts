@@ -170,7 +170,8 @@ describe('R1 SQLite persistence', () => {
       expect(migrationRows).toEqual([
         { version: 0, name: 'schema_migrations', applied_at: firstTimestamp },
         { version: 1, name: 'r0_diagnostic_data', applied_at: firstTimestamp },
-        { version: 2, name: 'generic_agent_sessions', applied_at: secondTimestamp }
+        { version: 2, name: 'generic_agent_sessions', applied_at: secondTimestamp },
+        { version: 3, name: 'tool_call_permission_audit', applied_at: secondTimestamp }
       ]);
 
       runMigrations(database, thirdTimestamp);
@@ -423,6 +424,73 @@ describe('R1 SQLite persistence', () => {
     }
   });
 
+  it('persists permission rule and reason in the tool projection and audit event', async () => {
+    const filename = await createDatabasePath();
+    const database = openR0Database(filename);
+
+    try {
+      runMigrations(database, firstTimestamp);
+      await new SqliteAgentRunStore(database).createWithInitialEvent(run, runInitialEvent);
+      const calls = new SqliteToolCallStore(database);
+      const events = new SqliteEventStore(database);
+      await calls.createWithInitialEvent(toolCall, toolCallInitialEvent);
+
+      await calls.transitionWithEvent({
+        callId: toolCall.callId,
+        from: 'received',
+        to: 'schema_validated',
+        updatedAt: secondTimestamp,
+        event: {
+          ...toolCallInitialEvent,
+          eventId: '20000000-0000-4000-8000-000000000003',
+          eventType: 'tool_call.schema_validated',
+          occurredAt: secondTimestamp,
+          payload: { from: 'received', to: 'schema_validated' }
+        }
+      });
+      await calls.transitionWithEvent({
+        callId: toolCall.callId,
+        from: 'schema_validated',
+        to: 'permission_decided',
+        permissionResult: 'allowed_by_rule',
+        permissionRuleId: 'R1_SAFE_READ_WITHIN_PROJECT',
+        permissionReason: 'Validated read-only path is within the open project.',
+        updatedAt: thirdTimestamp,
+        event: {
+          ...toolCallInitialEvent,
+          eventId: '20000000-0000-4000-8000-000000000004',
+          eventType: 'tool_call.permission_decided',
+          occurredAt: thirdTimestamp,
+          payload: {
+            from: 'schema_validated',
+            to: 'permission_decided',
+            permissionResult: 'allowed_by_rule',
+            permissionRuleId: 'R1_SAFE_READ_WITHIN_PROJECT',
+            permissionReason: 'Validated read-only path is within the open project.'
+          }
+        }
+      });
+
+      expect(database.prepare(`SELECT permission_result, permission_rule_id, permission_reason
+        FROM tool_calls WHERE call_id = ?`).get(toolCall.callId)).toEqual({
+        permission_result: 'allowed_by_rule',
+        permission_rule_id: 'R1_SAFE_READ_WITHIN_PROJECT',
+        permission_reason: 'Validated read-only path is within the open project.'
+      });
+      await expect(events.findBySessionId(run.runId)).resolves.toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          eventType: 'tool_call.permission_decided',
+          payload: expect.objectContaining({
+            permissionRuleId: 'R1_SAFE_READ_WITHIN_PROJECT',
+            permissionReason: 'Validated read-only path is within the open project.'
+          })
+        })
+      ]));
+    } finally {
+      database.close();
+    }
+  });
+
   it('does not roll back a caller-owned transaction when a tool call store cannot begin', async () => {
     const filename = await createDatabasePath();
     const database = openR0Database(filename);
@@ -623,7 +691,7 @@ describe('R0 SQLite persistence', () => {
         defensiveModeEnabled: true,
         extensionsEnabled: false,
         quickCheck: 'ok',
-        migrationVersions: [0, 1, 2]
+        migrationVersions: [0, 1, 2, 3]
       });
     } finally {
       database.close();
@@ -690,7 +758,8 @@ describe('R0 SQLite persistence', () => {
       expect(rows).toEqual([
         { version: 0, name: 'schema_migrations', applied_at: firstTimestamp },
         { version: 1, name: 'r0_diagnostic_data', applied_at: firstTimestamp },
-        { version: 2, name: 'generic_agent_sessions', applied_at: firstTimestamp }
+        { version: 2, name: 'generic_agent_sessions', applied_at: firstTimestamp },
+        { version: 3, name: 'tool_call_permission_audit', applied_at: firstTimestamp }
       ]);
       expect(secondConnection.prepare('PRAGMA integrity_check').get()).toEqual({ integrity_check: 'ok' });
       await expect(new SqliteSessionRepository(secondConnection).findById(session.id)).resolves.toEqual(session);
@@ -720,7 +789,8 @@ describe('R0 SQLite persistence', () => {
       ).all()).toEqual([
         expect.objectContaining({ version: 0, applied_at: firstTimestamp }),
         { version: 1, checksum: 'tampered', applied_at: firstTimestamp },
-        expect.objectContaining({ version: 2, applied_at: firstTimestamp })
+        expect.objectContaining({ version: 2, applied_at: firstTimestamp }),
+        expect.objectContaining({ version: 3, applied_at: firstTimestamp })
       ]);
     } finally {
       database.close();

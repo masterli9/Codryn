@@ -138,6 +138,11 @@ CREATE TABLE tool_calls (
 
 CREATE INDEX tool_calls_run_created_idx ON tool_calls(run_id, created_at, call_id);`;
 
+const toolCallPermissionAuditSql = `ALTER TABLE tool_calls
+  ADD COLUMN permission_rule_id TEXT CHECK (permission_rule_id IS NULL OR length(permission_rule_id) > 0);
+ALTER TABLE tool_calls
+  ADD COLUMN permission_reason TEXT CHECK (permission_reason IS NULL OR length(permission_reason) > 0);`;
+
 function sha256(sql: string): string {
   return createHash('sha256').update(sql, 'utf8').digest('hex');
 }
@@ -160,5 +165,11 @@ export const migrations: readonly Migration[] = [
     name: 'generic_agent_sessions',
     sql: genericAgentSessionsSql,
     checksum: sha256(genericAgentSessionsSql)
+  },
+  {
+    version: 3,
+    name: 'tool_call_permission_audit',
+    sql: toolCallPermissionAuditSql,
+    checksum: sha256(toolCallPermissionAuditSql)
   }
 ];

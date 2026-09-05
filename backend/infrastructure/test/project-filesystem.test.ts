@@ -87,6 +87,27 @@ describe('ProjectFilesystem', () => {
       .rejects.toMatchObject({ code: 'R1_PATH_OUTSIDE_ROOT' });
   });
 
+  it('rejects a search scope whose parent junction escapes the project root', async () => {
+    const { root, outside } = await fixture();
+    await writeFile(join(outside, 'secret.txt'), 'SYNTHETIC_OUTSIDE_MARKER');
+    await symlink(outside, join(root, 'outside-junction'), 'junction');
+
+    await expect(new ProjectFilesystem(root).searchText({
+      query: 'SYNTHETIC_OUTSIDE_MARKER',
+      path: 'outside-junction/secret.txt'
+    }, new AbortController().signal)).rejects.toMatchObject({ code: 'R1_PATH_OUTSIDE_ROOT' });
+  });
+
+  it('rejects a read alias whose canonical target is a sensitive path', async () => {
+    const { root } = await fixture();
+    await mkdir(join(root, '.git'));
+    await writeFile(join(root, '.git', 'config'), 'SYNTHETIC_SENSITIVE_MARKER');
+    await symlink(join(root, '.git'), join(root, 'git-alias'), 'junction');
+
+    await expect(new ProjectFilesystem(root).readFile({ path: 'git-alias/config' }, new AbortController().signal))
+      .rejects.toMatchObject({ code: 'R1_PATH_SENSITIVE' });
+  });
+
   it('accepts exactly 1 MiB but rejects one byte more and bounds read output to 64 KiB', async () => {
     const { root } = await fixture();
     const exactFile = 'x'.repeat(1024 * 1024);

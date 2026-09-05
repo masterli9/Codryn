@@ -72,6 +72,11 @@ function parseErrorCode(value: unknown): string {
   return value;
 }
 
+function parseAuditText(value: unknown): string {
+  if (typeof value !== 'string' || value.length === 0) throw new TypeError('TOOL_CALL_AUDIT_TEXT_INVALID');
+  return value;
+}
+
 function validateToolCall(input: unknown): ToolCallRecord {
   if (!isPlainRecord(input)) throw new TypeError('TOOL_CALL_INVALID');
   requireExactKeys(
@@ -80,7 +85,7 @@ function validateToolCall(input: unknown): ToolCallRecord {
       'callId', 'runId', 'toolId', 'toolVersion', 'state', 'arguments',
       'createdAt', 'updatedAt'
     ],
-    ['parentCallId', 'permissionResult', 'safeResult', 'errorCode']
+    ['parentCallId', 'permissionResult', 'permissionRuleId', 'permissionReason', 'safeResult', 'errorCode']
   );
 
   const base = {
@@ -99,13 +104,19 @@ function validateToolCall(input: unknown): ToolCallRecord {
   const permissionResult = Object.prototype.hasOwnProperty.call(input, 'permissionResult')
     ? { permissionResult: parsePermissionResult(input.permissionResult) }
     : {};
+  const permissionRuleId = Object.prototype.hasOwnProperty.call(input, 'permissionRuleId')
+    ? { permissionRuleId: parseAuditText(input.permissionRuleId) }
+    : {};
+  const permissionReason = Object.prototype.hasOwnProperty.call(input, 'permissionReason')
+    ? { permissionReason: parseAuditText(input.permissionReason) }
+    : {};
   const safeResult = Object.prototype.hasOwnProperty.call(input, 'safeResult')
     ? { safeResult: validatedJson(input.safeResult) }
     : {};
   const errorCode = Object.prototype.hasOwnProperty.call(input, 'errorCode')
     ? { errorCode: parseErrorCode(input.errorCode) }
     : {};
-  return { ...base, ...parentCallId, ...permissionResult, ...safeResult, ...errorCode };
+  return { ...base, ...parentCallId, ...permissionResult, ...permissionRuleId, ...permissionReason, ...safeResult, ...errorCode };
 }
 
 function validateTransition(input: unknown): ToolCallTransition {
@@ -113,7 +124,7 @@ function validateTransition(input: unknown): ToolCallTransition {
   requireExactKeys(
     input,
     ['callId', 'from', 'to', 'updatedAt', 'event'],
-    ['permissionResult', 'safeResult', 'errorCode']
+    ['permissionResult', 'permissionRuleId', 'permissionReason', 'safeResult', 'errorCode']
   );
 
   const base = {
@@ -126,13 +137,19 @@ function validateTransition(input: unknown): ToolCallTransition {
   const permissionResult = Object.prototype.hasOwnProperty.call(input, 'permissionResult')
     ? { permissionResult: parsePermissionResult(input.permissionResult) }
     : {};
+  const permissionRuleId = Object.prototype.hasOwnProperty.call(input, 'permissionRuleId')
+    ? { permissionRuleId: parseAuditText(input.permissionRuleId) }
+    : {};
+  const permissionReason = Object.prototype.hasOwnProperty.call(input, 'permissionReason')
+    ? { permissionReason: parseAuditText(input.permissionReason) }
+    : {};
   const safeResult = Object.prototype.hasOwnProperty.call(input, 'safeResult')
     ? { safeResult: validatedJson(input.safeResult) }
     : {};
   const errorCode = Object.prototype.hasOwnProperty.call(input, 'errorCode')
     ? { errorCode: parseErrorCode(input.errorCode) }
     : {};
-  return { ...base, ...permissionResult, ...safeResult, ...errorCode };
+  return { ...base, ...permissionResult, ...permissionRuleId, ...permissionReason, ...safeResult, ...errorCode };
 }
 
 function validatedJson(value: unknown): JsonValue {
@@ -166,8 +183,8 @@ export class SqliteToolCallStore implements ToolCallStore {
       transactionStarted = true;
       this.database.prepare(`INSERT INTO tool_calls (
         call_id, run_id, parent_call_id, tool_id, tool_version, state, arguments_json,
-        permission_result, safe_result_json, error_code, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+        permission_result, permission_rule_id, permission_reason, safe_result_json, error_code, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
         call.callId,
         call.runId,
         call.parentCallId ?? null,
@@ -176,6 +193,8 @@ export class SqliteToolCallStore implements ToolCallStore {
         call.state,
         JSON.stringify(call.arguments),
         call.permissionResult ?? null,
+        call.permissionRuleId ?? null,
+        call.permissionReason ?? null,
         serializeOptionalJson(call),
         call.errorCode ?? null,
         call.createdAt,
@@ -215,6 +234,14 @@ export class SqliteToolCallStore implements ToolCallStore {
       if (Object.prototype.hasOwnProperty.call(transition, 'permissionResult')) {
         assignments.push('permission_result = ?');
         values.push(transition.permissionResult ?? null);
+      }
+      if (Object.prototype.hasOwnProperty.call(transition, 'permissionRuleId')) {
+        assignments.push('permission_rule_id = ?');
+        values.push(transition.permissionRuleId ?? null);
+      }
+      if (Object.prototype.hasOwnProperty.call(transition, 'permissionReason')) {
+        assignments.push('permission_reason = ?');
+        values.push(transition.permissionReason ?? null);
       }
       if (Object.prototype.hasOwnProperty.call(transition, 'safeResult')) {
         assignments.push('safe_result_json = ?');

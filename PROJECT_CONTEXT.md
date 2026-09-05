@@ -19,6 +19,7 @@
 
 - R1 je interní deterministický read-only harness proof: tenký `apps/cli` vstup používá `RunAgentLoop` v `backend/core`; pouze composition root skládá SQLite, bounded filesystem a scripted fake adapter z `backend/infrastructure`.
 - Migrace 2 zavádí obecný kořen `sessions` se subtype projekcemi diagnostiky a agentního běhu a zachovává R0 relace i eventy. Read-only nástroje jsou pouze `file.read@1` a `text.search@1`, obě omezené kořenem projektu, realpath a citlivými cestami.
+- Následná migrace 3 zachovává audit rozhodnutí o oprávnění v projekci `tool_calls`; při práci s cestami se kontroluje také kanonický cíl po realpath, aby junction alias neobešel kořen ani citlivé cesty.
 - Vestavěný scénář `read-search-summary` používá deterministicý provider double pro opakovatelnou auditní stopu. Kompletní interní brána je `npm run verify:r1`; zahrnuje i balení a packaged R0 smoke.
 - R1 neprokazuje ověřenou změnu kódu ani celé AC-O1-02/03. R2 vlastní řízený zápis, shell, diff, safe return, skutečného providera a následné ověření; produktové UI zůstává pro R3.
 - Pokud se starší text níže nebo starší dokumenty rozcházejí s v1.0 sadou, platí v1.0.

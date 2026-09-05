@@ -69,7 +69,11 @@ export class ToolExecutionHarness {
 
       const evidence = pathEvidence(parsed.data);
       const decision = this.dependencies.permissionPolicy.decide({ risk: definition.risk, pathEvidence: evidence ?? {} });
-      state = await this.transition(call.callId, runId, state, 'permission_decided', { permissionResult: decision.result });
+      state = await this.transition(call.callId, runId, state, 'permission_decided', {
+        permissionResult: decision.result,
+        permissionRuleId: decision.ruleId,
+        permissionReason: decision.reason
+      });
       if (decision.result === 'denied') return await this.reject(call, runId, state, 'denied', 'R1_TOOL_PERMISSION_DENIED');
       if (signal.aborted) return await this.reject(call, runId, state, 'cancelled', 'R1_CANCELLED');
 
@@ -85,7 +89,7 @@ export class ToolExecutionHarness {
       await this.transition(call.callId, runId, state, 'succeeded', { safeResult: safeResult(result) });
       return result;
     } catch (error) {
-      if (error instanceof R1PersistenceFailure) return failed(call.callId, 'R1_PERSISTENCE_FAILED');
+      if (error instanceof R1PersistenceFailure) throw error;
       return failed(call.callId, 'R1_TOOL_EXECUTION_FAILED');
     }
   }
@@ -96,9 +100,17 @@ export class ToolExecutionHarness {
     return result;
   }
 
-  private async transition(callId: Uuid, runId: Uuid, from: ToolCallState, to: ToolCallState, data: { readonly permissionResult?: 'allowed_by_rule' | 'denied'; readonly safeResult?: JsonValue; readonly errorCode?: string } = {}): Promise<ToolCallState> {
+  private async transition(callId: Uuid, runId: Uuid, from: ToolCallState, to: ToolCallState, data: { readonly permissionResult?: 'allowed_by_rule' | 'denied'; readonly permissionRuleId?: string; readonly permissionReason?: string; readonly safeResult?: JsonValue; readonly errorCode?: string } = {}): Promise<ToolCallState> {
     const eventType = to === 'failed' || to === 'denied' || to === 'cancelled' ? 'tool_call.rejected' : to === 'running' ? 'tool_call.started' : `tool_call.${to}`;
-    await this.dependencies.toolCallStore.transitionWithEvent({ callId, from, to, updatedAt: this.timestamp(), ...data, event: this.event(runId, eventType, { callId, from, to, ...('permissionResult' in data ? { permissionResult: data.permissionResult ?? null } : {}), ...('errorCode' in data ? { errorCode: data.errorCode ?? null } : {}) }) });
+    await this.dependencies.toolCallStore.transitionWithEvent({ callId, from, to, updatedAt: this.timestamp(), ...data, event: this.event(runId, eventType, {
+      callId,
+      from,
+      to,
+      ...('permissionResult' in data ? { permissionResult: data.permissionResult ?? null } : {}),
+      ...('permissionRuleId' in data ? { permissionRuleId: data.permissionRuleId ?? null } : {}),
+      ...('permissionReason' in data ? { permissionReason: data.permissionReason ?? null } : {}),
+      ...('errorCode' in data ? { errorCode: data.errorCode ?? null } : {})
+    }) });
     return to;
   }
 

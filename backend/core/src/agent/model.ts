@@ -31,6 +31,8 @@ export interface ToolCallRecord {
   readonly state: ToolCallState;
   readonly arguments: JsonValue;
   readonly permissionResult?: 'allowed_by_rule' | 'denied';
+  readonly permissionRuleId?: string;
+  readonly permissionReason?: string;
   readonly safeResult?: JsonValue;
   readonly errorCode?: string;
   readonly createdAt: IsoTimestamp;

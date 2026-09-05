@@ -95,6 +95,7 @@ export class ProjectFilesystem {
     let target: string;
     try { target = await realpath(candidate); } catch { throw new ProjectFilesystemFailure('R1_FILE_NOT_FOUND', 'Project file was not found.'); }
     if (!isWithin(root, target)) throw new ProjectFilesystemFailure('R1_PATH_OUTSIDE_ROOT', 'Project path resolves outside root.');
+    rejectSensitivePath(relative(root, target).replaceAll('\\', '/') || '.');
     let details;
     try { details = await stat(target); } catch { throw new ProjectFilesystemFailure('R1_FILE_NOT_FOUND', 'Project file was not found.'); }
     if (!details.isFile()) throw new ProjectFilesystemFailure('R1_FILE_NOT_REGULAR', 'Project path is not a regular file.');
@@ -141,8 +142,10 @@ export class ProjectFilesystem {
     }
     const root = await this.#rootReady;
     const start = resolve(root, path);
-    if (!isWithin(root, start)) throw new ProjectFilesystemFailure('R1_PATH_OUTSIDE_ROOT', 'Project path resolves outside root.');
-    rejectSensitivePath(path);
+    let canonicalStart: string;
+    try { canonicalStart = await realpath(start); } catch { throw new ProjectFilesystemFailure('R1_FILE_NOT_FOUND', 'Search path was not found.'); }
+    if (!isWithin(root, canonicalStart)) throw new ProjectFilesystemFailure('R1_PATH_OUTSIDE_ROOT', 'Project path resolves outside root.');
+    rejectSensitivePath(relative(root, canonicalStart).replaceAll('\\', '/') || '.');
     const paths: string[] = [];
     let fileLimitExceeded = false;
     const visit = async (current: string): Promise<void> => {

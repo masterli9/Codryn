@@ -72,6 +72,8 @@ export interface ToolCallStore {
     readonly from: ToolCallState;
     readonly to: ToolCallState;
     readonly permissionResult?: 'allowed_by_rule' | 'denied';
+    readonly permissionRuleId?: string;
+    readonly permissionReason?: string;
     readonly safeResult?: JsonValue;
     readonly errorCode?: string;
     readonly updatedAt: IsoTimestamp;

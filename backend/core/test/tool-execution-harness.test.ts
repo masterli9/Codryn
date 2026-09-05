@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { EventEnvelope, Uuid } from '@codryn/shared';
 import type { ProjectFileReadResult, ToolCallStore } from '../src/agent/ports.js';
-import { ControlledPermissionPolicy, ToolExecutionHarness, ToolRegistry, fileReadTool } from '../src/index.js';
+import { R1PersistenceFailure, ControlledPermissionPolicy, ToolExecutionHarness, ToolRegistry, fileReadTool } from '../src/index.js';
 
 const ids = (...values: string[]) => ({ next: () => values.shift() as Uuid });
 const clock = { now: () => '2026-08-24T00:00:00.000Z' };
@@ -40,7 +40,25 @@ describe('ToolExecutionHarness', () => {
     expect(handler).toHaveBeenCalledWith({ path: 'README.md', startLine: 1, maxLines: 200 }, expect.any(AbortSignal));
     expect(toolCallStore.transitions.map((entry) => entry.to)).toEqual(['schema_validated', 'permission_decided', 'queued', 'running', 'succeeded']);
     expect(toolCallStore.transitions.map((entry) => entry.event.eventType)).toEqual(['tool_call.schema_validated', 'tool_call.permission_decided', 'tool_call.queued', 'tool_call.started', 'tool_call.succeeded']);
+    expect(toolCallStore.transitions[1]?.event.payload).toMatchObject({
+      permissionResult: 'allowed_by_rule',
+      permissionRuleId: 'R1_SAFE_READ_WITHIN_PROJECT',
+      permissionReason: 'Validated read-only path is within the open project.'
+    });
     expect(JSON.stringify(toolCallStore.transitions)).not.toContain('fixture content');
+  });
+
+  it('propagates tool persistence failures so the agent run can terminate', async () => {
+    const handler = vi.fn<ReadHandler>(async (input) => ({ path: input.path, content: 'fixture content', startLine: 1, endLine: 1, totalLines: 1, truncated: false, contentHash: 'a'.repeat(64) }));
+    const persistenceFailureStore = {
+      transitions: [],
+      async createWithInitialEvent() {},
+      async transitionWithEvent() { throw new R1PersistenceFailure('TOOL_CALL_WRITE_FAILED'); }
+    };
+
+    await expect(harness(handler, persistenceFailureStore).execute(call, runId, new AbortController().signal))
+      .rejects.toMatchObject({ code: 'R1_PERSISTENCE_FAILED' });
+    expect(handler).not.toHaveBeenCalled();
   });
 
   it('rejects unknown tools and invalid input without invoking a handler', async () => {
