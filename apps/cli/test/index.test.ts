@@ -51,7 +51,7 @@ describe('runCli', () => {
     expect(controller?.signal.aborted).toBe(true);
   });
 
-  it('runs the real process with one safe JSON stdout line', async () => {
+  it('runs the real process twice against one database with safe JSON output', async () => {
     const root = await mkdtemp(join(tmpdir(), 'codryn-r1-cli-'));
     try {
       await mkdir(join(root, 'src'));
@@ -59,17 +59,19 @@ describe('runCli', () => {
       await writeFile(join(root, 'src', 'greeting.ts'), 'export function formatGreeting(name: string): string {\n  return `Ahoj, ${name}!`;\n}\n');
       await writeFile(join(root, 'src', 'index.ts'), "import { formatGreeting as greeting } from './greeting.js';\ngreeting('A');");
       await writeFile(join(root, 'src', 'preview.ts'), "import { formatGreeting as greeting } from './greeting.js';\ngreeting('B');");
-      const child = spawn(process.execPath, ['--no-warnings', '--experimental-loader', pathToFileURL(resolve('apps/cli/src/typescript-resolution-loader.mjs')).href, '--experimental-transform-types', 'apps/cli/src/index.ts', '--user-data', join(root, 'data'), '--project', root, '--task', 'Summarize', '--context', 'README.md'], { cwd: resolve('.'), shell: false });
-      let stdout = ''; let stderr = '';
-      child.stdout.on('data', (chunk: Buffer) => { stdout += chunk.toString(); });
-      child.stderr.on('data', (chunk: Buffer) => { stderr += chunk.toString(); });
-      const exitCode = await new Promise<number | null>((done) => child.once('exit', done));
-      expect(exitCode, `${stderr}\n${stdout}`).toBe(0);
-      expect(stdout.trim().split('\n')).toHaveLength(1);
-      expect(JSON.parse(stdout)).toMatchObject({ status: 'completed', stepCount: 3 });
-      expect(stdout).not.toContain(root);
-      expect(stderr).not.toContain(root);
-      expect(stderr).toBe('');
+      for (let run = 0; run < 2; run += 1) {
+        const child = spawn(process.execPath, ['--no-warnings', '--experimental-loader', pathToFileURL(resolve('apps/cli/src/typescript-resolution-loader.mjs')).href, '--experimental-transform-types', 'apps/cli/src/index.ts', '--user-data', join(root, 'data'), '--project', root, '--task', 'Summarize', '--context', 'README.md'], { cwd: resolve('.'), shell: false });
+        let stdout = ''; let stderr = '';
+        child.stdout.on('data', (chunk: Buffer) => { stdout += chunk.toString(); });
+        child.stderr.on('data', (chunk: Buffer) => { stderr += chunk.toString(); });
+        const exitCode = await new Promise<number | null>((done) => child.once('exit', done));
+        expect(exitCode, `run ${run + 1}: ${stderr}\n${stdout}`).toBe(0);
+        expect(stdout.trim().split('\n')).toHaveLength(1);
+        expect(JSON.parse(stdout)).toMatchObject({ status: 'completed', stepCount: 3 });
+        expect(stdout).not.toContain(root);
+        expect(stderr).not.toContain(root);
+        expect(stderr).toBe('');
+      }
     } finally { await rm(root, { recursive: true, force: true }); }
   });
 });
