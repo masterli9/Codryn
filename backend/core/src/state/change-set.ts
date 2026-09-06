@@ -2,8 +2,8 @@ import { transition, type TransitionResult } from './transition.js';
 
 export const changeSetGraph = {
   open: ['sealed', 'recovery_required'],
-  sealed: ['reverting', 'recovery_required'],
-  reverting: ['reverted', 'conflicted', 'recovery_required'],
+  sealed: ['reverting', 'conflicted', 'recovery_required'],
+  reverting: ['sealed', 'reverted', 'conflicted', 'recovery_required'],
   reverted: [],
   conflicted: [],
   recovery_required: []

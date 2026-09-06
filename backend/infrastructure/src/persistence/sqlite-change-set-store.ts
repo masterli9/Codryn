@@ -1,5 +1,5 @@
 import type { DatabaseSync, SQLOutputValue } from 'node:sqlite';
-import type { ChangeSetStore, Clock, IdGenerator } from '@codryn/core';
+import { transitionChangeSet, type ChangeSetState, type ChangeSetStore, type Clock, type IdGenerator } from '@codryn/core';
 import { isoTimestampSchema, uuidSchema } from '@codryn/shared';
 
 function requireNumber(value: SQLOutputValue | undefined, code: string): number {
@@ -70,7 +70,7 @@ export class SqliteChangeSetStore implements ChangeSetStore {
       transactionStarted = true;
       const result = this.database.prepare(`UPDATE change_sets
         SET next_sequence = next_sequence + 1
-        WHERE id = ? AND state = 'open'`).run(setId);
+        WHERE id = ? AND state IN ('open', 'reverting')`).run(setId);
       if (result.changes !== 1) throw new Error('R2_CHANGE_SET_NOT_OPEN');
       const row = this.database.prepare(
         'SELECT next_sequence FROM change_sets WHERE id = ?'
@@ -86,6 +86,32 @@ export class SqliteChangeSetStore implements ChangeSetStore {
         } catch {
           // Preserve the original change-set persistence error.
         }
+      }
+      throw error;
+    }
+  }
+
+  async seal(setIdInput: string): Promise<void> {
+    await this.transition(setIdInput, 'open', 'sealed');
+  }
+
+  async transition(setIdInput: string, from: ChangeSetState, to: ChangeSetState): Promise<void> {
+    const setId = uuidSchema.parse(setIdInput);
+    if (!transitionChangeSet(from, to).ok) throw new Error('R2_CHANGE_SET_TRANSITION_INVALID');
+    let transactionStarted = false;
+    try {
+      this.database.exec('BEGIN IMMEDIATE;');
+      transactionStarted = true;
+      const update = this.database.prepare(
+        'UPDATE change_sets SET state = ? WHERE id = ? AND state = ?'
+      ).run(to, setId, from);
+      if (update.changes !== 1) throw new Error('R2_CHANGE_SET_STATE_MISMATCH');
+      this.database.exec('COMMIT;');
+      transactionStarted = false;
+    } catch (error) {
+      if (transactionStarted) {
+        try { if (this.database.isTransaction) this.database.exec('ROLLBACK;'); }
+        catch { /* preserve original change-set persistence error */ }
       }
       throw error;
     }

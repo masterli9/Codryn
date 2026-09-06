@@ -1,18 +1,10 @@
-import { uuidSchema, patchInputSchema, type PatchInput } from '@codryn/shared';
-import type {
-  BlobStore,
-  ChangeActor,
-  GuardedFile,
-  GuardedWriter,
-  MutationJournal,
-  MutationResult,
-  WriteIntent
-} from './ports.js';
+import { patchInputSchema, uuidSchema, type PatchInput } from '@codryn/shared';
 import type { IdGenerator } from '../diagnostics/ports.js';
+import type { BlobStore, ChangeActor, GuardedFile, GuardedWriter, MutationJournal, MutationResult } from './ports.js';
 import { preparePatch } from './prepare-patch.js';
+import { PublishMutation } from './publish-mutation.js';
 
 const maxFileBytes = 1024 * 1024;
-const textEncoder = new TextEncoder();
 
 export interface ApplyPatchDependencies {
   writer: GuardedWriter;
@@ -28,144 +20,66 @@ function throwIfAborted(signal: AbortSignal): void {
   if (signal.aborted) throw new DOMException('The operation was aborted', 'AbortError');
 }
 
-function errorCode(error: unknown, fallback: string): string {
-  if (error instanceof Error && /^R2_[A-Z0-9_]+$/.test(error.message)) return error.message;
-  return fallback;
+function errorCode(error: unknown): string {
+  return error instanceof Error && /^R2_[A-Z0-9_]+$/.test(error.message) ? error.message : 'R2_PATCH_REJECTED';
 }
 
 function decodeStrictText(bytes: Uint8Array): string {
-  let text: string;
   try {
-    text = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes);
-  } catch {
+    const text = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes);
+    if (text.includes('\0')) throw new Error('R2_PATCH_NUL');
+    for (const character of text) {
+      const point = character.codePointAt(0) ?? 0;
+      if ((point < 0x20 && ![0x09, 0x0a, 0x0c, 0x0d].includes(point)) || point === 0x7f) throw new Error('R2_PATCH_BINARY_CONTENT');
+    }
+    return text;
+  } catch (error) {
+    if (error instanceof Error && /^R2_PATCH_/.test(error.message)) throw error;
     throw new Error('R2_PATCH_INVALID_UTF8');
   }
-  if (text.includes('\0')) throw new Error('R2_PATCH_NUL');
-  for (const character of text) {
-    const code = character.codePointAt(0) ?? 0;
-    if ((code < 0x20 && ![0x09, 0x0a, 0x0c, 0x0d].includes(code)) || code === 0x7f) {
-      throw new Error('R2_PATCH_BINARY_CONTENT');
-    }
-  }
-  return text;
-}
-
-function requireFileSize(bytes: Uint8Array): void {
-  if (bytes.byteLength > maxFileBytes) throw new Error('R2_PATCH_FILE_TOO_LARGE');
 }
 
 export class ApplyPatch {
   constructor(private readonly dependencies: ApplyPatchDependencies) {}
 
-  async execute(
-    input: unknown,
-    actorInput: ChangeActor,
-    signal: AbortSignal
-  ): Promise<MutationResult> {
-    let guarded: GuardedFile | undefined;
-    let operationId: string | undefined;
-    let published = false;
-    let result: MutationResult = { status: 'rejected', code: 'R2_PATCH_REJECTED' };
-
+  async execute(input: unknown, actorInput: ChangeActor, signal: AbortSignal): Promise<MutationResult> {
+    let guard: GuardedFile | undefined;
     try {
       const parsed = patchInputSchema.safeParse(input);
-      if (!parsed.success) {
-        result = { status: 'rejected', code: 'R2_PATCH_INPUT_INVALID' };
-      } else {
-        const inputValue: PatchInput = parsed.data;
-        const actor = {
-          projectId: uuidSchema.parse(actorInput.projectId),
-          runId: uuidSchema.parse(actorInput.runId),
-          callId: uuidSchema.parse(actorInput.callId)
-        } satisfies ChangeActor;
-        const setId = uuidSchema.parse(this.dependencies.setId);
-        throwIfAborted(signal);
-        guarded = await this.dependencies.writer.open(inputValue.path, inputValue.expectedHash, signal);
-        const beforeBytes = new Uint8Array(guarded.bytes);
-        requireFileSize(beforeBytes);
-        const beforeHash = this.dependencies.hash(beforeBytes);
-        if (beforeHash !== inputValue.expectedHash) {
-          result = { status: 'rejected', code: 'R2_PATCH_STALE' };
-        } else {
-          const beforeText = decodeStrictText(beforeBytes);
-          const afterText = preparePatch(beforeText, inputValue.edits);
-          const afterBytes = textEncoder.encode(afterText);
-          requireFileSize(afterBytes);
-          const afterHash = this.dependencies.hash(afterBytes);
-          const beforeBlob = await this.dependencies.blobs.put(beforeBytes);
-          if (beforeBlob !== beforeHash) throw new Error('R2_PATCH_BEFORE_BLOB_MISMATCH');
-          const afterBlob = await this.dependencies.blobs.put(afterBytes);
-          if (afterBlob !== afterHash) throw new Error('R2_PATCH_AFTER_BLOB_MISMATCH');
-
-          operationId = this.dependencies.ids.next();
-          const currentOperationId = operationId;
-          const entry: WriteIntent['entry'] = {
-            id: this.dependencies.ids.next(),
-            setId,
-            projectId: actor.projectId,
-            runId: actor.runId,
-            callId: actor.callId,
-            sequence: await this.dependencies.nextSequence(),
-            path: inputValue.path,
-            beforeHash,
-            afterHash,
-            beforeBlob,
-            afterBlob,
-            kind: 'patch',
-            reversesId: null
-          };
-          const intent: WriteIntent = { operationId: currentOperationId, entry, state: 'prepared' };
-
-          let prepared = false;
-          try {
-            await this.dependencies.journal.prepare(intent);
-            prepared = true;
-          } catch {
-            result = { status: 'recovery_required', operationId: currentOperationId };
-          }
-
-          if (prepared) {
-            try {
-              throwIfAborted(signal);
-              await guarded.publish(afterBytes);
-              published = true;
-            } catch (error) {
-              result = error instanceof DOMException && error.name === 'AbortError'
-                ? { status: 'rejected', code: 'R2_CHANGE_ABORTED' }
-                : { status: 'recovery_required', operationId: currentOperationId };
-            }
-            if (published) {
-              try {
-                const revision = await this.dependencies.journal.confirm(currentOperationId);
-                result = { status: 'applied', entry, revision };
-              } catch {
-                result = { status: 'recovery_required', operationId: currentOperationId };
-              }
-            }
-          }
-        }
-      }
+      if (!parsed.success) return { status: 'rejected', code: 'R2_PATCH_INPUT_INVALID' };
+      const value: PatchInput = parsed.data;
+      const actor = {
+        projectId: uuidSchema.parse(actorInput.projectId),
+        runId: uuidSchema.parse(actorInput.runId),
+        callId: uuidSchema.parse(actorInput.callId)
+      } satisfies ChangeActor;
+      uuidSchema.parse(this.dependencies.setId);
+      throwIfAborted(signal);
+      guard = await this.dependencies.writer.open(value.path, value.expectedHash, signal);
+      const beforeBytes = new Uint8Array(guard.bytes);
+      if (beforeBytes.byteLength > maxFileBytes) return { status: 'rejected', code: 'R2_PATCH_FILE_TOO_LARGE' };
+      const beforeHash = this.dependencies.hash(beforeBytes);
+      if (beforeHash !== value.expectedHash) return { status: 'rejected', code: 'R2_PATCH_STALE' };
+      const afterText = preparePatch(decodeStrictText(beforeBytes), value.edits);
+      const afterBytes = new TextEncoder().encode(afterText);
+      if (afterBytes.byteLength > maxFileBytes) return { status: 'rejected', code: 'R2_PATCH_FILE_TOO_LARGE' };
+      const afterHash = this.dependencies.hash(afterBytes);
+      await guard.close();
+      guard = undefined;
+      return await new PublishMutation(this.dependencies).execute({
+        path: value.path,
+        beforeBytes,
+        afterBytes,
+        beforeHash,
+        afterHash,
+        kind: 'patch',
+        reversesId: null
+      }, actor, signal);
     } catch (error) {
-      if (operationId !== undefined && published) {
-        result = { status: 'recovery_required', operationId };
-      } else if (error instanceof DOMException && error.name === 'AbortError') {
-        result = { status: 'rejected', code: 'R2_CHANGE_ABORTED' };
-      } else {
-        result = { status: 'rejected', code: errorCode(error, 'R2_PATCH_REJECTED') };
-      }
+      if (error instanceof DOMException && error.name === 'AbortError') return { status: 'rejected', code: 'R2_CHANGE_ABORTED' };
+      return { status: 'rejected', code: errorCode(error) };
     } finally {
-      if (guarded !== undefined) {
-        try {
-          await guarded.close();
-        } catch {
-          if (operationId !== undefined && published) {
-            result = { status: 'recovery_required', operationId };
-          } else if (result.status === 'rejected') {
-            result = { status: 'rejected', code: 'R2_GUARD_CLOSE_FAILED' };
-          }
-        }
-      }
+      await guard?.close().catch(() => undefined);
     }
-    return result;
   }
 }

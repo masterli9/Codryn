@@ -70,6 +70,10 @@ export type { RunAgentLoopDependencies } from './agent/run-agent-loop.js';
 export { preparePatch } from './changes/prepare-patch.js';
 export { ApplyPatch } from './changes/apply-patch.js';
 export type { ApplyPatchDependencies } from './changes/apply-patch.js';
+export { PublishMutation } from './changes/publish-mutation.js';
+export type { PreparedMutation, PublishMutationDependencies } from './changes/publish-mutation.js';
+export { RevertChanges, returnOrder } from './changes/revert-changes.js';
+export type { RevertChangesDependencies, RevertResult } from './changes/revert-changes.js';
 export { RecoverMutations, classifyRecovery } from './changes/recover-mutations.js';
 export type { RecoveryState } from './changes/recover-mutations.js';
 export type {
