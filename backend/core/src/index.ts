@@ -64,6 +64,19 @@ export { ToolExecutionHarness } from './tools/tool-execution-harness.js';
 export type { ToolExecutionHarnessDependencies } from './tools/tool-execution-harness.js';
 export { RunAgentLoop } from './agent/run-agent-loop.js';
 export type { RunAgentLoopDependencies } from './agent/run-agent-loop.js';
+export { preparePatch } from './changes/prepare-patch.js';
+export type {
+  BlobStore,
+  ChangeActor,
+  ChangeEntry,
+  FileHashReader,
+  GuardedFile,
+  GuardedWriter,
+  MutationJournal,
+  MutationResult,
+  PatchInput,
+  WriteIntent
+} from './changes/ports.js';
 export { collectModelResponse, ModelResponseFailure } from './agent/model-response-collector.js';
 export type {
   CollectedModelResponse,
