@@ -86,6 +86,8 @@ export type {
 } from './changes/ports.js';
 export type { ChangeSetStore } from './changes/change-set-store.js';
 export type { ProjectBaseline, ProjectBaselineStore, ProjectGitState } from './changes/project-baseline.js';
+export { buildFileDiff, GetChangeDiff } from './changes/get-change-diff.js';
+export type { GetChangeDiffDependencies } from './changes/get-change-diff.js';
 export type {
   Lease,
   LeaseStore,
