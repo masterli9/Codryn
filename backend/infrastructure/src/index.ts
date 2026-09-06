@@ -37,3 +37,4 @@ export type { WindowsGuardedWriterOptions } from './filesystem/windows-guarded-w
 export { SqliteMutationJournal } from './persistence/sqlite-mutation-journal.js';
 export { SqliteWorkspaceStore } from './persistence/sqlite-workspace-store.js';
 export { SqliteProjectBaselineStore } from './persistence/sqlite-project-baseline-store.js';
+export { SqlitePermissionStore } from './persistence/sqlite-permission-store.js';

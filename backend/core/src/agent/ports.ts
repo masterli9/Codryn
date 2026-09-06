@@ -15,6 +15,12 @@ import type { ChangeActor } from '../changes/ports.js';
 
 export type ToolExecutionContext = ChangeActor;
 
+export interface ToolCallBinding {
+  readonly callId: Uuid;
+  readonly runId: Uuid;
+  readonly projectId: Uuid;
+}
+
 export interface ModelAdapter {
   readonly descriptor: ModelDescriptor;
   stream(request: ModelRequest, signal: AbortSignal): AsyncIterable<ModelStreamEvent>;
@@ -69,12 +75,13 @@ export interface AgentRunStore {
 }
 
 export interface ToolCallStore {
+  readonly findBinding?: (callId: Uuid) => Promise<ToolCallBinding | null>;
   createWithInitialEvent(call: ToolCallRecord, event: EventEnvelope): Promise<void>;
   transitionWithEvent(input: {
     readonly callId: Uuid;
     readonly from: ToolCallState;
     readonly to: ToolCallState;
-    readonly permissionResult?: 'allowed_by_rule' | 'denied';
+    readonly permissionResult?: 'allowed_by_rule' | 'allowed_once' | 'denied';
     readonly permissionRuleId?: string;
     readonly permissionReason?: string;
     readonly safeResult?: JsonValue;

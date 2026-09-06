@@ -51,7 +51,7 @@ export type {
 } from './diagnostics/ports.js';
 export { R1PersistenceFailure } from './agent/model.js';
 export type { AgentRunRecord, ToolCallRecord, AssembledContext, ContextSourceAudit } from './agent/model.js';
-export type { AgentRunStore, ModelAdapter, ToolCallStore, ToolExecutionContext } from './agent/ports.js';
+export type { AgentRunStore, ModelAdapter, ToolCallBinding, ToolCallStore, ToolExecutionContext } from './agent/ports.js';
 export { ContextAssembler, ContextAssemblyFailure } from './agent/context-assembler.js';
 export type { ContextAssemblyInput } from './agent/context-assembler.js';
 export { ToolRegistry, ToolRegistryFailure } from './tools/tool-registry.js';
@@ -89,6 +89,14 @@ export type {
   WriteIntent
 } from './changes/ports.js';
 export type { ChangeSetStore } from './changes/change-set-store.js';
+export { PermissionService } from './permissions/permission-service.js';
+export type { PermissionServiceDependencies } from './permissions/permission-service.js';
+export type {
+  PermissionCallBinding,
+  PermissionCallLookup,
+  PermissionRequestSpec,
+  PermissionStore
+} from './permissions/ports.js';
 export type { ProjectBaseline, ProjectBaselineStore, ProjectGitState } from './changes/project-baseline.js';
 export { buildFileDiff, GetChangeDiff } from './changes/get-change-diff.js';
 export type { GetChangeDiffDependencies } from './changes/get-change-diff.js';

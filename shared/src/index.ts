@@ -8,3 +8,4 @@ export * from './model-contract.js';
 export * from './tool-contract.js';
 export * from './r2-change.js';
 export * from './r2-diff.js';
+export * from './r2-permission.js';

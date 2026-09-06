@@ -55,7 +55,8 @@ export class ToolExecutionHarness {
     let state: ToolCallState = 'received';
     try {
       await this.dependencies.toolCallStore.createWithInitialEvent({
-        callId: call.callId, runId, toolId: call.toolId, toolVersion: call.toolVersion, state, arguments: safeToolAudit(call.toolId, call.arguments),
+        callId: call.callId, runId, ...(context === undefined ? {} : { projectId: context.projectId }),
+        toolId: call.toolId, toolVersion: call.toolVersion, state, arguments: safeToolAudit(call.toolId, call.arguments),
         createdAt: this.timestamp(), updatedAt: this.timestamp()
       }, this.event(runId, 'tool_call.received', { callId: call.callId, toolId: call.toolId, toolVersion: call.toolVersion }));
       if (signal.aborted) return await this.reject(call, runId, state, 'cancelled', 'R1_CANCELLED');

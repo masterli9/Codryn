@@ -1,6 +1,7 @@
 import type { DatabaseSync, SQLInputValue, SQLOutputValue } from 'node:sqlite';
 import {
   R1PersistenceFailure,
+  type ToolCallBinding,
   type ToolCallRecord,
   type ToolCallState,
   type ToolCallStore
@@ -60,8 +61,8 @@ function parseToolVersion(value: unknown): number {
   return value;
 }
 
-function parsePermissionResult(value: unknown): 'allowed_by_rule' | 'denied' {
-  if (value !== 'allowed_by_rule' && value !== 'denied') {
+function parsePermissionResult(value: unknown): 'allowed_by_rule' | 'allowed_once' | 'denied' {
+  if (value !== 'allowed_by_rule' && value !== 'allowed_once' && value !== 'denied') {
     throw new TypeError('TOOL_CALL_PERMISSION_RESULT_INVALID');
   }
   return value;
@@ -85,7 +86,7 @@ function validateToolCall(input: unknown): ToolCallRecord {
       'callId', 'runId', 'toolId', 'toolVersion', 'state', 'arguments',
       'createdAt', 'updatedAt'
     ],
-    ['parentCallId', 'permissionResult', 'permissionRuleId', 'permissionReason', 'safeResult', 'errorCode']
+    ['projectId', 'parentCallId', 'permissionResult', 'permissionRuleId', 'permissionReason', 'safeResult', 'errorCode']
   );
 
   const base = {
@@ -98,6 +99,9 @@ function validateToolCall(input: unknown): ToolCallRecord {
     createdAt: isoTimestampSchema.parse(input.createdAt),
     updatedAt: isoTimestampSchema.parse(input.updatedAt)
   };
+  const projectId = Object.prototype.hasOwnProperty.call(input, 'projectId')
+    ? { projectId: uuidSchema.parse(input.projectId) }
+    : {};
   const parentCallId = Object.prototype.hasOwnProperty.call(input, 'parentCallId')
     ? { parentCallId: uuidSchema.parse(input.parentCallId) }
     : {};
@@ -116,7 +120,7 @@ function validateToolCall(input: unknown): ToolCallRecord {
   const errorCode = Object.prototype.hasOwnProperty.call(input, 'errorCode')
     ? { errorCode: parseErrorCode(input.errorCode) }
     : {};
-  return { ...base, ...parentCallId, ...permissionResult, ...permissionRuleId, ...permissionReason, ...safeResult, ...errorCode };
+  return { ...base, ...projectId, ...parentCallId, ...permissionResult, ...permissionRuleId, ...permissionReason, ...safeResult, ...errorCode };
 }
 
 function validateTransition(input: unknown): ToolCallTransition {
@@ -182,11 +186,12 @@ export class SqliteToolCallStore implements ToolCallStore {
       this.database.exec('BEGIN IMMEDIATE;');
       transactionStarted = true;
       this.database.prepare(`INSERT INTO tool_calls (
-        call_id, run_id, parent_call_id, tool_id, tool_version, state, arguments_json,
+        call_id, run_id, project_id, parent_call_id, tool_id, tool_version, state, arguments_json,
         permission_result, permission_rule_id, permission_reason, safe_result_json, error_code, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
         call.callId,
         call.runId,
+        call.projectId ?? null,
         call.parentCallId ?? null,
         call.toolId,
         call.toolVersion,
@@ -213,6 +218,22 @@ export class SqliteToolCallStore implements ToolCallStore {
       }
       throw new R1PersistenceFailure('TOOL_CALL_WRITE_FAILED');
     }
+  }
+
+  async findBinding(callIdInput: string): Promise<ToolCallBinding | null> {
+    const callId = uuidSchema.parse(callIdInput);
+    const row = this.database.prepare(
+      'SELECT call_id, run_id, project_id FROM tool_calls WHERE call_id = ?'
+    ).get(callId) as { call_id?: SQLOutputValue; run_id?: SQLOutputValue; project_id?: SQLOutputValue } | undefined;
+    if (row === undefined || row.project_id === null || row.project_id === undefined) return null;
+    if (typeof row.call_id !== 'string' || typeof row.run_id !== 'string' || typeof row.project_id !== 'string') {
+      throw new TypeError('TOOL_CALL_ROW_INVALID');
+    }
+    return {
+      callId: uuidSchema.parse(row.call_id),
+      runId: uuidSchema.parse(row.run_id),
+      projectId: uuidSchema.parse(row.project_id)
+    };
   }
 
   async transitionWithEvent(input: ToolCallTransition): Promise<void> {

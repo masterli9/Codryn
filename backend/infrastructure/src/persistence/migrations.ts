@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { r2ChangeDataSql } from './r2-change-migration.js';
 import { r2BaselineSql } from './r2-baseline-migration.js';
+import { r2PermissionSql } from './r2-permission-migration.js';
 
 export interface Migration {
   readonly version: number;
@@ -185,5 +186,11 @@ export const migrations: readonly Migration[] = [
     name: 'r2_project_baselines',
     sql: r2BaselineSql,
     checksum: sha256(r2BaselineSql)
+  },
+  {
+    version: 6,
+    name: 'r2_permission_requests',
+    sql: r2PermissionSql,
+    checksum: sha256(r2PermissionSql)
   }
 ];
