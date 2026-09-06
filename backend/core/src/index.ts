@@ -65,6 +65,10 @@ export type { ToolExecutionHarnessDependencies } from './tools/tool-execution-ha
 export { RunAgentLoop } from './agent/run-agent-loop.js';
 export type { RunAgentLoopDependencies } from './agent/run-agent-loop.js';
 export { preparePatch } from './changes/prepare-patch.js';
+export { ApplyPatch } from './changes/apply-patch.js';
+export type { ApplyPatchDependencies } from './changes/apply-patch.js';
+export { RecoverMutations, classifyRecovery } from './changes/recover-mutations.js';
+export type { RecoveryState } from './changes/recover-mutations.js';
 export type {
   BlobStore,
   ChangeActor,

@@ -31,5 +31,7 @@ export { decideSensitivePath } from './filesystem/sensitive-path-policy.js';
 export type { SensitivePathDecision } from './filesystem/sensitive-path-policy.js';
 export { SqliteChangeSetStore } from './persistence/sqlite-change-set-store.js';
 export { ContentBlobStore } from './filesystem/content-blob-store.js';
+export { WindowsGuardedWriter } from './filesystem/windows-guarded-writer.js';
+export type { WindowsGuardedWriterOptions } from './filesystem/windows-guarded-writer.js';
 export { SqliteMutationJournal } from './persistence/sqlite-mutation-journal.js';
 export { SqliteWorkspaceStore } from './persistence/sqlite-workspace-store.js';
