@@ -15,6 +15,7 @@ const hostIntegrationTests = [
   'backend/infrastructure/test/windows-write-probe.test.ts',
   'backend/infrastructure/test/guarded-writer.test.ts',
   'backend/infrastructure/test/project-git-state.test.ts',
+  'backend/infrastructure/test/r2-process-probe.test.ts',
   'tests/packaged/r0-smoke.test.ts'
 ];
 
