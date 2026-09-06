@@ -17,7 +17,7 @@ describe('R2 guarded publication probe', () => {
     const { stdout } = await execFileAsync(
       process.execPath,
       ['scripts/spikes/r2-write-probe.mjs', '--iterations', '100'],
-      { timeout: 25_000, maxBuffer: 64 * 1024 }
+      { timeout: 45_000, maxBuffer: 64 * 1024 }
     );
     const report = JSON.parse(stdout) as WriteProbeReport;
 
@@ -27,5 +27,5 @@ describe('R2 guarded publication probe', () => {
     expect(report.escapedPaths).toBe(0);
     expect(report.cases.length).toBeGreaterThanOrEqual(8);
     expect(report.cases.every((testCase) => testCase.passed)).toBe(true);
-  }, 30_000);
+  }, 50_000);
 });

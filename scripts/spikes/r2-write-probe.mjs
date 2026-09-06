@@ -118,12 +118,19 @@ function startStreamWorker(args) {
     child,
     done,
     send(command) { child.stdin?.write(`${command}\n`); },
-    async waitForLine(expected) {
-      if (closed) throw new Error(`worker exited before ${expected}: ${JSON.stringify(closed)}`);
+    async waitForAnyLine(expectedLines) {
       const line = lines.length > 0
         ? lines.shift()
-        : await new Promise((resolveLine, rejectLine) => waiters.push({ resolve: resolveLine, reject: rejectLine }));
-      if (line !== expected) throw new Error(`unexpected worker barrier: ${line} (expected ${expected})`);
+        : closed
+          ? (() => { throw new Error(`worker exited before ${expectedLines.join(' or ')}: ${JSON.stringify(closed)}`); })()
+          : await new Promise((resolveLine, rejectLine) => waiters.push({ resolve: resolveLine, reject: rejectLine }));
+      if (!expectedLines.includes(line)) {
+        throw new Error(`unexpected worker barrier: ${line} (expected ${expectedLines.join(' or ')})`);
+      }
+      return line;
+    },
+    async waitForLine(expected) {
+      return this.waitForAnyLine([expected]);
     }
   };
 }
@@ -136,44 +143,50 @@ async function outcome(path) {
   }
 }
 
-async function runExternal(root, target, role, payload = 'EXTERNAL') {
+function startExternal(root, target, role, payload = 'EXTERNAL') {
   const marker = ownedPath(root, `external-${Math.random().toString(16).slice(2)}.outcome`);
+  const attempt = ownedPath(root, `external-${Math.random().toString(16).slice(2)}.attempt`);
   const process = startWorker([
     '-Role', role,
     '-Target', target,
     '-Payload', payload,
-    '-OutcomeMarker', marker
+    '-OutcomeMarker', marker,
+    '-AttemptMarker', attempt
   ]);
-  const result = await process.done;
-  return { ...result, outcome: await outcome(marker) };
-}
-
-async function runNodeExternal(root, target, role, payload = 'EXTERNAL') {
-  try {
-    if (role === 'external-replace') {
-      const temporary = ownedPath(root, `node-external-${Math.random().toString(16).slice(2)}.tmp`);
-      await writeFile(temporary, payload, 'utf8');
-      await rename(temporary, target);
-    } else {
-      await writeFile(target, payload, 'utf8');
+  return {
+    attempt,
+    process,
+    async wait() {
+      const result = await process.done;
+      return { ...result, outcome: await outcome(marker) };
     }
-    return { code: 0, signal: null, stderr: '', outcome: 'applied' };
-  } catch (error) {
-    return { code: null, signal: null, stderr: String(error), outcome: 'denied' };
-  }
+  };
 }
 
-async function runAtomicScenario(root, name, target, { externalRole = null, payload = 'EXTERNAL', afterChecked = null } = {}) {
+async function runExternal(root, target, role, payload = 'EXTERNAL') {
+  const external = startExternal(root, target, role, payload);
+  await waitFor(external.attempt);
+  return external.wait();
+}
+
+async function runAtomicScenario(root, name, target, {
+  externalRole = null,
+  payload = 'EXTERNAL',
+  afterChecked = null,
+  watchDirectories = true
+} = {}) {
   const directory = dirname(target);
   await mkdir(directory, { recursive: true });
+  const barrierDirectory = ownedPath(root, `.barriers/${name}`);
+  await mkdir(barrierDirectory, { recursive: true });
   const candidate = 'AGENT-CANDIDATE';
   await writeFile(target, 'ORIGINAL-CONTENT', 'utf8');
-  const loaded = join(directory, `${name}.loaded`);
-  const check = join(directory, `${name}.check`);
-  const checked = join(directory, `${name}.checked`);
-  const publish = join(directory, `${name}.publish`);
-  const outcomeMarker = join(directory, `${name}.guarded.outcome`);
-  const guarded = startWorker([
+  const loaded = join(barrierDirectory, `${name}.loaded`);
+  const check = join(barrierDirectory, `${name}.check`);
+  const checked = join(barrierDirectory, `${name}.checked`);
+  const publish = join(barrierDirectory, `${name}.publish`);
+  const outcomeMarker = join(barrierDirectory, `${name}.guarded.outcome`);
+  const guardedArgs = [
     '-Role', 'atomic',
     '-Target', target,
     '-Candidate', candidate,
@@ -182,14 +195,22 @@ async function runAtomicScenario(root, name, target, { externalRole = null, payl
     '-CheckedMarker', checked,
     '-PublishMarker', publish,
     '-OutcomeMarker', outcomeMarker
-  ]);
+  ];
+  if (!watchDirectories) guardedArgs.push('-NoDirectoryWatch');
+  const guarded = startWorker(guardedArgs);
   await waitFor(loaded);
   await signal(check);
   await waitFor(checked);
-  const external = afterChecked ? await afterChecked({ directory, target }) :
-    (externalRole ? await runExternal(directory, target, externalRole, payload) : null);
+  const externalControl = afterChecked ? await afterChecked({
+    directory,
+    target,
+    startExternal: (role, externalPayload = payload) => startExternal(barrierDirectory, target, role, externalPayload)
+  }) : (externalRole ? startExternal(barrierDirectory, target, externalRole, payload) : null);
+  if (externalControl?.attempt) await waitFor(externalControl.attempt);
   await signal(publish);
   const guardedResult = await guarded.done;
+  if (externalControl?.afterPublish) await externalControl.afterPublish();
+  const external = externalControl?.wait ? await externalControl.wait() : externalControl;
   return {
     external,
     guarded: { ...guardedResult, outcome: await outcome(outcomeMarker) },
@@ -206,31 +227,47 @@ async function runAtomicRace(root, iteration, options = {}) {
   );
 }
 
-async function runAtomicLoopRace(root, iterations) {
-  const directory = ownedPath(root, 'race-loop');
+async function runAtomicLoopRace(root, iterations, directoryName = 'race-loop') {
+  const directory = ownedPath(root, directoryName);
+  const barrierDirectory = ownedPath(root, `.barriers/${directoryName}`);
   await mkdir(directory, { recursive: true });
+  await mkdir(barrierDirectory, { recursive: true });
   const target = join(directory, 'target.txt');
   await writeFile(target, 'ORIGINAL-CONTENT', 'utf8');
+  const external = startStreamWorker([
+    '-Role', 'external-stream',
+    '-Target', target,
+    '-Payload', 'EXTERNAL-CONTENT',
+    '-Iterations', String(iterations)
+  ]);
   const guarded = startStreamWorker([
     '-Role', 'atomic-stream',
     '-Target', target,
     '-Candidate', 'AGENT-CANDIDATE',
+    '-BarrierDirectory', barrierDirectory,
     '-Iterations', String(iterations)
   ]);
   let overwritten = 0;
   for (let iteration = 0; iteration < iterations; iteration += 1) {
+    await external.waitForLine('ready');
     await guarded.waitForLine('loaded');
     guarded.send('check');
     await guarded.waitForLine('checked');
-    await writeFile(target, 'EXTERNAL-CONTENT', 'utf8');
+    external.send('write');
+    await external.waitForLine('attempt');
     guarded.send('publish');
+    await guarded.waitForLine('rejected');
     await guarded.waitForLine('done');
-    if ((await readFile(target, 'utf8')) === 'AGENT-CANDIDATE') overwritten += 1;
-    await writeFile(target, 'ORIGINAL-CONTENT', 'utf8');
     guarded.send('reset');
+    await guarded.waitForLine('released');
+    const externalResult = { outcome: await external.waitForAnyLine(['applied', 'denied']) };
+    if (externalResult.outcome === 'applied' && (await readFile(target, 'utf8')) === 'AGENT-CANDIDATE') overwritten += 1;
+    await writeFile(target, 'ORIGINAL-CONTENT', 'utf8');
+    if (iteration < iterations - 1) guarded.send('next');
   }
   await guarded.waitForLine('complete');
   const guardedResult = await guarded.done;
+  await external.waitForLine('complete');
   return { overwritten, guarded: guardedResult };
 }
 
@@ -239,19 +276,21 @@ async function runOpenWriterCase(root) {
   await mkdir(directory, { recursive: true });
   const target = join(directory, 'target.txt');
   await writeFile(target, 'ORIGINAL-CONTENT', 'utf8');
-  const loaded = join(directory, 'loaded');
-  const release = join(directory, 'release');
-  const outcomeMarker = join(directory, 'guarded.outcome');
+  const barrierDirectory = ownedPath(root, '.barriers/open-writer');
+  const loaded = join(barrierDirectory, 'loaded');
+  const release = join(barrierDirectory, 'release');
+  const outcomeMarker = join(barrierDirectory, 'guarded.outcome');
+  await mkdir(barrierDirectory, { recursive: true });
   const holder = startWorker(['-Role', 'hold-open', '-Target', target, '-LoadedMarker', loaded, '-ReleaseMarker', release]);
   await waitFor(loaded);
   const guarded = startWorker([
     '-Role', 'atomic',
     '-Target', target,
     '-Candidate', 'AGENT-CANDIDATE',
-    '-LoadedMarker', join(directory, 'guarded-loaded'),
-    '-CheckMarker', join(directory, 'guarded-check'),
-    '-CheckedMarker', join(directory, 'guarded-checked'),
-    '-PublishMarker', join(directory, 'guarded-publish'),
+    '-LoadedMarker', join(barrierDirectory, 'guarded-loaded'),
+    '-CheckMarker', join(barrierDirectory, 'guarded-check'),
+    '-CheckedMarker', join(barrierDirectory, 'guarded-checked'),
+    '-PublishMarker', join(barrierDirectory, 'guarded-publish'),
     '-OutcomeMarker', outcomeMarker
   ]);
   const guardedResult = await guarded.done;
@@ -269,11 +308,13 @@ async function runHandleRaceCase(root) {
   await mkdir(directory, { recursive: true });
   const target = join(directory, 'target.txt');
   await writeFile(target, 'ORIGINAL-CONTENT', 'utf8');
-  const loaded = join(directory, 'loaded');
-  const check = join(directory, 'check');
-  const checked = join(directory, 'checked');
-  const publish = join(directory, 'publish');
-  const outcomeMarker = join(directory, 'guarded.outcome');
+  const barrierDirectory = ownedPath(root, '.barriers/handle-race');
+  const loaded = join(barrierDirectory, 'loaded');
+  const check = join(barrierDirectory, 'check');
+  const checked = join(barrierDirectory, 'checked');
+  const publish = join(barrierDirectory, 'publish');
+  const outcomeMarker = join(barrierDirectory, 'guarded.outcome');
+  await mkdir(barrierDirectory, { recursive: true });
   const guarded = startWorker([
     '-Role', 'in-place',
     '-Target', target,
@@ -287,7 +328,7 @@ async function runHandleRaceCase(root) {
   await waitFor(loaded);
   await signal(check);
   await waitFor(checked);
-  const external = await runNodeExternal(directory, target, 'external-in-place', 'EXTERNAL-CONTENT');
+  const external = await runExternal(barrierDirectory, target, 'external-in-place', 'EXTERNAL-CONTENT');
   await signal(publish);
   const guardedResult = await guarded.done;
   return {
@@ -297,41 +338,27 @@ async function runHandleRaceCase(root) {
   };
 }
 
-async function runInPlaceCrashCase(root) {
-  const directory = ownedPath(root, 'in-place-crash');
+async function runAtomicCrashCase(root) {
+  const directory = ownedPath(root, 'atomic-crash');
   await mkdir(directory, { recursive: true });
   const target = join(directory, 'target.txt');
   await writeFile(target, 'ORIGINAL-CONTENT', 'utf8');
-  const loaded = join(directory, 'loaded');
-  const check = join(directory, 'check');
-  const checked = join(directory, 'checked');
-  const publish = join(directory, 'publish');
-  const writing = join(directory, 'writing');
-  const proceed = join(directory, 'continue');
-  const outcomeMarker = join(directory, 'outcome');
+  const writing = join(ownedPath(root, '.barriers/atomic-crash'), 'writing');
+  await mkdir(dirname(writing), { recursive: true });
   const guarded = startWorker([
-    '-Role', 'in-place',
+    '-Role', 'atomic-crash',
     '-Target', target,
     '-CandidateSize', '1000000',
-    '-LoadedMarker', loaded,
-    '-CheckMarker', check,
-    '-CheckedMarker', checked,
-    '-PublishMarker', publish,
     '-WritingMarker', writing,
-    '-ContinueMarker', proceed,
-    '-OutcomeMarker', outcomeMarker,
-    '-CrashAfterPartial'
+    '-TimeoutMs', '10000'
   ]);
-  await waitFor(loaded);
-  await signal(check);
-  await waitFor(checked);
-  await signal(publish);
   await waitFor(writing);
-  await guarded.done;
+  const result = await guarded.done;
   const bytes = await readFile(target);
   return {
-    partial: bytes.length > 0 && bytes.length < 1_000_000,
-    emptyOrOriginal: bytes.length === 0 || bytes.toString('utf8') === 'ORIGINAL-CONTENT'
+    processCrashed: result.code !== 0,
+    partial: bytes.length > 0 && bytes.length < 'ORIGINAL-CONTENT'.length,
+    unchanged: bytes.toString('utf8') === 'ORIGINAL-CONTENT'
   };
 }
 
@@ -347,14 +374,28 @@ async function runJunctionCase(root) {
   await writeFile(join(second, 'target.txt'), 'EXTERNAL-CONTENT', 'utf8');
   await execFileAsync('cmd.exe', ['/d', '/c', 'mklink', '/J', junction, first], { windowsHide: true });
   const result = await runAtomicScenario(
-    directory,
+    root,
     'junction',
     join(junction, 'target.txt'),
     {
       afterChecked: async () => {
-        await execFileAsync('cmd.exe', ['/d', '/c', 'rmdir', junction], { windowsHide: true });
-        await execFileAsync('cmd.exe', ['/d', '/c', 'mklink', '/J', junction, second], { windowsHide: true });
-        return null;
+        const swap = (async () => {
+          try {
+            await execFileAsync('cmd.exe', ['/d', '/c', 'rmdir', junction], { windowsHide: true });
+            await execFileAsync('cmd.exe', ['/d', '/c', 'mklink', '/J', junction, second], { windowsHide: true });
+            return true;
+          } catch {
+            return false;
+          }
+        })();
+        return {
+          afterPublish: async () => {
+            if (!(await swap)) {
+              await execFileAsync('cmd.exe', ['/d', '/c', 'rmdir', junction], { windowsHide: true }).catch(() => {});
+              await execFileAsync('cmd.exe', ['/d', '/c', 'mklink', '/J', junction, second], { windowsHide: true });
+            }
+          }
+        };
       }
     }
   );
@@ -373,15 +414,30 @@ async function runRenamedParentCase(root) {
   await mkdir(parent, { recursive: true });
   const target = join(parent, 'target.txt');
   const result = await runAtomicScenario(
-    directory,
+    root,
     'parent',
     target,
     {
       afterChecked: async () => {
-        await rename(parent, moved);
-        await mkdir(parent, { recursive: true });
-        await writeFile(target, 'EXTERNAL-CONTENT', 'utf8');
-        return null;
+        const swap = (async () => {
+          try {
+            await rename(parent, moved);
+            await mkdir(parent, { recursive: true });
+            await writeFile(target, 'EXTERNAL-CONTENT', 'utf8');
+            return true;
+          } catch {
+            return false;
+          }
+        })();
+        return {
+          afterPublish: async () => {
+            if (!(await swap)) {
+              await rename(parent, moved).catch(() => {});
+              await mkdir(parent, { recursive: true });
+              await writeFile(target, 'EXTERNAL-CONTENT', 'utf8');
+            }
+          }
+        };
       }
     }
   );
@@ -425,15 +481,34 @@ async function main() {
 
   const root = await mkdtemp(join(tmpdir(), 'codryn-r2-write-probe-'));
   try {
-    const raceResults = await runAtomicLoopRace(root, iterations);
-    const overwritten = raceResults.overwritten;
+    const batchCount = Math.min(4, iterations);
+    const baseBatchSize = Math.floor(iterations / batchCount);
+    const extraBatches = iterations % batchCount;
+    const raceResults = await Promise.all(
+      Array.from({ length: batchCount }, (_, batch) => {
+        const batchSize = baseBatchSize + (batch < extraBatches ? 1 : 0);
+        return runAtomicLoopRace(root, batchSize, `race-loop-${batch}`);
+      })
+    );
+    const overwritten = raceResults.reduce((total, result) => total + result.overwritten, 0);
     report.overwrittenExternalWrites += overwritten;
     report.cases.push({
       name: 'stale-hash-race-with-in-place-editor',
       passed: overwritten === 0
     });
+    const successfulPublication = await runAtomicScenario(
+      root,
+      'successful-publication',
+      ownedPath(root, 'successful-publication/target.txt'),
+      { watchDirectories: false }
+    );
+    report.cases.push({
+      name: 'uncontested-publication-succeeds',
+      passed: successfulPublication.guarded.outcome === 'published' &&
+        successfulPublication.final === 'AGENT-CANDIDATE'
+    });
     const tempRename = await runAtomicRace(root, 'temp-rename', {
-      afterChecked: ({ directory, target }) => runNodeExternal(directory, target, 'external-replace', 'EXTERNAL-CONTENT')
+      afterChecked: ({ startExternal }) => startExternal('external-replace', 'EXTERNAL-CONTENT')
     });
     const tempRenameOverwritten = tempRename.external?.outcome === 'applied' &&
       tempRename.final === 'AGENT-CANDIDATE';
@@ -445,20 +520,29 @@ async function main() {
 
     let sameLengthTimestamp;
     const sameLength = await runAtomicRace(root, 'same-length', {
-      afterChecked: async ({ directory, target }) => {
+      afterChecked: async ({ target, startExternal }) => {
         const before = await stat(target);
-        const external = await runNodeExternal(directory, target, 'external-in-place', 'EXTERNAL-EDIT!!');
-        await utimes(target, before.atime, before.mtime);
+        const external = startExternal('external-in-place', 'EXTERNAL-EDIT!!!');
         sameLengthTimestamp = before.mtimeMs;
-        return external;
+        return {
+          ...external,
+          async wait() {
+            const result = await external.wait();
+            await utimes(target, before.atime, before.mtime);
+            return result;
+          }
+        };
       }
     });
     report.overwrittenExternalWrites += Number(
       sameLength.external?.outcome === 'applied' && sameLength.final === 'AGENT-CANDIDATE'
     );
+    const sameLengthWasSafe = sameLength.external?.outcome === 'denied'
+      ? sameLength.final === 'ORIGINAL-CONTENT' || sameLength.final === 'AGENT-CANDIDATE'
+      : sameLength.external?.outcome === 'applied' && sameLength.final === 'EXTERNAL-EDIT!!!';
     report.cases.push({
       name: 'same-length-and-restored-mtime',
-      passed: sameLengthTimestamp !== undefined && sameLength.external?.outcome !== 'applied'
+      passed: sameLengthTimestamp !== undefined && sameLengthWasSafe
     });
 
     const openWriter = await runOpenWriterCase(root);
@@ -466,9 +550,12 @@ async function main() {
     const handleRace = await runHandleRaceCase(root);
     report.cases.push({ name: 'in-place-write-is-rejected', passed: handleRace.external.outcome === 'denied' });
 
-    const crash = await runInPlaceCrashCase(root);
+    const crash = await runAtomicCrashCase(root);
     report.partialPublications += Number(crash.partial);
-    report.cases.push({ name: 'crash-during-publication-is-not-partial', passed: !crash.partial });
+    report.cases.push({
+      name: 'process-crash-before-atomic-publication-is-not-partial',
+      passed: crash.processCrashed && !crash.partial && crash.unchanged
+    });
 
     const junction = await runJunctionCase(root);
     report.escapedPaths += Number(junction.escaped);
