@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
-import { spawn } from 'node:child_process';
+import { spawn, type ChildProcess } from 'node:child_process';
 import { describe, expect, it } from 'vitest';
 
 interface R2SmokeReport {
@@ -18,14 +18,32 @@ async function runPackagedR2Smoke(): Promise<R2SmokeReport> {
   const directory = await mkdtemp(join(resolve('.r2-test-artifacts'), 'packaged-'));
   try {
     const exitCode = await new Promise<number | null>((resolveExit, reject) => {
-      const child = spawn(executable, ['--disable-gpu', '--r2-smoke', `--r2-user-data-dir=${directory}`], { shell: false, windowsHide: true });
-      const timer = setTimeout(() => { child.kill(); reject(new Error('Packaged R2 smoke timed out')); }, 60_000);
-      child.once('error', reject);
+      const child = spawn(executable, ['--disable-gpu', '--r2-smoke', `--r2-user-data-dir=${directory}`, `--r2-node-executable=${process.execPath}`], { shell: false, windowsHide: true });
+      const timer = setTimeout(() => { terminateProcessTree(child); reject(new Error('Packaged R2 smoke timed out')); }, 30_000);
+      child.once('error', (error) => { clearTimeout(timer); reject(error); });
       child.once('exit', (code) => { clearTimeout(timer); resolveExit(code); });
     });
     if (exitCode !== 0) throw new Error(`Packaged R2 smoke exited ${String(exitCode)}.`);
     return JSON.parse(await readFile(join(directory, 'r2-report.json'), 'utf8')) as R2SmokeReport;
   } finally { await rm(directory, { recursive: true, force: true }); }
+}
+
+function terminateProcessTree(child: ChildProcess): void {
+  if (child.pid === undefined) {
+    child.kill();
+    return;
+  }
+  const killer = spawn('taskkill.exe', ['/PID', String(child.pid), '/T', '/F'], { shell: false, windowsHide: true, stdio: 'ignore' });
+  let fallbackTimer: ReturnType<typeof setTimeout> | undefined = setTimeout(() => {
+    fallbackTimer = undefined;
+    child.kill();
+  }, 2_000);
+  const clearFallback = (): void => {
+    if (fallbackTimer !== undefined) clearTimeout(fallbackTimer);
+    fallbackTimer = undefined;
+  };
+  killer.once('error', () => { clearFallback(); child.kill(); });
+  killer.once('close', (code) => { clearFallback(); if (code !== 0) child.kill(); });
 }
 
 describe.skipIf(process.env.CODRYN_PACKAGED_EXE === undefined)('packaged R2 smoke', () => {

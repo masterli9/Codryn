@@ -147,8 +147,10 @@ export class RunAgentLoop {
         if (response.kind === 'final') {
           const completion = await options.completion();
           const allowed = canComplete({ ...completion, verification: completion.verification.status });
+          const result = r2RunResultSchema.parse({ schemaVersion: 2, runId, stepCount: steps, status: allowed ? 'completed' : 'failed', finalText: response.text, changeSetId: activeChangeSetId, verification: completion.verification, recoveryRequired: completion.recoveryRequired });
+          await this.persistR2Detail(runId, result, allowed ? undefined : 'R1_TOOL_EXECUTION_FAILED');
           state = await this.transition(runId, request.requestId, state, allowed ? 'completed' : 'failed', steps, allowed ? undefined : 'R1_TOOL_EXECUTION_FAILED');
-          return r2RunResultSchema.parse({ schemaVersion: 2, runId, stepCount: steps, status: allowed ? 'completed' : 'failed', finalText: response.text, changeSetId: activeChangeSetId, verification: completion.verification, recoveryRequired: completion.recoveryRequired });
+          return result;
         }
         history = appendAssistantTurn(history, response.text ?? '', response.calls);
         state = await this.transition(runId, request.requestId, state, 'executing_tool', steps);
@@ -163,16 +165,28 @@ export class RunAgentLoop {
       }
     } catch (error) {
       const cancelled = signal.aborted || code(error) === 'R1_CANCELLED';
+      const failureCode = cancelled ? 'R1_CANCELLED' : code(error);
       try {
         const terminal = cancelled ? 'cancelled' : 'failed';
-        await this.transition(runId, request.requestId, state, terminal, steps, cancelled ? undefined : 'R1_TOOL_EXECUTION_FAILED');
+        await this.transition(runId, request.requestId, state, terminal, steps, cancelled ? undefined : failureCode);
       } catch { /* The stable R2 result remains explicit about its unverified state. */ }
-      return this.r2Failure(runId, steps, 'unverified', activeChangeSetId, cancelled ? 'The R2 run was cancelled.' : 'The R2 run did not reach a verified completion.', false, cancelled ? 'cancelled' : 'failed');
+      const result = this.r2Failure(runId, steps, 'unverified', activeChangeSetId, cancelled ? 'The R2 run was cancelled.' : 'The R2 run did not reach a verified completion.', false, cancelled ? 'cancelled' : 'failed');
+      try { await this.persistR2Detail(runId, result, failureCode); } catch { /* The terminal projection remains the fallback when detail persistence fails. */ }
+      return result;
     }
   }
 
   private r2Failure(runId: Uuid, stepCount: number, status: R2RunResult['verification']['status'], changeSetId: string | null, reason: string, recoveryRequired: boolean, runStatus: R2RunResult['status'] = 'failed'): R2RunResult {
     return r2RunResultSchema.parse({ schemaVersion: 2, runId, stepCount, status: runStatus, finalText: '', changeSetId, verification: { status, recordId: null, reason }, recoveryRequired });
+  }
+
+  private async persistR2Detail(runId: Uuid, result: R2RunResult, failureCode?: AgentRunFailureCode): Promise<void> {
+    if (this.dependencies.agentRunStore.saveR2Detail === undefined) return;
+    try {
+      await this.dependencies.agentRunStore.saveR2Detail(runId, { result, ...(failureCode === undefined ? {} : { failureCode }) });
+    } catch {
+      throw new R1PersistenceFailure('AGENT_RUN_WRITE_FAILED');
+    }
   }
 
   private async transition(runId: Uuid, requestId: Uuid, from: AgentRunState, to: AgentRunState, stepCount: number, failureCode?: AgentRunFailureCode): Promise<AgentRunState> {

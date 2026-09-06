@@ -26,9 +26,13 @@
 
 ## Pořadí a stav
 
-Všechny úkoly jsou nezačaté. Dokumenty jsou plán, nikoli hotový kód.
-Pokračovat na pracovní větvi, před implementací ověřit aktuální stav a vytvořit
-izolovaný checkout, pokud původní obsah vyžaduje ochranu. Historický výchozí
+Původní dokument vznikl jako plán, ale implementace nyní probíhá na pracovní
+větvi `docs/r2-change-lifecycle`. Lokální části W1–W5, D1–D3, P1–P5 a M1–M3
+jsou implementované; M4/M5 mají offline kontrakty, bounded runner, local
+verify a packaged smoke přípravu. Živý provider a čistý packaged důkaz jsou
+stále otevřené acceptance brány. Podrobná checkbox historie níže zůstává
+implementačním checklistem; aktuální pravdivý stav je v `docs/r2-acceptance.md`.
+Před další změnou ověřit aktuální stav branche a diff. Historický výchozí
 commit aplikace je `ae6cb49`; návrhový commit je `e17ed8f`.
 
 | Plán | Úkoly | Vstup | Výstup |
@@ -200,7 +204,7 @@ Povinné ochrany kontextu před prvním live odesláním popisuje M3.
 - [x] Nové názvy mezi dokumenty odpovídají společným kontraktům.
 - [x] Všechny experimentální brány definují i negativní výsledek a zakázaný fallback.
 - [x] Lokální dokumentační odkazy existují, nové implementační cesty jsou označeny.
-- [x] Návrh je označen schváleným; nic není označeno jako implementované.
+- [x] Návrh je označen schváleným a implementační evidence je vedena odděleně v acceptance dokumentu.
 - [x] Dokumentační diff prošel kontrolou; staging je omezen na plánovací dokumenty.
 
 Kontrola při sepsání: 5 dokumentů, 18 úkolů, 90 kroků, 44 syntakticky

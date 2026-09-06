@@ -82,6 +82,7 @@ const terminateOwnedProcessCommand = [
   '  if ($nameMatches -and $liveTicks -eq $expectedTicks) {',
   '    & $taskkill /PID $expectedPid /T /F *> $null',
   '    $decisionExitCode = $LASTEXITCODE',
+  '    if ($decisionExitCode -ne 0) { Stop-Process -Id $expectedPid -Force -ErrorAction SilentlyContinue }',
   '  }',
   '} finally {',
   '  [GC]::KeepAlive($target)',

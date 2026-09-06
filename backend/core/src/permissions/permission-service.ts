@@ -86,4 +86,16 @@ export class PermissionService {
   async closePending(idInput: string, state: 'expired' | 'cancelled'): Promise<boolean> {
     return this.dependencies.store.closePending(uuidSchema.parse(idInput), state);
   }
+
+  async listPending(projectIdInput: string): Promise<readonly PermissionView[]> {
+    const projectId = uuidSchema.parse(projectIdInput);
+    if (this.dependencies.store.listPending === undefined) return [];
+    return this.dependencies.store.listPending(projectId);
+  }
+
+  async expireAllowedUnclaimed(projectIdInput: string): Promise<readonly string[]> {
+    const projectId = uuidSchema.parse(projectIdInput);
+    if (this.dependencies.store.expireAllowedUnclaimed === undefined) return [];
+    return this.dependencies.store.expireAllowedUnclaimed(projectId);
+  }
 }

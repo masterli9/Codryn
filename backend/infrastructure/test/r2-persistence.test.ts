@@ -243,4 +243,31 @@ describe('R2 SQLite mutation persistence', () => {
       await fixture.close();
     }
   });
+
+  it('stores one immutable R2 result detail per agent run', async () => {
+    const fixture = await createChangeStoreFixture();
+    try {
+      const store = new SqliteAgentRunStore(fixture.database);
+      const result = {
+        schemaVersion: 2,
+        runId,
+        stepCount: 2,
+        status: 'completed' as const,
+        finalText: 'Hotovo',
+        changeSetId: null,
+        verification: { status: 'verified' as const, recordId: null, reason: 'tests passed' },
+        recoveryRequired: false
+      };
+      await store.saveR2Detail(runId, { result });
+      await store.saveR2Detail(runId, { result });
+      expect(fixture.database.prepare('SELECT failure_code, result_json FROM agent_run_details WHERE run_id = ?').get(runId)).toEqual({
+        failure_code: null,
+        result_json: JSON.stringify(result)
+      });
+      await expect(store.saveR2Detail(runId, { result: { ...result, finalText: 'Jiný výsledek' } }))
+        .rejects.toMatchObject({ code: 'R1_PERSISTENCE_FAILED' });
+    } finally {
+      await fixture.close();
+    }
+  });
 });

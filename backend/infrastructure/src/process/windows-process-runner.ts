@@ -14,12 +14,29 @@ type SpawnProcess = (
 interface WindowsProcessRunnerInternalOptions {
   readonly spawnProcess: SpawnProcess;
   readonly terminationGraceMs: number;
+  readonly fallbackSpawnProcess?: SpawnProcess;
 }
 
 const defaultTerminationGraceMs = 1_000;
 const defaultSpawnProcess: SpawnProcess = (executable, args, options) => (
   spawn(executable, [...args], options)
 );
+
+function fallbackTerminationArgs(pid: number): readonly string[] {
+  const script = [
+    `$rootId = ${String(pid)}`,
+    '$processes = @(Get-Process -ErrorAction Stop)',
+    '$ids = [System.Collections.Generic.List[int]]::new()',
+    'function Add-Descendant([int] $parentId) { foreach ($process in $processes) { try { $parent = $process.Parent; $childId = [int]$process.Id; if ($null -ne $parent -and [int]$parent.Id -eq $parentId -and -not $ids.Contains($childId)) { $null = $ids.Add($childId); Add-Descendant $childId } } catch { } } }',
+    '$null = $ids.Add($rootId)',
+    'Add-Descendant $rootId',
+    'foreach ($id in @($ids.ToArray() | Sort-Object -Descending)) { Stop-Process -Id $id -Force -ErrorAction SilentlyContinue }',
+    'Start-Sleep -Milliseconds 100',
+    '$remaining = @(Get-Process -ErrorAction Stop | Where-Object { $ids.Contains([int]$_.Id) })',
+    'if ($remaining.Count -eq 0) { exit 0 } else { exit 1 }'
+  ].join('; ');
+  return ['-NoLogo', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', script];
+}
 
 function requireSystemRoot(env: ProcessSpec['env']): string {
   const configured = Object.entries(env).find(([key]) => key.toLowerCase() === 'systemroot')?.[1];
@@ -47,10 +64,12 @@ function elapsedSince(startedAt: number): number {
 class WindowsProcessRunnerLifecycle implements ProcessRunner {
   private readonly spawnProcess: SpawnProcess;
   private readonly terminationGraceMs: number;
+  private readonly fallbackSpawnProcess: SpawnProcess | undefined;
 
   constructor(options: WindowsProcessRunnerInternalOptions) {
     this.spawnProcess = options.spawnProcess;
     this.terminationGraceMs = options.terminationGraceMs;
+    this.fallbackSpawnProcess = options.fallbackSpawnProcess;
     if (!Number.isFinite(this.terminationGraceMs) || this.terminationGraceMs <= 0) {
       throw new Error('Process termination grace must be positive.');
     }
@@ -91,6 +110,7 @@ class WindowsProcessRunnerLifecycle implements ProcessRunner {
 
     const spawnProcess = this.spawnProcess;
     const terminationGraceMs = this.terminationGraceMs;
+    const fallbackSpawnProcess = this.fallbackSpawnProcess;
 
     return new Promise<ProcessResult>((resolve) => {
       let settled = false;
@@ -104,6 +124,8 @@ class WindowsProcessRunnerLifecycle implements ProcessRunner {
       let taskkillProcess: ChildProcess | null = null;
       let taskkillClosed = false;
       let taskkillOutcome: boolean | null = null;
+      let fallbackProcess: ChildProcess | null = null;
+      let fallbackClosed = false;
       let processTimeout: NodeJS.Timeout | null = null;
       let taskkillTimeout: NodeJS.Timeout | null = null;
       let childCloseTimeout: NodeJS.Timeout | null = null;
@@ -149,6 +171,13 @@ class WindowsProcessRunnerLifecycle implements ProcessRunner {
         taskkillClosed = true;
         recordTaskkillOutcome(code === 0);
       };
+      const onFallbackError = (): void => {
+        recordFallbackOutcome(false);
+      };
+      const onFallbackClose = (code: number | null): void => {
+        fallbackClosed = true;
+        recordFallbackOutcome(code === 0);
+      };
       const ignoreLateChildError = (): void => undefined;
       const ignoreLateTaskkillError = (): void => undefined;
 
@@ -187,11 +216,49 @@ class WindowsProcessRunnerLifecycle implements ProcessRunner {
       function bestEffortParentFallback(): void {
         if (fallbackAttempted || processHasExited() || retainedChild.pid === undefined) return;
         fallbackAttempted = true;
+        if (fallbackSpawnProcess === undefined) {
+          try {
+            retainedChild.kill();
+          } catch {
+            // The stable result records unconfirmed tree termination below.
+          }
+          return;
+        }
         try {
-          retainedChild.kill();
+          fallbackProcess = fallbackSpawnProcess(
+            win32.join(systemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe'),
+            fallbackTerminationArgs(retainedChild.pid),
+            {
+              cwd: spec.cwd,
+              env: { ...spec.env },
+              shell: false,
+              windowsHide: true,
+              stdio: 'ignore'
+            }
+          );
+          fallbackProcess.once('error', onFallbackError);
+          fallbackProcess.once('close', onFallbackClose);
+          taskkillTimeout = setTimeout(() => {
+            taskkillTimeout = null;
+            try { fallbackProcess?.kill(); } catch { /* The result remains unconfirmed. */ }
+            recordFallbackOutcome(false);
+          }, terminationGraceMs);
         } catch {
           // The stable result records unconfirmed tree termination below.
+          try { retainedChild.kill(); } catch { /* The result remains unconfirmed. */ }
         }
+      }
+
+      function recordFallbackOutcome(succeeded: boolean): void {
+        if (settled || taskkillOutcome !== null) return;
+        if (!succeeded) {
+          try { retainedChild.kill(); } catch { /* The result remains unconfirmed. */ }
+        }
+        taskkillOutcome = succeeded;
+        clearTaskkillTimeout();
+        releaseOutput();
+        completeIfReady();
+        if (!settled) armChildCloseTimeout();
       }
 
       function guardLateErrors(): void {
@@ -209,6 +276,15 @@ class WindowsProcessRunnerLifecycle implements ProcessRunner {
           pendingTaskkill.on('error', ignoreLateTaskkillError);
           pendingTaskkill.once('close', () => {
             pendingTaskkill.off('error', ignoreLateTaskkillError);
+          });
+        }
+
+        fallbackProcess?.off('error', onFallbackError);
+        if (fallbackProcess !== null && !fallbackClosed) {
+          const pendingFallback = fallbackProcess;
+          pendingFallback.on('error', ignoreLateTaskkillError);
+          pendingFallback.once('close', () => {
+            pendingFallback.off('error', ignoreLateTaskkillError);
           });
         }
       }
@@ -275,6 +351,10 @@ class WindowsProcessRunnerLifecycle implements ProcessRunner {
 
       function recordTaskkillOutcome(succeeded: boolean): void {
         if (settled || taskkillOutcome !== null) return;
+        if (!succeeded && fallbackSpawnProcess !== undefined && retainedChild.pid !== undefined) {
+          bestEffortParentFallback();
+          if (fallbackProcess !== null) return;
+        }
         taskkillOutcome = succeeded;
         clearTaskkillTimeout();
         releaseOutput();
@@ -316,6 +396,11 @@ class WindowsProcessRunnerLifecycle implements ProcessRunner {
           releaseOutput();
           armChildCloseTimeout();
           return;
+        }
+
+        if (fallbackSpawnProcess !== undefined) {
+          bestEffortParentFallback();
+          if (fallbackProcess !== null) return;
         }
 
         try {
@@ -365,7 +450,8 @@ export class WindowsProcessRunner implements ProcessRunner {
   constructor() {
     this.lifecycle = createWindowsProcessRunnerInternal({
       spawnProcess: defaultSpawnProcess,
-      terminationGraceMs: defaultTerminationGraceMs
+      terminationGraceMs: defaultTerminationGraceMs,
+      fallbackSpawnProcess: defaultSpawnProcess
     });
   }
 

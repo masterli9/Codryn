@@ -74,6 +74,10 @@ export interface AgentRunStore {
     readonly updatedAt: IsoTimestamp;
     readonly event: EventEnvelope;
   }): Promise<void>;
+  saveR2Detail?(runId: Uuid, detail: {
+    readonly failureCode?: AgentRunFailureCode;
+    readonly result: JsonValue;
+  }): Promise<void>;
   findById(runId: Uuid): Promise<AgentRunRecord | null>;
 }
 

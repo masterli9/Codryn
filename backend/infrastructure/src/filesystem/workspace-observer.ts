@@ -4,6 +4,7 @@ import { lstat, readdir, readFile, realpath } from 'node:fs/promises';
 import { isAbsolute, relative, resolve } from 'node:path';
 import type { ProjectGitState, WorkspaceObservation, WorkspaceObserver } from '@codryn/core';
 import { isR1SensitiveRelativePath } from '@codryn/core';
+import type { ContextPathPolicy } from './context-path-policy.js';
 
 const maxFiles = 5_000;
 const maxBytes = 64 * 1024 * 1024;
@@ -16,6 +17,7 @@ function cancelled(signal: AbortSignal): void {
 
 export interface WorkspaceObserverOptions {
   readonly git?: Pick<ProjectGitState, 'inspect'>;
+  readonly contextPolicy?: Pick<ContextPathPolicy, 'allowed' | 'refresh'>;
 }
 
 export class FileWorkspaceObserver implements WorkspaceObserver {
@@ -31,6 +33,7 @@ export class FileWorkspaceObserver implements WorkspaceObserver {
 
   async inspect(signal: AbortSignal): Promise<WorkspaceObservation> {
     cancelled(signal);
+    await this.options.contextPolicy?.refresh?.();
     const root = await this.rootReady;
     this.ensureWatcher(root);
     await new Promise<void>((resolve) => setTimeout(resolve, 50));
@@ -46,7 +49,7 @@ export class FileWorkspaceObserver implements WorkspaceObserver {
       if (info.isSymbolicLink() || (!info.isDirectory() && !info.isFile())) return;
       const rel = relative(root, current).replaceAll('\\', '/') || '.';
       const segments = rel.split('/');
-      if (segments.some((segment) => ignoredDirectories.has(segment.toLowerCase())) || isR1SensitiveRelativePath(rel)) return;
+      if (segments.some((segment) => ignoredDirectories.has(segment.toLowerCase())) || isR1SensitiveRelativePath(rel) || this.options.contextPolicy?.allowed(rel) === false) return;
       if (info.isDirectory()) {
         const children = (await readdir(current, { withFileTypes: true })).sort((a, b) => a.name.localeCompare(b.name));
         for (const child of children) {
@@ -103,6 +106,7 @@ export class FileWorkspaceObserver implements WorkspaceObserver {
   private isIgnored(relativeName: string): boolean {
     const segments = relativeName.split('/');
     return segments.some((segment) => ignoredDirectories.has(segment.toLowerCase()))
-      || isR1SensitiveRelativePath(relativeName);
+      || isR1SensitiveRelativePath(relativeName)
+      || this.options.contextPolicy?.allowed(relativeName) === false;
   }
 }

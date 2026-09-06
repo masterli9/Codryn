@@ -10,6 +10,7 @@ export interface VerifyingCommandExecutorDependencies {
   readonly verifications: VerificationStore;
   readonly ids: IdGenerator;
   readonly clock: Clock;
+  readonly onResult?: (result: CommandResult) => Promise<void>;
 }
 
 function processReason(result: VerificationRecord['result'], process: CommandResult): string {
@@ -27,6 +28,7 @@ export class VerifyingCommandExecutor implements CommandExecutor {
     if (context === undefined) return this.dependencies.runner.run(spec, signal);
     const before = await this.snapshot(context.projectId, signal);
     const process = await this.dependencies.runner.run(spec, signal);
+    if (this.dependencies.onResult !== undefined) await this.dependencies.onResult(process);
     const after = await this.snapshot(context.projectId, signal);
     const result = assessVerification({
       exitCode: process.exitCode,

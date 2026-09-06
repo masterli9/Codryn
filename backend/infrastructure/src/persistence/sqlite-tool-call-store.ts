@@ -1,6 +1,9 @@
+import { randomUUID } from 'node:crypto';
 import type { DatabaseSync, SQLInputValue, SQLOutputValue } from 'node:sqlite';
 import {
   R1PersistenceFailure,
+  type Clock,
+  type IdGenerator,
   type ToolCallBinding,
   type ToolCallRecord,
   type ToolCallState,
@@ -175,7 +178,10 @@ function toolCallRunIdFromRow(row: Record<string, SQLOutputValue>): string {
 }
 
 export class SqliteToolCallStore implements ToolCallStore {
-  constructor(private readonly database: DatabaseSync) {}
+  constructor(
+    private readonly database: DatabaseSync,
+    private readonly options: { readonly clock?: Clock; readonly ids?: IdGenerator } = {}
+  ) {}
 
   async createWithInitialEvent(callInput: ToolCallRecord, eventInput: Parameters<ToolCallStore['createWithInitialEvent']>[1]): Promise<void> {
     let transactionStarted = false;
@@ -290,6 +296,58 @@ export class SqliteToolCallStore implements ToolCallStore {
         }
       }
       throw new R1PersistenceFailure('TOOL_CALL_WRITE_FAILED');
+    }
+  }
+
+  async recoverInFlight(projectIdInput: string): Promise<number> {
+    const projectId = uuidSchema.parse(projectIdInput);
+    let transactionStarted = false;
+    try {
+      this.database.exec('BEGIN IMMEDIATE;');
+      transactionStarted = true;
+      const rows = this.database.prepare(`SELECT call_id, run_id, state
+        FROM tool_calls
+        WHERE project_id = ? AND tool_id = 'command.run' AND (
+          state IN ('permission_decided', 'queued', 'running')
+          OR (state = 'waiting_for_approval' AND EXISTS (
+            SELECT 1 FROM permission_requests
+            WHERE permission_requests.call_id = tool_calls.call_id
+              AND permission_requests.state = 'allowed_once'
+              AND permission_requests.claimed = 1
+          ))
+        )
+        ORDER BY created_at ASC, call_id ASC`).all(projectId) as Array<Record<string, SQLOutputValue>>;
+      for (const row of rows) {
+        const callId = row.call_id;
+        const runId = row.run_id;
+        const from = row.state;
+        if (typeof callId !== 'string' || typeof runId !== 'string' || typeof from !== 'string') throw new TypeError('TOOL_CALL_ROW_INVALID');
+        const update = this.database.prepare(`UPDATE tool_calls
+          SET state = 'failed', error_code = 'R2_RECOVERY_UNKNOWN_EFFECT',
+              safe_result_json = ?
+          WHERE call_id = ? AND state = ?`).run(
+          JSON.stringify({ ok: false, code: 'R2_RECOVERY_UNKNOWN_EFFECT' }), callId, from
+        );
+        if (update.changes !== 1) throw new Error('R2_TOOL_CALL_RECOVERY_RACE');
+        insertEvent(this.database, {
+          eventId: this.options.ids?.next() ?? uuidSchema.parse(randomUUID()),
+          eventType: 'tool_call.recovered',
+          eventVersion: 1,
+          correlationId: uuidSchema.parse(callId),
+          occurredAt: isoTimestampSchema.parse(this.options.clock?.now() ?? new Date().toISOString()),
+          source: 'core',
+          sessionId: uuidSchema.parse(runId),
+          payload: { callId: uuidSchema.parse(callId), from, to: 'failed', errorCode: 'R2_RECOVERY_UNKNOWN_EFFECT' }
+        });
+      }
+      this.database.exec('COMMIT;');
+      transactionStarted = false;
+      return rows.length;
+    } catch (error) {
+      if (transactionStarted) {
+        try { if (this.database.isTransaction) this.database.exec('ROLLBACK;'); } catch { /* Preserve recovery failure. */ }
+      }
+      throw error;
     }
   }
 }

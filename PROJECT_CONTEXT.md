@@ -3,16 +3,19 @@
 ## Aktualizace po implementaci R2 backendového průřezu – 6. září 2026
 
 - Lokální R2 průřez je implementovaný přes W1–W5, D1–D3, P1–P5 a M1–M3;
-  M2 má ověřený fake cyklus v Git i non-Git fixture a restart recovery.
+  M4/M5 mají připravený bounded eval/live runner, explicitní local verify a
+  packaged smoke report. M2 má ověřený fake cyklus v Git i non-Git fixture a
+  restart recovery.
 - Bezpečné dokončení závisí na uloženém verification recordu a aktuálním
   workspace fingerprintu. Text modelu ani samotný patch nemohou vytvořit
   úspěšný výsledek.
 - OpenAI Responses a Gemini Generate Content mají offline adaptéry se stejným
   core kontraktem; OD-04 zůstává pending, protože nebyla provedena autorizovaná
   živá evaluace pěti pokusů.
-- Packaged R2 smoke a lokální verify gate jsou připravené, ale jejich čistý
-  packaged důkaz a finální acceptance gate je nutné ještě spustit na podporovaném
-  Windows buildu. R2 shell není sandbox a produktové UI patří do R3.
+- Packaged R2 smoke a lokální verify gate jsou připravené, ale čistý packaged
+  důkaz na tomto hostu selhal v Chromium GPU procesu; finální acceptance gate a
+  autorizovaná live evaluace proto zůstávají neuzavřené. R2 shell není sandbox
+  a produktové UI patří do R3.
 
 > Tento soubor je živá pracovní paměť pro budoucí práci v tomto repozitáři.
 > Před návrhem, implementací nebo změnou architektury jej vždy přečti a po
@@ -26,7 +29,7 @@
 - Jde o změnu pořadí implementace uvnitř O1, nikoli změnu produktové etapy nebo akceptačních kritérií. PRD v1.0 se nepřepisuje. OD-04 se uzavře až podle provider evalu v R2.
 - Návrh v `docs/superpowers/specs/2026-09-05-r2-change-lifecycle-design.md` autor schválil pro implementační plán. Schválení návrhu není důkazem implementace; Windows zápis, procesy a konkrétní poskytovatel stále vyžadují předepsané experimenty a měření.
 - R4 naváže rozšířenými scénáři a regresí již připojeného adaptéru. Historické zmínky o prvním připojení v R4/F3 čti podle tohoto rozhodnutí a ADR 0004.
-- Implementační plán je v `docs/superpowers/plans/2026-09-05-r2-implementation.md` a čtyřech navazujících dílech. Obsahuje 18 úkolů; implementace zatím nezačala. Windows experimenty a provider eval jsou součástí plánu, nikoli již splněné podmínky.
+- Implementační plán je v `docs/superpowers/plans/2026-09-05-r2-implementation.md` a čtyřech navazujících dílech. Obsahuje 18 úkolů; lokální implementační kroky jsou provedené a ověřené podle acceptance dokumentu. Windows packaged důkaz a provider eval jsou stále samostatné podmínky, nikoli automaticky splněné tvrzením o existenci runneru.
 
 ## Aktualizace po vydání PRD v1.0 – 14. srpna 2026
 

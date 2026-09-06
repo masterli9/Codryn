@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process';
-import { readFile, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { join, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { createR2Project } from '@codryn/test-support';
 import { ProjectGitState } from '../src/git/project-git-state.js';
@@ -42,6 +42,17 @@ describe('ProjectGitState', () => {
         .resolves.toEqual({ mode: 'non-git', reason: 'not_repository' });
     } finally {
       await fixture.close();
+    }
+  }, 30_000);
+
+  it('does not inherit a parent repository for a nested non-Git root', async () => {
+    const root = await mkdtemp(join(resolve('.'), '.codryn-git-state-'));
+    try {
+      await mkdir(join(root, 'nested'));
+      await expect(new ProjectGitState(join(root, 'nested')).inspect(new AbortController().signal))
+        .resolves.toEqual({ mode: 'non-git', reason: 'not_repository' });
+    } finally {
+      await rm(root, { recursive: true, force: true });
     }
   }, 30_000);
 });

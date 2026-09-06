@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { lstat, readdir, readFile, realpath, stat } from 'node:fs/promises';
 import { isAbsolute, relative, resolve, sep } from 'node:path';
 import { decideSensitivePath } from './sensitive-path-policy.js';
+import type { ContextPathPolicy } from './context-path-policy.js';
 
 interface ProjectFileReadInput {
   readonly path: string;
@@ -72,30 +73,35 @@ function decodeText(bytes: Buffer): string | null {
   return Buffer.from(text, 'utf8').equals(bytes) ? text : null;
 }
 
-function rejectSensitivePath(relativePath: string): void {
-  const decision = decideSensitivePath(relativePath);
+function rejectContextPath(relativePath: string, contextPolicy?: Pick<ContextPathPolicy, 'decide'>): void {
+  const decision = contextPolicy?.decide(relativePath) ?? decideSensitivePath(relativePath);
   if (!decision.allowed) {
-    throw new ProjectFilesystemFailure('R1_PATH_SENSITIVE', decision.reason ?? 'Path is sensitive.');
+    throw new ProjectFilesystemFailure(decision.code ?? 'R1_PATH_SENSITIVE', decision.reason ?? 'Path is sensitive.');
   }
+}
+
+export interface ProjectFilesystemOptions {
+  readonly contextPolicy?: Pick<ContextPathPolicy, 'decide' | 'refresh'>;
 }
 
 export class ProjectFilesystem {
   readonly #rootReady: Promise<string>;
 
-  constructor(root: string) {
+  constructor(root: string, private readonly options: ProjectFilesystemOptions = {}) {
     this.#rootReady = realpath(root);
   }
 
   async readFile(input: ProjectFileReadInput, signal: AbortSignal): Promise<ProjectFileReadResult> {
     abortIfNeeded(signal);
+    await this.options.contextPolicy?.refresh?.();
     const path = normalizeRelativePath(input.path);
-    rejectSensitivePath(path);
+    rejectContextPath(path, this.options.contextPolicy);
     const root = await this.#rootReady;
     const candidate = resolve(root, path);
     let target: string;
     try { target = await realpath(candidate); } catch { throw new ProjectFilesystemFailure('R1_FILE_NOT_FOUND', 'Project file was not found.'); }
     if (!isWithin(root, target)) throw new ProjectFilesystemFailure('R1_PATH_OUTSIDE_ROOT', 'Project path resolves outside root.');
-    rejectSensitivePath(relative(root, target).replaceAll('\\', '/') || '.');
+    rejectContextPath(relative(root, target).replaceAll('\\', '/') || '.', this.options.contextPolicy);
     let details;
     try { details = await stat(target); } catch { throw new ProjectFilesystemFailure('R1_FILE_NOT_FOUND', 'Project file was not found.'); }
     if (!details.isFile()) throw new ProjectFilesystemFailure('R1_FILE_NOT_REGULAR', 'Project path is not a regular file.');
@@ -132,6 +138,7 @@ export class ProjectFilesystem {
 
   async searchText(input: ProjectTextSearchInput, signal: AbortSignal): Promise<ProjectTextSearchResult> {
     abortIfNeeded(signal);
+    await this.options.contextPolicy?.refresh?.();
     if (typeof input.query !== 'string' || input.query.length < 1 || input.query.length > 512) {
       throw new ProjectFilesystemFailure('R1_SEARCH_INPUT_INVALID', 'Search query is invalid.');
     }
@@ -140,12 +147,13 @@ export class ProjectFilesystem {
     if (!Number.isInteger(maxResults) || maxResults < 1 || maxResults > MAX_SEARCH_RESULTS) {
       throw new ProjectFilesystemFailure('R1_SEARCH_INPUT_INVALID', 'Search result limit is invalid.');
     }
+    rejectContextPath(path, this.options.contextPolicy);
     const root = await this.#rootReady;
     const start = resolve(root, path);
     let canonicalStart: string;
     try { canonicalStart = await realpath(start); } catch { throw new ProjectFilesystemFailure('R1_FILE_NOT_FOUND', 'Search path was not found.'); }
     if (!isWithin(root, canonicalStart)) throw new ProjectFilesystemFailure('R1_PATH_OUTSIDE_ROOT', 'Project path resolves outside root.');
-    rejectSensitivePath(relative(root, canonicalStart).replaceAll('\\', '/') || '.');
+    rejectContextPath(relative(root, canonicalStart).replaceAll('\\', '/') || '.', this.options.contextPolicy);
     const paths: string[] = [];
     let fileLimitExceeded = false;
     const visit = async (current: string): Promise<void> => {
@@ -153,7 +161,7 @@ export class ProjectFilesystem {
       const info = await lstat(current);
       if (info.isSymbolicLink()) return;
       const rel = relative(root, current).replaceAll('\\', '/') || '.';
-      if (!decideSensitivePath(rel).allowed) return;
+      if (!(this.options.contextPolicy?.decide(rel) ?? decideSensitivePath(rel)).allowed) return;
       if (info.isFile()) {
         if (paths.length >= MAX_SEARCH_FILES) fileLimitExceeded = true;
         else paths.push(current);
@@ -185,6 +193,7 @@ export class ProjectFilesystem {
       filesSearched += 1;
       bytesSearched += bytes.length;
       const relativePath = relative(root, file).replaceAll('\\', '/');
+      if (!(this.options.contextPolicy?.decide(relativePath) ?? decideSensitivePath(relativePath)).allowed) continue;
       const lines = text.split('\n');
       for (let index = 0; index < lines.length; index += 1) {
         abortIfNeeded(signal);
@@ -193,7 +202,7 @@ export class ProjectFilesystem {
         let offset = line.indexOf(input.query);
         while (offset !== -1) {
           if (matches.length >= maxResults) { truncated = true; break; }
-          matches.push({ path: relativePath, line: index + 1, column: offset + 1, preview: line.slice(0, MAX_PREVIEW_CHARS) });
+          matches.push({ path: relativePath, line: index + 1, column: offset + 1, preview: line.replace(/\r$/, '').slice(0, MAX_PREVIEW_CHARS) });
           offset = line.indexOf(input.query, offset + input.query.length);
         }
         if (truncated && matches.length >= maxResults) break;

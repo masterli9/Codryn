@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { summarizeTrials } from '../src/agent/provider-eval.js';
+import { canPublishLiveGate, calculateUsageCost, reserveRequestCost, summarizeTrials } from '../src/agent/provider-eval.js';
 
 describe('provider evaluation', () => {
   it('does not pass a live gate for an empty or incomplete series', () => {
@@ -16,5 +16,19 @@ describe('provider evaluation', () => {
       validCalls: 1, invalidCalls: 0, repairedAfterError: false, durationMs: 5, costUsd: index === 4 ? null : 0.01
     }));
     expect(summarizeTrials(trials)).toEqual({ attempts: 5, successes: 4, knownCostUsd: 0.04, unknownCostTrials: 1, liveGatePassed: true });
+  });
+
+  it('reserves a conservative request budget and rejects missing pricing', () => {
+    const pricing = { inputUsdPerMillion: 1, outputUsdPerMillion: 2, maxOutputTokens: 4096 };
+    expect(reserveRequestCost(1_000, pricing)).toBe(0.009192);
+    expect(reserveRequestCost(1_000, { ...pricing, inputUsdPerMillion: Number.NaN })).toBeNull();
+    expect(canPublishLiveGate({ attempts: 5, successes: 4, knownCostUsd: 0.04, unknownCostTrials: 0, liveGatePassed: true }, 0.05)).toBe(true);
+    expect(canPublishLiveGate({ attempts: 5, successes: 4, knownCostUsd: 0.04, unknownCostTrials: 1, liveGatePassed: true }, 0.05)).toBe(false);
+    expect(canPublishLiveGate({ attempts: 5, successes: 4, knownCostUsd: 0.06, unknownCostTrials: 0, liveGatePassed: true }, 0.05)).toBe(false);
+  });
+
+  it('calculates usage once using total output tokens, including provider reasoning', () => {
+    expect(calculateUsageCost({ inputTokens: 100, outputTokens: 50 }, { inputUsdPerMillion: 1, outputUsdPerMillion: 2, maxOutputTokens: 4096 })).toBe(0.0002);
+    expect(calculateUsageCost(null, { inputUsdPerMillion: 1, outputUsdPerMillion: 2, maxOutputTokens: 4096 })).toBeNull();
   });
 });

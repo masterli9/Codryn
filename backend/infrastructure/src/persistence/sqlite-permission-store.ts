@@ -209,4 +209,48 @@ export class SqlitePermissionStore implements PermissionStore {
       throw error;
     }
   }
+
+  async listPending(projectIdInput: string): Promise<readonly PermissionView[]> {
+    const projectId = uuidSchema.parse(projectIdInput);
+    const rows = this.database.prepare(`SELECT
+      permission_requests.id, permission_requests.call_id, permission_requests.digest,
+      permission_requests.safe_input_json, permission_requests.state, permission_requests.claimed
+      FROM permission_requests
+      INNER JOIN tool_calls ON tool_calls.call_id = permission_requests.call_id
+      WHERE tool_calls.project_id = ? AND permission_requests.state = 'pending'
+      ORDER BY permission_requests.created_at ASC, permission_requests.id ASC`).all(projectId) as unknown as PermissionRow[];
+    return rows.map(rowView);
+  }
+
+  async expireAllowedUnclaimed(projectIdInput: string): Promise<readonly string[]> {
+    const projectId = uuidSchema.parse(projectIdInput);
+    let transactionStarted = false;
+    try {
+      this.database.exec('BEGIN IMMEDIATE;');
+      transactionStarted = true;
+      const rows = this.database.prepare(`SELECT
+        permission_requests.id, permission_requests.call_id, permission_requests.digest,
+        permission_requests.safe_input_json, permission_requests.state, permission_requests.claimed
+        FROM permission_requests
+        INNER JOIN tool_calls ON tool_calls.call_id = permission_requests.call_id
+        WHERE tool_calls.project_id = ? AND permission_requests.state = 'allowed_once' AND permission_requests.claimed = 0
+        ORDER BY permission_requests.created_at ASC, permission_requests.id ASC`).all(projectId) as unknown as PermissionRow[];
+      const expired: string[] = [];
+      for (const row of rows) {
+        const id = text(row.id, 'R2_PERMISSION_ROW_INVALID');
+        const update = this.database.prepare(`UPDATE permission_requests
+          SET state = 'expired' WHERE id = ? AND state = 'allowed_once' AND claimed = 0`).run(id);
+        if (update.changes !== 1) throw new Error('R2_PERMISSION_EXPIRY_RACE');
+        const view = rowView({ ...row, state: 'expired' });
+        insertEvent(this.database, requestEvent(this.ids, this.clock, view, 'permission.closed', { state: 'expired' }));
+        expired.push(id);
+      }
+      this.database.exec('COMMIT;');
+      transactionStarted = false;
+      return expired;
+    } catch (error) {
+      rollback(this.database, transactionStarted);
+      throw error;
+    }
+  }
 }

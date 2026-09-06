@@ -1,7 +1,11 @@
+import { Buffer } from 'node:buffer';
 import { modelToolCallSchema, type ModelDescriptor, type ModelRequest, type ModelStreamEvent } from '@codryn/shared';
 import type { ModelAdapter } from '@codryn/core';
-import { ProviderAdapterError, normalizeProviderError } from './provider-errors.js';
+import { ProviderAdapterError, normalizeProviderError, providerStatus } from './provider-errors.js';
+import { ProviderTransportError } from './provider-transport.js';
 import type { ProviderAdapterOptions } from './openai-responses-adapter.js';
+import { externalToolMap, externalToolName } from './provider-tool-names.js';
+import type { ModelToolDefinition } from '@codryn/shared';
 
 function descriptor(modelId: string): ModelDescriptor {
   return {
@@ -14,7 +18,7 @@ function descriptor(modelId: string): ModelDescriptor {
 }
 
 function tools(request: ModelRequest): unknown[] {
-  return [{ functionDeclarations: request.tools.map((tool) => ({ name: tool.toolId, description: tool.description, parameters: tool.inputSchema })) }];
+  return [{ functionDeclarations: request.tools.map((tool) => ({ name: externalToolName(tool.toolId, tool.toolVersion), description: tool.description, parameters: tool.inputSchema })) }];
 }
 
 export class GeminiAdapter implements ModelAdapter {
@@ -29,10 +33,16 @@ export class GeminiAdapter implements ModelAdapter {
   async *stream(request: ModelRequest, signal: AbortSignal): AsyncIterable<ModelStreamEvent> {
     const key = this.options.key();
     if (key.length === 0) throw new ProviderAdapterError('auth');
+    let toolMap: Map<string, ModelToolDefinition>;
+    try { toolMap = externalToolMap(request.tools); } catch (error) { throw this.normalize(error); }
     const contents: unknown[] = [{ role: 'user', parts: [{ text: request.task }] }];
     for (const source of request.context) contents.push({ role: 'user', parts: [{ text: `Context ${source.path}:\n${source.content}` }] });
     for (const turn of request.history ?? []) {
       if (turn.kind === 'assistant') {
+        for (const call of turn.calls) {
+          const tool = toolMap.get(externalToolName(call.toolId, call.toolVersion));
+          if (tool?.toolId !== call.toolId || tool.toolVersion !== call.toolVersion) throw new ProviderAdapterError('invalid_tool_call');
+        }
         contents.push({ role: 'model', parts: this.lastAssistantParts.length > 0 ? this.lastAssistantParts : [{ text: turn.text }] });
       } else {
         const externalId = this.externalByInternal.get(turn.result.callId);
@@ -41,6 +51,7 @@ export class GeminiAdapter implements ModelAdapter {
       }
     }
     let events: AsyncIterable<unknown>;
+    let usage: { inputTokens: number; outputTokens: number } | undefined;
     try {
       events = this.options.transport.stream({
         url: `${this.endpoint}/${encodeURIComponent(this.options.modelId)}:streamGenerateContent?alt=sse&key=${encodeURIComponent(key)}`,
@@ -62,15 +73,21 @@ export class GeminiAdapter implements ModelAdapter {
           if (typeof part.text === 'string') yield { type: 'text_delta', text: part.text };
           const functionCall = part.functionCall as Record<string, unknown> | undefined;
           if (functionCall !== undefined && typeof functionCall.name === 'string') {
+            const tool = toolMap.get(functionCall.name);
+            if (tool === undefined) throw new ProviderAdapterError('invalid_tool_call');
             const externalId = functionCall.name;
-            const call = modelToolCallSchema.parse({ callId: this.options.ids.next(), toolId: functionCall.name, toolVersion: 1, arguments: functionCall.args ?? {} });
+            if (Buffer.byteLength(JSON.stringify(functionCall.args ?? {}), 'utf8') > 64 * 1024) throw new ProviderAdapterError('invalid_tool_call');
+            const call = modelToolCallSchema.parse({ callId: this.options.ids.next(), toolId: tool.toolId, toolVersion: tool.toolVersion, arguments: functionCall.args ?? {} });
             this.externalByInternal.set(call.callId, externalId);
             yield { type: 'tool_call', call };
           }
         }
-        const usage = payload.usageMetadata as Record<string, unknown> | undefined;
-        if (usage !== undefined && typeof usage.promptTokenCount === 'number' && typeof usage.candidatesTokenCount === 'number') yield { type: 'usage', inputTokens: usage.promptTokenCount, outputTokens: usage.candidatesTokenCount };
+        const usageMetadata = payload.usageMetadata as Record<string, unknown> | undefined;
+        if (usageMetadata !== undefined && typeof usageMetadata.promptTokenCount === 'number' && typeof usageMetadata.candidatesTokenCount === 'number') {
+          usage = { inputTokens: usageMetadata.promptTokenCount, outputTokens: usageMetadata.candidatesTokenCount };
+        }
       }
+      if (usage !== undefined) yield { type: 'usage', ...usage };
       yield { type: 'completed' };
     } catch (error) {
       if (signal.aborted) throw new ProviderAdapterError('interrupted');
@@ -80,7 +97,7 @@ export class GeminiAdapter implements ModelAdapter {
   }
 
   private normalize(error: unknown): ProviderAdapterError {
-    const status = typeof error === 'object' && error !== null && 'status' in error && typeof error.status === 'number' ? error.status : null;
-    return new ProviderAdapterError(normalizeProviderError(status, false));
+    if (error instanceof ProviderTransportError) return new ProviderAdapterError(error.code);
+    return new ProviderAdapterError(normalizeProviderError(providerStatus(error), false));
   }
 }

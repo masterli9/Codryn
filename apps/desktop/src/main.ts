@@ -67,13 +67,19 @@ if (smokeMode) {
   app.disableHardwareAcceleration();
   app.commandLine.appendSwitch('disable-gpu');
   app.commandLine.appendSwitch('disable-gpu-compositing');
+  app.commandLine.appendSwitch('in-process-gpu');
+  app.commandLine.appendSwitch('use-gl', 'swiftshader');
+  app.commandLine.appendSwitch('disable-gpu-sandbox');
 }
 const userDataPrefix = r2SmokeMode ? '--r2-user-data-dir=' : '--r0-user-data-dir=';
 const userDataArgument = process.argv.find((argument) => argument.startsWith(userDataPrefix));
 const anyUserDataArgument = process.argv.find((argument) => argument.startsWith('--r0-user-data-dir=') || argument.startsWith('--r2-user-data-dir='));
+const r2NodeExecutableArgument = process.argv.find((argument) => argument.startsWith('--r2-node-executable='));
+const r2NodeExecutable = r2NodeExecutableArgument?.slice('--r2-node-executable='.length);
 const smokeUserDataPath = userDataArgument?.slice(userDataPrefix.length);
 const smokeArgumentsValid = !smokeMode || (
-  smokeUserDataPath !== undefined && path.isAbsolute(smokeUserDataPath) && !(r0SmokeMode && r2SmokeMode)
+  smokeUserDataPath !== undefined && path.isAbsolute(smokeUserDataPath) && !(r0SmokeMode && r2SmokeMode) &&
+  (r2NodeExecutable === undefined || path.isAbsolute(r2NodeExecutable))
 );
 
 if (anyUserDataArgument !== undefined && !smokeMode) {
@@ -96,7 +102,7 @@ if (anyUserDataArgument !== undefined && !smokeMode) {
       }
 
       if (r2SmokeMode && smokeUserDataPath !== undefined) {
-        const report = await runR2Smoke(app.getPath('userData'), resolveR2FixtureDirectory(app.isPackaged));
+        const report = await runR2Smoke(app.getPath('userData'), resolveR2FixtureDirectory(app.isPackaged), r2NodeExecutable ?? process.execPath);
         app.exit(report.database === 'pass' && report.guardedWrite === 'pass' && report.processTree === 'pass' && report.returnedToBaseline ? 0 : 1);
         return;
       }

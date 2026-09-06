@@ -71,7 +71,7 @@ export type { ToolExecutionHarnessDependencies } from './tools/tool-execution-ha
 export { RunAgentLoop } from './agent/run-agent-loop.js';
 export type { R2ExecutionOptions, RunAgentLoopDependencies } from './agent/run-agent-loop.js';
 export { RecoverR2Run } from './agent/recover-r2-run.js';
-export type { RecoverR2RunDependencies } from './agent/recover-r2-run.js';
+export type { R2RecoveryResult, RecoverR2RunDependencies } from './agent/recover-r2-run.js';
 export { preparePatch } from './changes/prepare-patch.js';
 export { ApplyPatch } from './changes/apply-patch.js';
 export type { ApplyPatchDependencies } from './changes/apply-patch.js';
@@ -126,4 +126,5 @@ export type {
 export { appendAssistantTurn, appendToolTurn, toolResultsFromHistory } from './agent/model-history.js';
 export { canComplete } from './agent/r2-completion.js';
 export { summarizeTrials } from './agent/provider-eval.js';
-export type { EvalSummary, Trial } from './agent/provider-eval.js';
+export { canPublishLiveGate, calculateUsageCost, reserveRequestCost } from './agent/provider-eval.js';
+export type { EvalSummary, ProviderPricing, Trial, UsageTotals } from './agent/provider-eval.js';

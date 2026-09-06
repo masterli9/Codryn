@@ -17,6 +17,7 @@ describe('R2 recovery composition', () => {
     const projectId = randomUUID();
     const runId = randomUUID();
     const callId = randomUUID();
+    const commandCallId = randomUUID();
     const requestId = randomUUID();
     const beforeHash = hash('before');
     const afterHash = hash('after');
@@ -32,6 +33,17 @@ describe('R2 recovery composition', () => {
       const setId = await changeSets.open(projectId, runId);
       const toolCalls = new SqliteToolCallStore(database);
       await toolCalls.createWithInitialEvent({ callId, runId, projectId, toolId: 'file.patch', toolVersion: 1, state: 'running', arguments: {}, createdAt: '2026-09-06T10:00:00.000Z', updatedAt: '2026-09-06T10:00:00.000Z' }, { eventId: randomUUID(), eventType: 'tool_call.started', eventVersion: 1, correlationId: requestId, occurredAt: '2026-09-06T10:00:00.000Z', source: 'core', sessionId: runId, payload: { callId, toolId: 'file.patch', toolVersion: 1 } });
+      await toolCalls.createWithInitialEvent({
+        callId: commandCallId,
+        runId,
+        projectId,
+        toolId: 'command.run',
+        toolVersion: 1,
+        state: 'running',
+        arguments: {},
+        createdAt: '2026-09-06T10:00:00.000Z',
+        updatedAt: '2026-09-06T10:00:00.000Z'
+      }, { eventId: randomUUID(), eventType: 'tool_call.started', eventVersion: 1, correlationId: requestId, occurredAt: '2026-09-06T10:00:00.000Z', source: 'core', sessionId: runId, payload: { callId: commandCallId, toolId: 'command.run', toolVersion: 1 } });
       const journal = new SqliteMutationJournal(database, { now: () => '2026-09-06T10:00:00.000Z' }, ids);
       const intent: WriteIntent = { operationId: randomUUID(), state: 'prepared', entry: { id: randomUUID(), setId, projectId, runId, callId, sequence: 1, path: 'sum.mjs', beforeHash, afterHash, beforeBlob: beforeHash, afterBlob: afterHash, kind: 'patch', reversesId: null } };
       await journal.prepare(intent);
@@ -43,9 +55,16 @@ describe('R2 recovery composition', () => {
       database = openR0Database(databasePath);
       runMigrations(database, '2026-09-06T10:00:01.000Z');
       const journal = new SqliteMutationJournal(database, { now: () => '2026-09-06T10:00:01.000Z' }, ids);
-      const recover = new RecoverR2Run({ mutations: new RecoverMutations({ journal, files: { readHash: async () => afterHash } }) });
-      await recover.execute(projectId, new AbortController().signal);
+      const recover = new RecoverR2Run({
+        mutations: new RecoverMutations({ journal, files: { readHash: async () => afterHash } }),
+        toolCalls: new SqliteToolCallStore(database, { clock: { now: () => '2026-09-06T10:00:01.000Z' }, ids })
+      });
+      await expect(recover.execute(projectId, new AbortController().signal)).resolves.toMatchObject({ recoveredToolCalls: 1 });
       expect(await journal.pending(projectId)).toHaveLength(0);
+      expect(database.prepare('SELECT state, error_code FROM tool_calls WHERE tool_id = ?').get('command.run'))
+        .toEqual({ state: 'failed', error_code: 'R2_RECOVERY_UNKNOWN_EFFECT' });
+      expect(database.prepare('SELECT safe_result_json FROM tool_calls WHERE call_id = ?').get(commandCallId))
+        .toEqual({ safe_result_json: JSON.stringify({ ok: false, code: 'R2_RECOVERY_UNKNOWN_EFFECT' }) });
     } finally {
       database.close();
       await rm(directory, { recursive: true, force: true });

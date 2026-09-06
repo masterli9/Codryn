@@ -37,8 +37,15 @@ and [Generate Content API](https://ai.google.dev/api/generate-content).
 The API key is obtained through `SessionSecret` and is visible only to the
 transport closure. It is not part of `ModelRequest`, event payloads, provider
 body, or diagnostics. Context policy blocks fixed sensitive paths, `.git`,
-`userData` and unsupported ignore syntax before live transmission. A policy
-change requires rebuilding the context.
+`userData` and unsupported ignore syntax before live transmission. The root
+`.codrynignore` is refreshed before each read, search or workspace observation,
+so a changed policy is applied before the next context build rather than being
+silently cached.
+
+The transport limits one response to 2 MiB, one tool-argument JSON value to
+64 KiB, one run to 32 orchestration steps, and one provider stream to a 30 s
+idle timeout or 120 s total timeout. Caller cancellation aborts the fetch and
+reader. These limits are harness boundaries, not a shell sandbox.
 
 This is an API-contract adapter, not a shell sandbox. Project commands keep
 their separate explicit permission and process-tree limits.

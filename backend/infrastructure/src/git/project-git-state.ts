@@ -169,7 +169,12 @@ export class ProjectGitState implements ProjectGitStatePort {
           ...process.env,
           GIT_CONFIG_NOSYSTEM: '1',
           GIT_OPTIONAL_LOCKS: '0',
-          GIT_TERMINAL_PROMPT: '0'
+          GIT_TERMINAL_PROMPT: '0',
+          // A non-Git project nested in another checkout must not inherit the
+          // parent repository or its ownership policy. Point Git at this
+          // root's own metadata; a missing directory is a normal non-Git root.
+          GIT_DIR: resolve(cwd, '.git'),
+          GIT_WORK_TREE: cwd
         }
       });
       return { ok: true, result: { stdout: result.stdout, stderr: result.stderr } };

@@ -1,8 +1,8 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { cp, readFile, rename, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { createR2Infrastructure } from '@codryn/infrastructure';
+import { changeVerifyReturnScenario, createR2Infrastructure } from '@codryn/infrastructure';
 
 export interface R2SmokeReport {
   readonly schemaVersion: 1;
@@ -12,7 +12,7 @@ export interface R2SmokeReport {
   readonly returnedToBaseline: boolean;
 }
 
-export async function runR2Smoke(userDataPath: string, fixtureSource: string): Promise<R2SmokeReport> {
+export async function runR2Smoke(userDataPath: string, fixtureSource: string, runtimeExecutable = process.execPath): Promise<R2SmokeReport> {
   const fixtureRoot = join(userDataPath, 'r2-fixture');
   await cp(fixtureSource, fixtureRoot, { recursive: true, force: true });
   const sumPath = join(fixtureRoot, 'sum.mjs');
@@ -20,7 +20,13 @@ export async function runR2Smoke(userDataPath: string, fixtureSource: string): P
   const infrastructure = await createR2Infrastructure({
     projectRoot: fixtureRoot,
     userDataPath,
-    scenario: 'change-verify-return',
+    scenario: {
+      ...changeVerifyReturnScenario({
+        expectedHash: createHash('sha256').update(before).digest('hex'),
+        projectRoot: fixtureRoot,
+        runtimeExecutable
+      })
+    },
     permissionResponder: async () => 'allow_once'
   });
   try {

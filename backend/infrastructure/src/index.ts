@@ -36,6 +36,7 @@ export type {
   FakeScenarioStep
 } from './model/scripted-model-adapter.js';
 export { ProjectFilesystem, ProjectFilesystemFailure } from './filesystem/project-filesystem.js';
+export type { ProjectFilesystemOptions } from './filesystem/project-filesystem.js';
 export { decideSensitivePath } from './filesystem/sensitive-path-policy.js';
 export type { SensitivePathDecision } from './filesystem/sensitive-path-policy.js';
 export { SqliteChangeSetStore } from './persistence/sqlite-change-set-store.js';
@@ -50,11 +51,12 @@ export { SqliteLeaseStore } from './persistence/sqlite-lease-store.js';
 export { FileWorkspaceObserver } from './filesystem/workspace-observer.js';
 export type { WorkspaceObserverOptions } from './filesystem/workspace-observer.js';
 export { SqliteVerificationStore } from './persistence/sqlite-verification-store.js';
-export { FetchProviderTransport } from './model/provider-transport.js';
-export type { ProviderTransport } from './model/provider-transport.js';
+export { FetchProviderTransport, ProviderTransportError } from './model/provider-transport.js';
+export type { ProviderTransport, ProviderTransportErrorCode } from './model/provider-transport.js';
 export { OpenAIResponsesAdapter } from './model/openai-responses-adapter.js';
 export { GeminiAdapter } from './model/gemini-adapter.js';
-export { ProviderAdapterError, normalizeProviderError } from './model/provider-errors.js';
+export { ProviderAdapterError, normalizeProviderError, providerStatus } from './model/provider-errors.js';
 export type { ProviderErrorCode } from './model/provider-errors.js';
 export { SessionSecret } from './model/session-secret.js';
 export { ContextPathPolicy, ContextPathPolicyError } from './filesystem/context-path-policy.js';
+export type { ContextPathDecision, ContextPathDecisionCode, ContextPathPolicyInvalidReason } from './filesystem/context-path-policy.js';

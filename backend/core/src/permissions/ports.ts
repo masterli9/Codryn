@@ -20,6 +20,8 @@ export interface PermissionStore {
   decide(input: PermissionDecisionInput): Promise<'accepted' | 'duplicate' | 'rejected'>;
   claim(id: string, digest: string): Promise<boolean>;
   closePending(id: string, state: 'expired' | 'cancelled'): Promise<boolean>;
+  listPending?(projectId: string): Promise<readonly PermissionView[]>;
+  expireAllowedUnclaimed?(projectId: string): Promise<readonly string[]>;
 }
 
 export interface PermissionRequestSpec {

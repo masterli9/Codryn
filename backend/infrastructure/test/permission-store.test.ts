@@ -101,6 +101,7 @@ describe('R2 SQLite permission persistence', () => {
       });
 
       await expect(permissionStore.get(request.id)).resolves.toEqual(request);
+      await expect(permissionStore.listPending(projectId)).resolves.toEqual([request]);
       await expect(service.decide({ id: request.id, digest: request.digest, decision: 'allow_once' })).resolves.toBe('accepted');
       await expect(service.decide({ id: request.id, digest: request.digest, decision: 'allow_once' })).resolves.toBe('duplicate');
       await expect(service.claim(request.id, request.digest)).resolves.toBe(true);
@@ -109,6 +110,38 @@ describe('R2 SQLite permission persistence', () => {
         .toEqual({ permission_result: 'allowed_once' });
       expect(database.prepare('SELECT claimed FROM permission_requests WHERE id = ?').get(request.id))
         .toEqual({ claimed: 1 });
+
+      const unclaimedCallId = '40000000-0000-4000-8000-000000000305';
+      await calls.createWithInitialEvent({
+        callId: unclaimedCallId,
+        runId,
+        projectId,
+        toolId: 'command.run',
+        toolVersion: 1,
+        state: 'schema_validated',
+        arguments: { executable: 'node', args: ['--version'] },
+        createdAt: timestamp,
+        updatedAt: timestamp
+      }, {
+        eventId: eventIds.next(),
+        eventType: 'tool_call.received',
+        eventVersion: 1,
+        correlationId: requestId,
+        occurredAt: timestamp,
+        source: 'core',
+        sessionId: runId,
+        payload: { callId: unclaimedCallId, toolId: 'command.run' }
+      });
+      const unclaimed = await service.request({
+        callId: unclaimedCallId,
+        command: { executable: 'node', args: ['--version'], cwd: 'C:\\project', timeoutMs: 30_000, maxOutputBytes: 256 * 1024 },
+        reason: 'Run the project test.',
+        impact: 'The command may read project files.'
+      });
+      await expect(service.decide({ id: unclaimed.id, digest: unclaimed.digest, decision: 'allow_once' })).resolves.toBe('accepted');
+      await expect(permissionStore.expireAllowedUnclaimed(projectId)).resolves.toEqual([unclaimed.id]);
+      await expect(permissionStore.get(unclaimed.id)).resolves.toMatchObject({ state: 'expired' });
+      await expect(permissionStore.expireAllowedUnclaimed(projectId)).resolves.toEqual([]);
       expect(database.prepare('PRAGMA foreign_key_check').all()).toEqual([]);
     } finally {
       database.close();
