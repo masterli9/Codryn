@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { r2ChangeDataSql } from './r2-change-migration.js';
 
 export interface Migration {
   readonly version: number;
@@ -171,5 +172,11 @@ export const migrations: readonly Migration[] = [
     name: 'tool_call_permission_audit',
     sql: toolCallPermissionAuditSql,
     checksum: sha256(toolCallPermissionAuditSql)
+  },
+  {
+    version: 4,
+    name: 'r2_change_data',
+    sql: r2ChangeDataSql,
+    checksum: sha256(r2ChangeDataSql)
   }
 ];

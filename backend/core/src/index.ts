@@ -77,6 +77,15 @@ export type {
   PatchInput,
   WriteIntent
 } from './changes/ports.js';
+export type { ChangeSetStore } from './changes/change-set-store.js';
+export type {
+  Lease,
+  LeaseStore,
+  WorkspaceObservation,
+  WorkspaceObserver,
+  WorkspaceSnapshot,
+  WorkspaceStore
+} from './workspace/ports.js';
 export { collectModelResponse, ModelResponseFailure } from './agent/model-response-collector.js';
 export type {
   CollectedModelResponse,
