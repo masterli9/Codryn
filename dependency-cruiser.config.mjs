@@ -35,7 +35,7 @@ export default {
     {
       name: 'production-must-not-import-test-support',
       severity: 'error',
-      from: { path: '(^|/)(apps/|backend/|shared/)' },
+      from: { path: '(^|/)(apps/|backend/|shared/)(?!.*(?:/test/|/tests/))' },
       to: { path: '(^|/)tests/support/' }
     }
   ],

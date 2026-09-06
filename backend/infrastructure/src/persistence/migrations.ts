@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { r2ChangeDataSql } from './r2-change-migration.js';
+import { r2BaselineSql } from './r2-baseline-migration.js';
 
 export interface Migration {
   readonly version: number;
@@ -178,5 +179,11 @@ export const migrations: readonly Migration[] = [
     name: 'r2_change_data',
     sql: r2ChangeDataSql,
     checksum: sha256(r2ChangeDataSql)
+  },
+  {
+    version: 5,
+    name: 'r2_project_baselines',
+    sql: r2BaselineSql,
+    checksum: sha256(r2BaselineSql)
   }
 ];

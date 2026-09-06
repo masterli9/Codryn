@@ -85,6 +85,7 @@ export type {
   WriteIntent
 } from './changes/ports.js';
 export type { ChangeSetStore } from './changes/change-set-store.js';
+export type { ProjectBaseline, ProjectBaselineStore, ProjectGitState } from './changes/project-baseline.js';
 export type {
   Lease,
   LeaseStore,

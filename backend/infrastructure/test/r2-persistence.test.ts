@@ -10,6 +10,7 @@ import {
   SqliteMutationJournal,
   SqliteToolCallStore,
   SqliteWorkspaceStore,
+  SqliteProjectBaselineStore,
   ContentBlobStore,
   openR0Database,
   runMigrations
@@ -221,6 +222,25 @@ describe('R2 SQLite mutation persistence', () => {
       expect(await readFile(join(directory, 'change-blobs', hash), 'utf8')).toBe('bad');
     } finally {
       await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it('stores one immutable baseline per change set', async () => {
+    const fixture = await createChangeStoreFixture();
+    try {
+      const baseline = {
+        mode: 'non-git' as const,
+        reason: 'not_repository' as const
+      };
+      const store = new SqliteProjectBaselineStore(fixture.database);
+      await store.saveOnce(fixture.intent.entry.setId, baseline);
+      await store.saveOnce(fixture.intent.entry.setId, baseline);
+      await expect(store.get(fixture.intent.entry.setId)).resolves.toEqual(baseline);
+      await expect(store.saveOnce(fixture.intent.entry.setId, {
+        mode: 'non-git', reason: 'git_unavailable'
+      })).rejects.toThrow('R2_BASELINE_CONFLICT');
+    } finally {
+      await fixture.close();
     }
   });
 });
