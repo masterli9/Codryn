@@ -11,6 +11,9 @@ import type {
 import type { AgentRunState } from '../state/agent-run.js';
 import type { ToolCallState } from '../state/tool-call.js';
 import type { AgentRunRecord, ToolCallRecord } from './model.js';
+import type { ChangeActor } from '../changes/ports.js';
+
+export type ToolExecutionContext = ChangeActor;
 
 export interface ModelAdapter {
   readonly descriptor: ModelDescriptor;

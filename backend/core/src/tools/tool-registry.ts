@@ -1,16 +1,18 @@
 import { z } from 'zod';
 import type { JsonValue, ModelToolDefinition } from '@codryn/shared';
+import type { ToolExecutionContext } from '../agent/ports.js';
 
-export type ToolRisk = 'read_project';
+export type ToolRisk = 'read_project' | 'write_project';
 
 export interface ToolDefinition {
   readonly toolId: string;
   readonly toolVersion: number;
   readonly description: string;
   readonly risk: ToolRisk;
+  readonly requiresCanonicalGuard?: boolean;
   readonly inputSchema: z.ZodType;
   readonly outputSchema: z.ZodType;
-  handler(input: unknown, signal: AbortSignal): Promise<unknown>;
+  handler(input: unknown, signal: AbortSignal, context?: ToolExecutionContext): Promise<unknown>;
 }
 
 export class ToolRegistryFailure extends Error {

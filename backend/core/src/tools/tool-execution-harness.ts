@@ -1,10 +1,11 @@
 import type { EventEnvelope, JsonValue, ModelToolCall, ToolResult, Uuid } from '@codryn/shared';
 import type { Clock, IdGenerator } from '../diagnostics/ports.js';
-import type { ToolCallStore } from '../agent/ports.js';
+import type { ToolCallStore, ToolExecutionContext } from '../agent/ports.js';
 import { R1PersistenceFailure } from '../agent/model.js';
 import type { ControlledPermissionPolicy } from './controlled-permission-policy.js';
 import { ToolRegistryFailure } from './tool-registry.js';
 import type { ToolRegistry, ToolDefinition } from './tool-registry.js';
+import { safeToolAudit } from './safe-tool-audit.js';
 import type { ToolCallState } from '../state/tool-call.js';
 
 export interface ToolExecutionHarnessDependencies {
@@ -22,7 +23,9 @@ const messages = Object.freeze({
   R1_TOOL_OUTPUT_INVALID: 'Tool output is invalid.',
   R1_TOOL_EXECUTION_FAILED: 'Tool execution failed.',
   R1_CANCELLED: 'Tool execution cancelled.',
-  R1_PERSISTENCE_FAILED: 'Tool execution could not be persisted.'
+  R1_PERSISTENCE_FAILED: 'Tool execution could not be persisted.',
+  R2_TOOL_CONTEXT_INVALID: 'Tool execution context is invalid.',
+  R2_RECOVERY_REQUIRED: 'Tool execution requires recovery.'
 });
 type HarnessCode = keyof typeof messages;
 
@@ -48,11 +51,11 @@ function pathEvidence(input: unknown): { readonly path: string; readonly withinP
 export class ToolExecutionHarness {
   constructor(private readonly dependencies: ToolExecutionHarnessDependencies) {}
 
-  async execute(call: ModelToolCall, runId: Uuid, signal: AbortSignal): Promise<ToolResult> {
+  async execute(call: ModelToolCall, runId: Uuid, signal: AbortSignal, context?: ToolExecutionContext): Promise<ToolResult> {
     let state: ToolCallState = 'received';
     try {
       await this.dependencies.toolCallStore.createWithInitialEvent({
-        callId: call.callId, runId, toolId: call.toolId, toolVersion: call.toolVersion, state, arguments: call.arguments,
+        callId: call.callId, runId, toolId: call.toolId, toolVersion: call.toolVersion, state, arguments: safeToolAudit(call.toolId, call.arguments),
         createdAt: this.timestamp(), updatedAt: this.timestamp()
       }, this.event(runId, 'tool_call.received', { callId: call.callId, toolId: call.toolId, toolVersion: call.toolVersion }));
       if (signal.aborted) return await this.reject(call, runId, state, 'cancelled', 'R1_CANCELLED');
@@ -63,12 +66,19 @@ export class ToolExecutionHarness {
         if (error instanceof ToolRegistryFailure) return await this.reject(call, runId, state, 'failed', 'R1_TOOL_UNKNOWN');
         throw error;
       }
+      const toolContext: ToolExecutionContext = context ?? { projectId: 'project', runId, callId: call.callId };
+      if (context === undefined && definition.risk === 'write_project') {
+        return await this.reject(call, runId, state, 'failed', 'R2_TOOL_CONTEXT_INVALID');
+      }
+      if (toolContext.runId !== runId || toolContext.callId !== call.callId) {
+        return await this.reject(call, runId, state, 'failed', 'R2_TOOL_CONTEXT_INVALID');
+      }
       const parsed = definition.inputSchema.safeParse(call.arguments);
       if (!parsed.success) return await this.reject(call, runId, state, 'failed', 'R1_TOOL_INPUT_INVALID');
       state = await this.transition(call.callId, runId, state, 'schema_validated');
 
       const evidence = pathEvidence(parsed.data);
-      const decision = this.dependencies.permissionPolicy.decide({ risk: definition.risk, pathEvidence: evidence ?? {} });
+      const decision = this.dependencies.permissionPolicy.decide({ risk: definition.risk, pathEvidence: evidence ?? {}, canonicalGuard: definition.requiresCanonicalGuard === true });
       state = await this.transition(call.callId, runId, state, 'permission_decided', {
         permissionResult: decision.result,
         permissionRuleId: decision.ruleId,
@@ -80,7 +90,7 @@ export class ToolExecutionHarness {
       state = await this.transition(call.callId, runId, state, 'queued');
       state = await this.transition(call.callId, runId, state, 'running');
       let output: unknown;
-      try { output = await definition.handler(parsed.data, signal); }
+      try { output = await definition.handler(parsed.data, signal, toolContext); }
       catch { return await this.reject(call, runId, state, signal.aborted ? 'cancelled' : 'failed', signal.aborted ? 'R1_CANCELLED' : 'R1_TOOL_EXECUTION_FAILED'); }
       if (signal.aborted) return await this.reject(call, runId, state, 'cancelled', 'R1_CANCELLED');
       const validated = definition.outputSchema.safeParse(output);
