@@ -9,3 +9,5 @@ export * from './tool-contract.js';
 export * from './r2-change.js';
 export * from './r2-diff.js';
 export * from './r2-permission.js';
+export * from './r2-verification.js';
+export * from './r2-agent.js';

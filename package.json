@@ -23,7 +23,11 @@
     "make": "npm run make --workspace @codryn/desktop",
     "verify:r0": "node scripts/verify-r0.mjs",
     "verify:r1": "node scripts/verify-r1.mjs",
-    "test:r1-repeatability": "node scripts/verify-r1-repeatability.mjs"
+    "verify:r2": "node scripts/verify-r2.mjs",
+    "test:r1-repeatability": "node scripts/verify-r1-repeatability.mjs",
+    "test:r2-repeatability": "node scripts/verify-r2-repeatability.mjs",
+    "eval:r2-providers": "node scripts/eval-r2-providers.mjs",
+    "verify:r2:live": "node scripts/verify-r2-live.mjs"
   },
   "devDependencies": {
     "@eslint/js": "9.39.5",

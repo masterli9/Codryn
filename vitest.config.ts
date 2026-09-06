@@ -16,7 +16,11 @@ const hostIntegrationTests = [
   'backend/infrastructure/test/guarded-writer.test.ts',
   'backend/infrastructure/test/project-git-state.test.ts',
   'backend/infrastructure/test/r2-process-probe.test.ts',
-  'tests/packaged/r0-smoke.test.ts'
+  'backend/infrastructure/test/r2-command-runner.test.ts',
+  'apps/cli/test/change-verify-return.test.ts',
+  'backend/infrastructure/test/r2-recovery.test.ts',
+  'tests/packaged/r0-smoke.test.ts',
+  'tests/packaged/r2-smoke.test.ts'
 ];
 
 const commonTestOptions = {

@@ -12,6 +12,11 @@ export type { JsonlDiagnosticLoggerOptions } from './logging/jsonl-diagnostic-lo
 export { redactLogValue } from './logging/redact.js';
 export type { RedactionPolicy } from './logging/redact.js';
 export { WindowsProcessRunner } from './process/windows-process-runner.js';
+export { R2CommandRunner } from './process/r2-command-runner.js';
+export type { R2CommandRunnerOptions } from './process/r2-command-runner.js';
+export { VerifyingCommandExecutor } from './process/verifying-command-executor.js';
+export type { VerifyingCommandExecutorDependencies } from './process/verifying-command-executor.js';
+export { buildCommandEnvironment } from './process/command-environment.js';
 export { categorizeCredentialHelpers } from './git/credential-helper-category.js';
 export { LocalGitProbe } from './git/local-git-probe.js';
 export { ProjectGitState } from './git/project-git-state.js';
@@ -22,7 +27,10 @@ export { createR0Infrastructure } from './create-r0-infrastructure.js';
 export type { R0Infrastructure } from './create-r0-infrastructure.js';
 export { createR1Infrastructure } from './create-r1-infrastructure.js';
 export type { R1Infrastructure } from './create-r1-infrastructure.js';
+export { createR2Infrastructure } from './create-r2-infrastructure.js';
+export type { R2Infrastructure } from './create-r2-infrastructure.js';
 export { ScriptedModelAdapter } from './model/scripted-model-adapter.js';
+export { changeVerifyReturnScenario, callIds as changeVerifyReturnCallIds } from './model/change-verify-return-scenario.js';
 export type {
   FakeScenario,
   FakeScenarioStep
@@ -38,3 +46,15 @@ export { SqliteMutationJournal } from './persistence/sqlite-mutation-journal.js'
 export { SqliteWorkspaceStore } from './persistence/sqlite-workspace-store.js';
 export { SqliteProjectBaselineStore } from './persistence/sqlite-project-baseline-store.js';
 export { SqlitePermissionStore } from './persistence/sqlite-permission-store.js';
+export { SqliteLeaseStore } from './persistence/sqlite-lease-store.js';
+export { FileWorkspaceObserver } from './filesystem/workspace-observer.js';
+export type { WorkspaceObserverOptions } from './filesystem/workspace-observer.js';
+export { SqliteVerificationStore } from './persistence/sqlite-verification-store.js';
+export { FetchProviderTransport } from './model/provider-transport.js';
+export type { ProviderTransport } from './model/provider-transport.js';
+export { OpenAIResponsesAdapter } from './model/openai-responses-adapter.js';
+export { GeminiAdapter } from './model/gemini-adapter.js';
+export { ProviderAdapterError, normalizeProviderError } from './model/provider-errors.js';
+export type { ProviderErrorCode } from './model/provider-errors.js';
+export { SessionSecret } from './model/session-secret.js';
+export { ContextPathPolicy, ContextPathPolicyError } from './filesystem/context-path-policy.js';

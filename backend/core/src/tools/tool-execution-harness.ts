@@ -7,6 +7,8 @@ import { ToolRegistryFailure } from './tool-registry.js';
 import type { ToolRegistry, ToolDefinition } from './tool-registry.js';
 import { safeToolAudit } from './safe-tool-audit.js';
 import type { ToolCallState } from '../state/tool-call.js';
+import type { PermissionResponder } from '../agent/ports.js';
+import type { PermissionService } from '../permissions/permission-service.js';
 
 export interface ToolExecutionHarnessDependencies {
   readonly registry: ToolRegistry;
@@ -14,6 +16,8 @@ export interface ToolExecutionHarnessDependencies {
   readonly toolCallStore: ToolCallStore;
   readonly clock: Clock;
   readonly ids: IdGenerator;
+  readonly permissionService?: PermissionService;
+  readonly permissionResponder?: PermissionResponder;
 }
 
 const messages = Object.freeze({
@@ -25,6 +29,8 @@ const messages = Object.freeze({
   R1_CANCELLED: 'Tool execution cancelled.',
   R1_PERSISTENCE_FAILED: 'Tool execution could not be persisted.',
   R2_TOOL_CONTEXT_INVALID: 'Tool execution context is invalid.',
+  R2_PERMISSION_PENDING: 'Tool permission is pending.',
+  R2_PERMISSION_CLAIM_FAILED: 'Tool permission could not be claimed.',
   R2_RECOVERY_REQUIRED: 'Tool execution requires recovery.'
 });
 type HarnessCode = keyof typeof messages;
@@ -68,7 +74,7 @@ export class ToolExecutionHarness {
         throw error;
       }
       const toolContext: ToolExecutionContext = context ?? { projectId: 'project', runId, callId: call.callId };
-      if (context === undefined && definition.risk === 'write_project') {
+      if (context === undefined && (definition.risk === 'write_project' || definition.risk === 'command_project')) {
         return await this.reject(call, runId, state, 'failed', 'R2_TOOL_CONTEXT_INVALID');
       }
       if (toolContext.runId !== runId || toolContext.callId !== call.callId) {
@@ -78,14 +84,52 @@ export class ToolExecutionHarness {
       if (!parsed.success) return await this.reject(call, runId, state, 'failed', 'R1_TOOL_INPUT_INVALID');
       state = await this.transition(call.callId, runId, state, 'schema_validated');
 
-      const evidence = pathEvidence(parsed.data);
-      const decision = this.dependencies.permissionPolicy.decide({ risk: definition.risk, pathEvidence: evidence ?? {}, canonicalGuard: definition.requiresCanonicalGuard === true });
-      state = await this.transition(call.callId, runId, state, 'permission_decided', {
-        permissionResult: decision.result,
-        permissionRuleId: decision.ruleId,
-        permissionReason: decision.reason
-      });
-      if (decision.result === 'denied') return await this.reject(call, runId, state, 'denied', 'R1_TOOL_PERMISSION_DENIED');
+      if (definition.risk === 'command_project') {
+        if (this.dependencies.permissionService === undefined) {
+          return await this.reject(call, runId, state, 'denied', 'R1_TOOL_PERMISSION_DENIED');
+        }
+        const commandInput = parsed.data as { readonly command: unknown; readonly reason: unknown; readonly impact: unknown };
+        const permission = await this.dependencies.permissionService.request({
+          callId: call.callId,
+          command: commandInput.command as never,
+          reason: commandInput.reason as string,
+          impact: commandInput.impact as string
+        });
+        state = await this.transition(call.callId, runId, state, 'waiting_for_approval');
+        if (this.dependencies.permissionResponder === undefined) {
+          return await this.reject(call, runId, state, 'failed', 'R2_PERMISSION_PENDING');
+        }
+        if (signal.aborted) {
+          await this.dependencies.permissionService.closePending(permission.id, 'cancelled');
+          return await this.reject(call, runId, state, 'cancelled', 'R1_CANCELLED');
+        }
+        let answer: 'allow_once' | 'deny';
+        try { answer = await this.dependencies.permissionResponder(permission); }
+        catch { return await this.reject(call, runId, state, 'failed', 'R2_PERMISSION_PENDING'); }
+        if (signal.aborted) {
+          await this.dependencies.permissionService.closePending(permission.id, 'cancelled');
+          return await this.reject(call, runId, state, 'cancelled', 'R1_CANCELLED');
+        }
+        const decisionResult = await this.dependencies.permissionService.decide({ id: permission.id, digest: permission.digest, decision: answer });
+        if (answer === 'deny') return await this.reject(call, runId, state, 'denied', 'R1_TOOL_PERMISSION_DENIED');
+        if (decisionResult !== 'accepted' || !(await this.dependencies.permissionService.claim(permission.id, permission.digest))) {
+          return await this.reject(call, runId, state, 'failed', 'R2_PERMISSION_CLAIM_FAILED');
+        }
+        state = await this.transition(call.callId, runId, state, 'permission_decided', {
+          permissionResult: 'allowed_once',
+          permissionRuleId: 'R2_EXPLICIT_COMMAND_APPROVAL',
+          permissionReason: 'Command was explicitly approved for this call.'
+        });
+      } else {
+        const evidence = pathEvidence(parsed.data);
+        const decision = this.dependencies.permissionPolicy.decide({ risk: definition.risk, pathEvidence: evidence ?? {}, canonicalGuard: definition.requiresCanonicalGuard === true });
+        state = await this.transition(call.callId, runId, state, 'permission_decided', {
+          permissionResult: decision.result,
+          permissionRuleId: decision.ruleId,
+          permissionReason: decision.reason
+        });
+        if (decision.result === 'denied') return await this.reject(call, runId, state, 'denied', 'R1_TOOL_PERMISSION_DENIED');
+      }
       if (signal.aborted) return await this.reject(call, runId, state, 'cancelled', 'R1_CANCELLED');
 
       state = await this.transition(call.callId, runId, state, 'queued');
@@ -111,7 +155,7 @@ export class ToolExecutionHarness {
     return result;
   }
 
-  private async transition(callId: Uuid, runId: Uuid, from: ToolCallState, to: ToolCallState, data: { readonly permissionResult?: 'allowed_by_rule' | 'denied'; readonly permissionRuleId?: string; readonly permissionReason?: string; readonly safeResult?: JsonValue; readonly errorCode?: string } = {}): Promise<ToolCallState> {
+  private async transition(callId: Uuid, runId: Uuid, from: ToolCallState, to: ToolCallState, data: { readonly permissionResult?: 'allowed_by_rule' | 'allowed_once' | 'denied'; readonly permissionRuleId?: string; readonly permissionReason?: string; readonly safeResult?: JsonValue; readonly errorCode?: string } = {}): Promise<ToolCallState> {
     const eventType = to === 'failed' || to === 'denied' || to === 'cancelled' ? 'tool_call.rejected' : to === 'running' ? 'tool_call.started' : `tool_call.${to}`;
     await this.dependencies.toolCallStore.transitionWithEvent({ callId, from, to, updatedAt: this.timestamp(), ...data, event: this.event(runId, eventType, {
       callId,

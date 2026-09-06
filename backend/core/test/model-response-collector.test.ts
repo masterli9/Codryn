@@ -229,6 +229,18 @@ describe('collectModelResponse', () => {
     ), new AbortController().signal), 'R1_MODEL_RESPONSE_UNSUPPORTED');
   });
 
+  it('keeps commentary when the explicit R2 collector mode allows mixed output', async () => {
+    await expect(collectModelResponse(stream(
+      { type: 'text_delta', text: 'Nejprve upravím soubor.' },
+      { type: 'tool_call', call: firstCall },
+      { type: 'completed' }
+    ), new AbortController().signal, { allowCommentaryWithToolCalls: true })).resolves.toEqual({
+      kind: 'tool_calls',
+      text: 'Nejprve upravím soubor.',
+      calls: [firstCall]
+    });
+  });
+
   it('validates every yielded event', async () => {
     await expectFailure(collectModelResponse(stream(
       { type: 'text_delta', text: 'Before invalid event' },

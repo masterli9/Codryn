@@ -2,6 +2,9 @@ import { createHash } from 'node:crypto';
 import { r2ChangeDataSql } from './r2-change-migration.js';
 import { r2BaselineSql } from './r2-baseline-migration.js';
 import { r2PermissionSql } from './r2-permission-migration.js';
+import { r2LeaseSql } from './r2-lease-migration.js';
+import { r2VerificationSql } from './r2-verification-migration.js';
+import { r2AgentDetailsSql } from './r2-agent-details-migration.js';
 
 export interface Migration {
   readonly version: number;
@@ -192,5 +195,23 @@ export const migrations: readonly Migration[] = [
     name: 'r2_permission_requests',
     sql: r2PermissionSql,
     checksum: sha256(r2PermissionSql)
+  },
+  {
+    version: 7,
+    name: 'r2_resource_leases',
+    sql: r2LeaseSql,
+    checksum: sha256(r2LeaseSql)
+  },
+  {
+    version: 8,
+    name: 'r2_verification_records',
+    sql: r2VerificationSql,
+    checksum: sha256(r2VerificationSql)
+  },
+  {
+    version: 9,
+    name: 'r2_agent_run_details',
+    sql: r2AgentDetailsSql,
+    checksum: sha256(r2AgentDetailsSql)
   }
 ];

@@ -11,7 +11,10 @@ const config: ForgeConfig = {
     asar: true,
     name: 'Codryn',
     executableName: 'Codryn',
-    extraResource: [path.resolve(__dirname, '../../tests/support/fixtures/process')]
+    extraResource: [
+      path.resolve(__dirname, '../../tests/support/fixtures/process'),
+      path.resolve(__dirname, '../../tests/support/fixtures/r2-project')
+    ]
   },
   makers: [
     new MakerSquirrel({ name: 'codryn' }),

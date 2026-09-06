@@ -1,4 +1,4 @@
-import { runAgentRequestSchema, type AgentRunFailureCode, type EventEnvelope, type ModelRequest, type RunAgentRequest, type RunAgentResult, type ToolResult, type Uuid } from '@codryn/shared';
+import { runAgentRequestSchema, r2RunResultSchema, uuidSchema, type AgentRunFailureCode, type EventEnvelope, type ModelRequest, type ModelTurn, type R2RunResult, type RunAgentRequest, type RunAgentResult, type ToolResult, type Uuid } from '@codryn/shared';
 import type { Clock, DiagnosticLogger, EventStore, IdGenerator } from '../diagnostics/ports.js';
 import { collectModelResponse, ModelResponseFailure } from './model-response-collector.js';
 import type { ContextAssembler } from './context-assembler.js';
@@ -7,6 +7,20 @@ import { R1PersistenceFailure } from './model.js';
 import type { ToolRegistry } from '../tools/tool-registry.js';
 import type { ToolExecutionHarness } from '../tools/tool-execution-harness.js';
 import type { AgentRunState } from '../state/agent-run.js';
+import { appendAssistantTurn, appendToolTurn, toolResultsFromHistory } from './model-history.js';
+import { canComplete } from './r2-completion.js';
+
+export interface R2ExecutionOptions {
+  readonly projectId: string;
+  readonly changeSetId: string | null;
+  readonly openChangeSet?: (runId: Uuid) => Promise<string>;
+  readonly completion: () => Promise<{
+    readonly changed: boolean;
+    readonly verification: R2RunResult['verification'];
+    readonly recoveryRequired: boolean;
+    readonly pending: boolean;
+  }>;
+}
 
 export interface RunAgentLoopDependencies {
   readonly contextAssembler: Pick<ContextAssembler, 'assemble'>;
@@ -93,6 +107,72 @@ export class RunAgentLoop {
         ? { schemaVersion: 1, status: 'cancelled', runId, stepCount: steps, failure: { code: failure, message: messages[failure] }, verification: { status: 'not_applicable', reason: 'R1_READ_ONLY_RUN' } }
         : { schemaVersion: 1, status: 'failed', runId, stepCount: steps, failure: { code: failure, message: messages[failure] }, verification: { status: 'not_applicable', reason: 'R1_READ_ONLY_RUN' } };
     }
+  }
+
+  async executeR2(input: RunAgentRequest, signal: AbortSignal, options: R2ExecutionOptions): Promise<R2RunResult> {
+    const parsed = runAgentRequestSchema.safeParse(input);
+    const projectId = (() => { try { return uuidSchema.parse(options.projectId); } catch { return null; } })();
+    const runId = this.dependencies.ids.next();
+    if (!parsed.success || projectId === null) return this.r2Failure(runId, 0, 'unverified', null, 'R2 input or project identity is invalid.', false);
+    const request = parsed.data;
+    let state: AgentRunState = 'idle';
+    let steps = 0;
+    let activeChangeSetId = options.changeSetId;
+    let history: ModelTurn[] = [];
+    const observedCallIds = new Set<Uuid>();
+    try {
+      const timestamp = this.timestamp();
+      await this.dependencies.agentRunStore.createWithInitialEvent({ runId, requestId: request.requestId, state, task: request.task, maxSteps: request.maxSteps, stepCount: 0, adapterId: this.dependencies.model.descriptor.adapterId, modelId: this.dependencies.model.descriptor.modelId, createdAt: timestamp, updatedAt: timestamp }, this.event(runId, request.requestId, 'agent_run.created', { runId, maxSteps: request.maxSteps, profile: 'change' }));
+      if (activeChangeSetId === null && options.openChangeSet !== undefined) activeChangeSetId = await options.openChangeSet(runId);
+      state = await this.transition(runId, request.requestId, state, 'preparing_context', steps);
+      this.abort(signal);
+      const context = await this.dependencies.contextAssembler.assemble({ task: request.task, project: { id: projectId }, contextReferences: request.contextReferences }, signal);
+      this.abort(signal);
+      await this.append(runId, request.requestId, 'context.assembled', { sources: context.sources.map((source) => ({ path: source.path, contentHash: source.contentHash, byteLength: source.byteLength, reason: source.reason })), totalBytes: context.totalBytes });
+      if (this.dependencies.model.descriptor.capabilities.toolCalling !== 'supported') throw { code: 'R1_MODEL_CAPABILITY_MISSING' };
+      while (true) {
+        this.abort(signal);
+        if (steps >= request.maxSteps) throw { code: 'R1_STEP_LIMIT_EXCEEDED' };
+        state = await this.transition(runId, request.requestId, state, 'waiting_for_model', steps);
+        const previousToolResults = toolResultsFromHistory(history);
+        const modelRequest: ModelRequest = {
+          runId, task: request.task, project: { id: projectId }, context: [...context.modelContent],
+          tools: [...this.dependencies.registry.descriptors], previousToolResults, history: [...history]
+        };
+        await this.append(runId, request.requestId, 'model.requested', { step: steps + 1, profile: 'change', toolCount: modelRequest.tools.length, contextSourceCount: modelRequest.context.length, previousToolResultCount: previousToolResults.length });
+        const response = await collectModelResponse(this.dependencies.model.stream(modelRequest, signal), signal, { allowCommentaryWithToolCalls: true });
+        await this.append(runId, request.requestId, 'model.response_received', { step: steps + 1, kind: response.kind, ...(response.kind === 'final' ? { textLength: response.text.length } : { toolCallCount: response.calls.length, commentaryLength: response.text?.length ?? 0 }) });
+        steps += 1;
+        this.abort(signal);
+        if (response.kind === 'final') {
+          const completion = await options.completion();
+          const allowed = canComplete({ ...completion, verification: completion.verification.status });
+          state = await this.transition(runId, request.requestId, state, allowed ? 'completed' : 'failed', steps, allowed ? undefined : 'R1_TOOL_EXECUTION_FAILED');
+          return r2RunResultSchema.parse({ schemaVersion: 2, runId, stepCount: steps, status: allowed ? 'completed' : 'failed', finalText: response.text, changeSetId: activeChangeSetId, verification: completion.verification, recoveryRequired: completion.recoveryRequired });
+        }
+        history = appendAssistantTurn(history, response.text ?? '', response.calls);
+        state = await this.transition(runId, request.requestId, state, 'executing_tool', steps);
+        for (const toolCall of response.calls) {
+          if (observedCallIds.has(toolCall.callId)) throw { code: 'R1_MODEL_RESPONSE_UNSUPPORTED' };
+          observedCallIds.add(toolCall.callId);
+          this.abort(signal);
+          const result = await this.dependencies.toolExecutionHarness.execute(toolCall, runId, signal, { projectId, runId, callId: toolCall.callId });
+          history = appendToolTurn(history, result);
+          if (!result.ok && result.error.code === 'R2_PERMISSION_PENDING') throw { code: 'R1_TOOL_PERMISSION_DENIED' };
+        }
+      }
+    } catch (error) {
+      const cancelled = signal.aborted || code(error) === 'R1_CANCELLED';
+      try {
+        const terminal = cancelled ? 'cancelled' : 'failed';
+        await this.transition(runId, request.requestId, state, terminal, steps, cancelled ? undefined : 'R1_TOOL_EXECUTION_FAILED');
+      } catch { /* The stable R2 result remains explicit about its unverified state. */ }
+      return this.r2Failure(runId, steps, 'unverified', activeChangeSetId, cancelled ? 'The R2 run was cancelled.' : 'The R2 run did not reach a verified completion.', false, cancelled ? 'cancelled' : 'failed');
+    }
+  }
+
+  private r2Failure(runId: Uuid, stepCount: number, status: R2RunResult['verification']['status'], changeSetId: string | null, reason: string, recoveryRequired: boolean, runStatus: R2RunResult['status'] = 'failed'): R2RunResult {
+    return r2RunResultSchema.parse({ schemaVersion: 2, runId, stepCount, status: runStatus, finalText: '', changeSetId, verification: { status, recordId: null, reason }, recoveryRequired });
   }
 
   private async transition(runId: Uuid, requestId: Uuid, from: AgentRunState, to: AgentRunState, stepCount: number, failureCode?: AgentRunFailureCode): Promise<AgentRunState> {

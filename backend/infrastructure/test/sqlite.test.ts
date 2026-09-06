@@ -174,7 +174,10 @@ describe('R1 SQLite persistence', () => {
         { version: 3, name: 'tool_call_permission_audit', applied_at: secondTimestamp },
         { version: 4, name: 'r2_change_data', applied_at: secondTimestamp },
         { version: 5, name: 'r2_project_baselines', applied_at: secondTimestamp },
-        { version: 6, name: 'r2_permission_requests', applied_at: secondTimestamp }
+        { version: 6, name: 'r2_permission_requests', applied_at: secondTimestamp },
+        { version: 7, name: 'r2_resource_leases', applied_at: secondTimestamp },
+        { version: 8, name: 'r2_verification_records', applied_at: secondTimestamp },
+        { version: 9, name: 'r2_agent_run_details', applied_at: secondTimestamp }
       ]);
 
       runMigrations(database, thirdTimestamp);
@@ -694,7 +697,7 @@ describe('R0 SQLite persistence', () => {
         defensiveModeEnabled: true,
         extensionsEnabled: false,
         quickCheck: 'ok',
-        migrationVersions: [0, 1, 2, 3, 4, 5, 6]
+        migrationVersions: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
       });
     } finally {
       database.close();
@@ -765,7 +768,10 @@ describe('R0 SQLite persistence', () => {
         { version: 3, name: 'tool_call_permission_audit', applied_at: firstTimestamp },
         { version: 4, name: 'r2_change_data', applied_at: firstTimestamp },
         { version: 5, name: 'r2_project_baselines', applied_at: firstTimestamp },
-        { version: 6, name: 'r2_permission_requests', applied_at: firstTimestamp }
+        { version: 6, name: 'r2_permission_requests', applied_at: firstTimestamp },
+        { version: 7, name: 'r2_resource_leases', applied_at: firstTimestamp },
+        { version: 8, name: 'r2_verification_records', applied_at: firstTimestamp },
+        { version: 9, name: 'r2_agent_run_details', applied_at: firstTimestamp }
       ]);
       expect(secondConnection.prepare('PRAGMA integrity_check').get()).toEqual({ integrity_check: 'ok' });
       await expect(new SqliteSessionRepository(secondConnection).findById(session.id)).resolves.toEqual(session);
@@ -799,7 +805,10 @@ describe('R0 SQLite persistence', () => {
         expect.objectContaining({ version: 3, applied_at: firstTimestamp }),
         expect.objectContaining({ version: 4, applied_at: firstTimestamp }),
         expect.objectContaining({ version: 5, applied_at: firstTimestamp }),
-        expect.objectContaining({ version: 6, applied_at: firstTimestamp })
+        expect.objectContaining({ version: 6, applied_at: firstTimestamp }),
+        expect.objectContaining({ version: 7, applied_at: firstTimestamp }),
+        expect.objectContaining({ version: 8, applied_at: firstTimestamp }),
+        expect.objectContaining({ version: 9, applied_at: firstTimestamp })
       ]);
     } finally {
       database.close();

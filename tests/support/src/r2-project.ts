@@ -30,11 +30,13 @@ export async function createR2Project(mode: 'git' | 'non-git'): Promise<{
   const userData = join(root, 'user-data');
   await mkdir(userData);
   await writeFile(join(root, 'README.md'), '# R2 fixture\n', 'utf8');
+  await writeFile(join(root, 'sum.mjs'), 'export function sum(a, b) { return a - b; }\n', 'utf8');
+  await writeFile(join(root, 'sum.test.mjs'), "import test from 'node:test';\nimport assert from 'node:assert/strict';\nimport { sum } from './sum.mjs';\n\ntest('sum adds both operands', () => assert.equal(sum(2, 3), 5));\n", 'utf8');
   if (mode === 'git') {
     await git(root, ['init', '-b', 'main']);
     await git(root, ['config', '--local', 'user.name', 'Codryn R2 Fixture']);
     await git(root, ['config', '--local', 'user.email', 'r2-fixture@invalid.local']);
-    await git(root, ['add', 'README.md']);
+    await git(root, ['add', 'README.md', 'sum.mjs', 'sum.test.mjs']);
     await git(root, ['commit', '-m', 'R2 fixture']);
   }
   return {

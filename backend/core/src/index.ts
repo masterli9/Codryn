@@ -51,11 +51,14 @@ export type {
 } from './diagnostics/ports.js';
 export { R1PersistenceFailure } from './agent/model.js';
 export type { AgentRunRecord, ToolCallRecord, AssembledContext, ContextSourceAudit } from './agent/model.js';
-export type { AgentRunStore, ModelAdapter, ToolCallBinding, ToolCallStore, ToolExecutionContext } from './agent/ports.js';
+export type { AgentRunStore, ModelAdapter, PermissionResponder, ToolCallBinding, ToolCallStore, ToolExecutionContext } from './agent/ports.js';
 export { ContextAssembler, ContextAssemblyFailure } from './agent/context-assembler.js';
 export type { ContextAssemblyInput } from './agent/context-assembler.js';
 export { ToolRegistry, ToolRegistryFailure } from './tools/tool-registry.js';
 export type { ToolDefinition, ToolRisk } from './tools/tool-registry.js';
+export { commandRunTool } from './tools/command-tool.js';
+export type { CommandExecutor } from './tools/command-tool.js';
+export type { CommandResult, CommandRunner } from './process/ports.js';
 export { fileReadTool, textSearchTool, fileReadInputSchema, fileReadOutputSchema, textSearchInputSchema, textSearchOutputSchema } from './tools/read-only-contracts.js';
 export { ControlledPermissionPolicy } from './tools/controlled-permission-policy.js';
 export type { PermissionDecision, PermissionInput } from './tools/controlled-permission-policy.js';
@@ -66,7 +69,9 @@ export { isR1SensitiveRelativePath, isValidR1RelativePath } from './tools/r1-sen
 export { ToolExecutionHarness } from './tools/tool-execution-harness.js';
 export type { ToolExecutionHarnessDependencies } from './tools/tool-execution-harness.js';
 export { RunAgentLoop } from './agent/run-agent-loop.js';
-export type { RunAgentLoopDependencies } from './agent/run-agent-loop.js';
+export type { R2ExecutionOptions, RunAgentLoopDependencies } from './agent/run-agent-loop.js';
+export { RecoverR2Run } from './agent/recover-r2-run.js';
+export type { RecoverR2RunDependencies } from './agent/recover-r2-run.js';
 export { preparePatch } from './changes/prepare-patch.js';
 export { ApplyPatch } from './changes/apply-patch.js';
 export type { ApplyPatchDependencies } from './changes/apply-patch.js';
@@ -108,9 +113,17 @@ export type {
   WorkspaceSnapshot,
   WorkspaceStore
 } from './workspace/ports.js';
+export { shouldAdvance } from './workspace/observe-workspace.js';
+export { VerifyCommand, assessVerification } from './verification/verify-command.js';
+export type { VerificationAssessment, VerifyCommandDependencies } from './verification/verify-command.js';
+export type { VerificationStore } from './verification/verification-store.js';
 export { collectModelResponse, ModelResponseFailure } from './agent/model-response-collector.js';
 export type {
   CollectedModelResponse,
   ModelResponseFailureCode,
   ModelUsage
 } from './agent/model-response-collector.js';
+export { appendAssistantTurn, appendToolTurn, toolResultsFromHistory } from './agent/model-history.js';
+export { canComplete } from './agent/r2-completion.js';
+export { summarizeTrials } from './agent/provider-eval.js';
+export type { EvalSummary, Trial } from './agent/provider-eval.js';

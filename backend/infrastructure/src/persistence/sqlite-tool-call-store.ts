@@ -18,6 +18,7 @@ type ToolCallTransition = Parameters<ToolCallStore['transitionWithEvent']>[0];
 const toolCallStates = new Set<ToolCallState>([
   'received',
   'schema_validated',
+  'waiting_for_approval',
   'permission_decided',
   'queued',
   'running',

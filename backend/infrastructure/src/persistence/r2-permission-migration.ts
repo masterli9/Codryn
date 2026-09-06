@@ -10,7 +10,7 @@ CREATE TABLE tool_calls (
   tool_id TEXT NOT NULL CHECK (length(tool_id) > 0),
   tool_version INTEGER NOT NULL CHECK (tool_version > 0),
   state TEXT NOT NULL CHECK (state IN (
-    'received', 'schema_validated', 'permission_decided', 'queued', 'running',
+    'received', 'schema_validated', 'waiting_for_approval', 'permission_decided', 'queued', 'running',
     'succeeded', 'failed', 'denied', 'timed_out', 'cancelled'
   )),
   arguments_json TEXT NOT NULL CHECK (json_valid(arguments_json)),

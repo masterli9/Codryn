@@ -8,12 +8,15 @@ import type {
   ModelStreamEvent,
   Uuid
 } from '@codryn/shared';
+import type { PermissionView } from '@codryn/shared';
 import type { AgentRunState } from '../state/agent-run.js';
 import type { ToolCallState } from '../state/tool-call.js';
 import type { AgentRunRecord, ToolCallRecord } from './model.js';
 import type { ChangeActor } from '../changes/ports.js';
 
 export type ToolExecutionContext = ChangeActor;
+
+export type PermissionResponder = (request: PermissionView) => Promise<'allow_once' | 'deny'>;
 
 export interface ToolCallBinding {
   readonly callId: Uuid;

@@ -22,6 +22,7 @@ export type CollectedModelResponse =
   | {
       readonly kind: 'tool_calls';
       readonly calls: readonly ModelToolCall[];
+      readonly text?: string;
       readonly usage?: ModelUsage;
     };
 
@@ -146,7 +147,8 @@ async function closeIteratorWithoutMaskingFailure(iterator: AsyncIteratorHandle)
 
 export async function collectModelResponse(
   events: AsyncIterable<unknown>,
-  signal: AbortSignal
+  signal: AbortSignal,
+  options: { readonly allowCommentaryWithToolCalls?: boolean } = {}
 ): Promise<CollectedModelResponse> {
   checkAbort(signal);
   const iterator = openIterator(events);
@@ -218,13 +220,13 @@ export async function collectModelResponse(
   if (terminal.type === 'failed') {
     return fail(failedEventCode(terminal));
   }
-  if (textParts.length > 0 && calls.length > 0) {
+  if (textParts.length > 0 && calls.length > 0 && options.allowCommentaryWithToolCalls !== true) {
     return fail('R1_MODEL_RESPONSE_UNSUPPORTED');
   }
 
   const usageResult = usage === undefined ? {} : { usage };
   if (calls.length > 0) {
-    return { kind: 'tool_calls', calls, ...usageResult };
+    return { kind: 'tool_calls', calls, ...(textParts.length === 0 ? {} : { text: textParts.join('') }), ...usageResult };
   }
   if (textParts.length > 0) {
     return { kind: 'final', text: textParts.join(''), ...usageResult };

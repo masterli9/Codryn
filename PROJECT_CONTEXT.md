@@ -1,5 +1,19 @@
 # Kontext projektu – maturitní práce
 
+## Aktualizace po implementaci R2 backendového průřezu – 6. září 2026
+
+- Lokální R2 průřez je implementovaný přes W1–W5, D1–D3, P1–P5 a M1–M3;
+  M2 má ověřený fake cyklus v Git i non-Git fixture a restart recovery.
+- Bezpečné dokončení závisí na uloženém verification recordu a aktuálním
+  workspace fingerprintu. Text modelu ani samotný patch nemohou vytvořit
+  úspěšný výsledek.
+- OpenAI Responses a Gemini Generate Content mají offline adaptéry se stejným
+  core kontraktem; OD-04 zůstává pending, protože nebyla provedena autorizovaná
+  živá evaluace pěti pokusů.
+- Packaged R2 smoke a lokální verify gate jsou připravené, ale jejich čistý
+  packaged důkaz a finální acceptance gate je nutné ještě spustit na podporovaném
+  Windows buildu. R2 shell není sandbox a produktové UI patří do R3.
+
 > Tento soubor je živá pracovní paměť pro budoucí práci v tomto repozitáři.
 > Před návrhem, implementací nebo změnou architektury jej vždy přečti a po
 > významném rozhodnutí ho aktualizuj. Nezaměňuj zde označené nápady za hotová
