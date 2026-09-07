@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { cp, readFile, rename, writeFile } from 'node:fs/promises';
+import { cp, mkdtemp, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { changeVerifyReturnScenario, createR2Infrastructure } from '@codryn/infrastructure';
 
@@ -13,7 +14,7 @@ export interface R2SmokeReport {
 }
 
 export async function runR2Smoke(userDataPath: string, fixtureSource: string, runtimeExecutable = process.execPath): Promise<R2SmokeReport> {
-  const fixtureRoot = join(userDataPath, 'r2-fixture');
+  const fixtureRoot = await mkdtemp(join(tmpdir(), 'codryn-r2-smoke-'));
   await cp(fixtureSource, fixtureRoot, { recursive: true, force: true });
   const sumPath = join(fixtureRoot, 'sum.mjs');
   const before = await readFile(sumPath);
@@ -23,6 +24,7 @@ export async function runR2Smoke(userDataPath: string, fixtureSource: string, ru
     scenario: {
       ...changeVerifyReturnScenario({
         expectedHash: createHash('sha256').update(before).digest('hex'),
+        originalContent: before.toString('utf8'),
         projectRoot: fixtureRoot,
         runtimeExecutable
       })
@@ -53,5 +55,6 @@ export async function runR2Smoke(userDataPath: string, fixtureSource: string, ru
     return report;
   } finally {
     infrastructure.close();
+    await rm(fixtureRoot, { recursive: true, force: true });
   }
 }

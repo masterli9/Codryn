@@ -13,6 +13,10 @@ function digest(bytes: Uint8Array): string {
   return createHash('sha256').update(bytes).digest('hex');
 }
 
+function externalAssetPath(path: string): string {
+  return path.replace(`${sep}app.asar${sep}`, `${sep}app.asar.unpacked${sep}`);
+}
+
 function fail(code: string): Error {
   return new Error(code);
 }
@@ -148,18 +152,21 @@ class WindowsGuardedFile implements GuardedFile {
 
 export interface WindowsGuardedWriterOptions {
   readonly workerPath?: string;
+  readonly nativeGuardPath?: string;
   readonly shellPath?: string;
 }
 
 export class WindowsGuardedWriter implements GuardedWriter {
   private readonly rootReady: Promise<string>;
   private readonly workerPath: string;
+  private readonly nativeGuardPath: string;
   private readonly shellPath: string;
 
   constructor(rootDirectory: string, options: WindowsGuardedWriterOptions = {}) {
     if (!isAbsolute(rootDirectory)) throw fail('R2_ROOT_NOT_ABSOLUTE');
     this.rootReady = realpath(rootDirectory);
-    this.workerPath = options.workerPath ?? fileURLToPath(new URL('./windows-guarded-worker.ps1', import.meta.url));
+    this.workerPath = options.workerPath ?? externalAssetPath(fileURLToPath(new URL('./windows-guarded-worker.ps1', import.meta.url)));
+    this.nativeGuardPath = options.nativeGuardPath ?? externalAssetPath(fileURLToPath(new URL('./windows-guard-native.cs', import.meta.url)));
     this.shellPath = options.shellPath ?? 'powershell.exe';
   }
 
@@ -172,7 +179,7 @@ export class WindowsGuardedWriter implements GuardedWriter {
     const target = await validateTarget(root, path);
     const child = spawn(this.shellPath, [
       '-NoLogo', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass',
-      '-File', this.workerPath, '-Target', target
+      '-File', this.workerPath, '-NativeGuardPath', this.nativeGuardPath, '-Target', target
     ], { stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
     const worker = new GuardWorker(child);
     try {

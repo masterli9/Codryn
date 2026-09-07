@@ -14,8 +14,13 @@ const maxArgumentsBytes = 32 * 1024;
 const defaultTimeoutMs = 30_000;
 const defaultOutputBytes = 256 * 1024;
 
+function externalAssetPath(path: string): string {
+  return path.replace(`${sep}app.asar${sep}`, `${sep}app.asar.unpacked${sep}`);
+}
+
 export interface R2CommandRunnerOptions {
   readonly workerPath?: string;
+  readonly jobPath?: string;
   readonly shellPath?: string;
   readonly environment?: Record<string, string | undefined>;
 }
@@ -50,13 +55,15 @@ function abortResult(startedAt: number): CommandResult {
 export class R2CommandRunner implements CommandRunner {
   private readonly rootReady: Promise<string>;
   private readonly workerPath: string;
+  private readonly jobPath: string;
   private readonly shellPath: string;
   private readonly environment: Record<string, string | undefined>;
 
   constructor(rootDirectory: string, options: R2CommandRunnerOptions = {}) {
     if (!isAbsolute(rootDirectory)) throw new Error('R2_ROOT_NOT_ABSOLUTE');
     this.rootReady = realpath(rootDirectory);
-    this.workerPath = options.workerPath ?? fileURLToPath(new URL('./r2-command-worker.ps1', import.meta.url));
+    this.workerPath = options.workerPath ?? externalAssetPath(fileURLToPath(new URL('./r2-command-worker.ps1', import.meta.url)));
+    this.jobPath = options.jobPath ?? externalAssetPath(fileURLToPath(new URL('./r2-command-job.cs', import.meta.url)));
     this.shellPath = options.shellPath ?? 'powershell.exe';
     this.environment = options.environment ?? process.env;
   }
@@ -92,7 +99,7 @@ export class R2CommandRunner implements CommandRunner {
     try {
       child = spawn(this.shellPath, [
         '-NoLogo', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass',
-        '-File', this.workerPath, '-CommandJson', commandJson
+        '-File', this.workerPath, '-JobPath', this.jobPath, '-CommandJson', commandJson
       ], {
         cwd: root,
         env: environment,

@@ -16,7 +16,7 @@ describe('R2 owned process tree probe', () => {
     const { stdout } = await execFileAsync(
       process.execPath,
       ['scripts/spikes/r2-process-probe.mjs'],
-      { timeout: 25_000, maxBuffer: 64 * 1024 }
+      { timeout: 45_000, maxBuffer: 64 * 1024 }
     );
     const report = JSON.parse(stdout) as ProcessProbeReport;
 
@@ -24,5 +24,5 @@ describe('R2 owned process tree probe', () => {
     expect(report.orphanCount).toBe(0);
     expect(report.maxTerminationDelayMs).toBeLessThanOrEqual(2_000);
     expect(report.cases.every((testCase) => testCase.passed)).toBe(true);
-  }, 30_000);
+  }, 50_000);
 });

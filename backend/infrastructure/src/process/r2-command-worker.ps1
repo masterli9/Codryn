@@ -1,10 +1,11 @@
 [CmdletBinding()]
 param(
+  [Parameter(Mandatory = $true)] [string]$JobPath,
   [Parameter(Mandatory = $true)] [string]$CommandJson
 )
 
 $ErrorActionPreference = 'Stop'
-Add-Type -Path (Join-Path $PSScriptRoot 'r2-command-job.cs')
+Add-Type -Path $JobPath
 
 function Send-Result([hashtable]$Result) {
   [Console]::Out.WriteLine(($Result | ConvertTo-Json -Compress -Depth 4))

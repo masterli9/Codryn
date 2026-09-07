@@ -1,11 +1,13 @@
 [CmdletBinding()]
 param(
   [Parameter(Mandatory = $true)]
+  [string]$NativeGuardPath,
+  [Parameter(Mandatory = $true)]
   [string]$Target
 )
 
 $ErrorActionPreference = 'Stop'
-Add-Type -Path (Join-Path $PSScriptRoot 'windows-guard-native.cs')
+Add-Type -Path $NativeGuardPath
 
 function Send-Response([hashtable]$Response) {
   [Console]::Out.WriteLine(($Response | ConvertTo-Json -Compress -Depth 4))

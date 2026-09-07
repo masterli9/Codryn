@@ -398,11 +398,6 @@ class WindowsProcessRunnerLifecycle implements ProcessRunner {
           return;
         }
 
-        if (fallbackSpawnProcess !== undefined) {
-          bestEffortParentFallback();
-          if (fallbackProcess !== null) return;
-        }
-
         try {
           const spawnedTaskkill = spawnProcess(
             win32.join(systemRoot, 'System32', 'taskkill.exe'),

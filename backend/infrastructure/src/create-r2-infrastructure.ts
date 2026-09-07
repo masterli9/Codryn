@@ -88,7 +88,10 @@ export async function createR2Infrastructure(options: {
     const clock = options.clock ?? new SystemClock();
     const ids = options.ids ?? new UuidGenerator();
     const scenario = options.model === undefined && options.scenario === 'change-verify-return'
-      ? changeVerifyReturnScenario({ expectedHash: createHash('sha256').update(await readFile(join(projectRoot, 'sum.mjs'))).digest('hex'), projectRoot })
+      ? (() => {
+        const bytesPromise = readFile(join(projectRoot, 'sum.mjs'));
+        return bytesPromise.then((bytes) => changeVerifyReturnScenario({ expectedHash: createHash('sha256').update(bytes).digest('hex'), originalContent: bytes.toString('utf8'), projectRoot }));
+      })()
       : options.scenario;
     if (options.model === undefined && scenario === undefined) throw new Error('R2_MODEL_NOT_CONFIGURED');
     runMigrations(database, clock.now());
@@ -164,7 +167,7 @@ export async function createR2Infrastructure(options: {
     const logger = new JsonlDiagnosticLogger({ directory: join(userDataPath, 'logs'), redactionPolicy: { sensitiveRoots: [userDataPath, projectRoot] } });
     const loop = new RunAgentLoop({
       contextAssembler: new ContextAssembler(filesystem),
-      model: options.model ?? new ScriptedModelAdapter(scenario as FakeScenario),
+      model: options.model ?? new ScriptedModelAdapter(await scenario as FakeScenario),
       registry,
       toolExecutionHarness,
       agentRunStore: agentRuns,
