@@ -45,6 +45,13 @@ export class FetchProviderTransport implements ProviderTransport {
       const decoder = new TextDecoder();
       let buffer = '';
       let bytes = 0;
+      const parseLine = (line: string): unknown | undefined => {
+        const trimmed = line.trim();
+        if (trimmed.length === 0 || trimmed === '[DONE]' || trimmed.startsWith(':') || /^(event|id|retry):/.test(trimmed)) return undefined;
+        const value = trimmed.startsWith('data:') ? trimmed.slice(5).trim() : trimmed;
+        if (value.length === 0 || value === '[DONE]') return undefined;
+        return JSON.parse(value) as unknown;
+      };
       while (true) {
         armIdleTimer();
         const next = await reader.read();
@@ -57,14 +64,13 @@ export class FetchProviderTransport implements ProviderTransport {
         const lines = buffer.split(/\r?\n/);
         buffer = lines.pop() ?? '';
         for (const line of lines) {
-          const value = line.startsWith('data:') ? line.slice(5).trim() : line.trim();
-          if (value.length === 0 || value === '[DONE]') continue;
-          yield JSON.parse(value) as unknown;
+          const parsed = parseLine(line);
+          if (parsed !== undefined) yield parsed;
         }
       }
       buffer += decoder.decode();
-      const value = buffer.startsWith('data:') ? buffer.slice(5).trim() : buffer.trim();
-      if (value.length > 0 && value !== '[DONE]') yield JSON.parse(value) as unknown;
+      const parsed = parseLine(buffer);
+      if (parsed !== undefined) yield parsed;
     } catch (error) {
       if (signal.aborted) throw new ProviderTransportError('interrupted');
       if (timedOut) throw new ProviderTransportError('timeout');

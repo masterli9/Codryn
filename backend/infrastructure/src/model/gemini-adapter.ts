@@ -18,7 +18,17 @@ function descriptor(modelId: string): ModelDescriptor {
 }
 
 function tools(request: ModelRequest): unknown[] {
-  return [{ functionDeclarations: request.tools.map((tool) => ({ name: externalToolName(tool.toolId, tool.toolVersion), description: tool.description, parameters: tool.inputSchema })) }];
+  return [{ functionDeclarations: request.tools.map((tool) => ({ name: externalToolName(tool.toolId, tool.toolVersion), description: tool.description, parameters: geminiSchema(tool.inputSchema) })) }];
+}
+
+function geminiSchema(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(geminiSchema);
+  if (typeof value !== 'object' || value === null) return value;
+  return Object.fromEntries(
+    Object.entries(value)
+      .filter(([key]) => !['$schema', 'additionalProperties', 'exclusiveMinimum', 'exclusiveMaximum'].includes(key))
+      .map(([key, child]) => [key, geminiSchema(child)])
+  );
 }
 
 export class GeminiAdapter implements ModelAdapter {
@@ -56,7 +66,20 @@ export class GeminiAdapter implements ModelAdapter {
       events = this.options.transport.stream({
         url: `${this.endpoint}/${encodeURIComponent(this.options.modelId)}:streamGenerateContent?alt=sse&key=${encodeURIComponent(key)}`,
         headers: { 'content-type': 'application/json' },
-        body: { contents, tools: tools(request), generationConfig: { temperature: 0, maxOutputTokens: 4096 } }
+        body: {
+          contents,
+          tools: tools(request),
+          generationConfig: {
+            maxOutputTokens: 4096,
+            ...(this.options.thinkingLevel === undefined && this.options.thinkingBudget === undefined
+              ? {}
+              : {
+                  thinkingConfig: this.options.thinkingLevel === undefined
+                    ? { thinkingBudget: this.options.thinkingBudget }
+                    : { thinkingLevel: this.options.thinkingLevel }
+                })
+          }
+        }
       }, signal);
     } catch (error) { throw this.normalize(error); }
     try {
@@ -70,7 +93,7 @@ export class GeminiAdapter implements ModelAdapter {
         this.lastAssistantParts = parts;
         for (const rawPart of parts) {
           const part = rawPart as Record<string, unknown>;
-          if (typeof part.text === 'string') yield { type: 'text_delta', text: part.text };
+          if (typeof part.text === 'string' && part.text.length > 0) yield { type: 'text_delta', text: part.text };
           const functionCall = part.functionCall as Record<string, unknown> | undefined;
           if (functionCall !== undefined && typeof functionCall.name === 'string') {
             const tool = toolMap.get(functionCall.name);

@@ -1,13 +1,16 @@
 import { spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
+
+import { providerChildEnvironment, readProviderKey } from './r2-provider-key.mjs';
 
 const args = process.argv.slice(2);
 const valueAfter = (flag) => { const index = args.indexOf(flag); return index < 0 ? undefined : args[index + 1]; };
 const blocked = {
   schemaVersion: 1,
   status: 'blocked',
-  reason: 'Live verification is opt-in and requires provider, model, positive cost cap, pricing profile and a session-only key.',
+  reason: 'Live verification is opt-in and requires provider, model, positive cost cap, pricing profile and a local provider key.',
   attempts: []
 };
 if (!args.includes('--live')) {
@@ -20,7 +23,8 @@ const maxCost = Number(valueAfter('--max-cost-usd'));
 const inputPrice = Number(valueAfter('--input-usd-per-million'));
 const outputPrice = Number(valueAfter('--output-usd-per-million'));
 const pricingSource = valueAfter('--pricing-source');
-const key = process.env.R2_PROVIDER_API_KEY;
+const supportedProvider = provider === 'openai' || provider === 'gemini';
+const key = supportedProvider ? readProviderKey(provider) : undefined;
 if ((provider !== 'openai' && provider !== 'gemini') || model === undefined || model.length === 0
   || !Number.isFinite(maxCost) || maxCost <= 0 || !Number.isFinite(inputPrice) || inputPrice <= 0
   || !Number.isFinite(outputPrice) || outputPrice <= 0 || pricingSource === undefined || !/^https:\/\//.test(pricingSource)
@@ -29,26 +33,34 @@ if ((provider !== 'openai' && provider !== 'gemini') || model === undefined || m
   process.exit(2);
 }
 
-const loader = resolve('apps/cli/src/typescript-resolution-loader.mjs');
-const runner = resolve('scripts/r2-live-runner.ts');
-if (!existsSync(loader) || !existsSync(runner)) {
+const loaderPath = resolve('apps/cli/src/typescript-resolution-loader.mjs');
+const runnerPath = resolve('scripts/r2-live-runner.ts');
+if (!existsSync(loaderPath) || !existsSync(runnerPath)) {
   process.stdout.write(`${JSON.stringify({ ...blocked, status: 'unverified', reason: 'Live runner is not available.' })}\n`);
   process.exit(3);
 }
+const loader = pathToFileURL(loaderPath).href;
+const runner = 'scripts/r2-live-runner.ts';
 const childArgs = [
   '--no-warnings', '--experimental-loader', loader, '--experimental-transform-types', runner,
   '--provider', provider, '--model', model, '--max-cost-usd', String(maxCost),
   '--input-usd-per-million', String(inputPrice), '--output-usd-per-million', String(outputPrice),
   '--pricing-source', pricingSource, '--series', 'live'
 ];
-const reasoning = valueAfter('--reasoning-effort');
+const reasoning = valueAfter('--reasoning-effort') ?? (provider === 'openai' ? 'none' : undefined);
 if (reasoning !== undefined) childArgs.push('--reasoning-effort', reasoning);
+const thinkingLevelValue = valueAfter('--thinking-level');
+const thinkingBudgetValue = valueAfter('--thinking-budget');
+const thinkingLevel = thinkingLevelValue ?? (thinkingBudgetValue === undefined && provider === 'gemini' ? 'minimal' : undefined);
+if (thinkingLevel !== undefined) childArgs.push('--thinking-level', thinkingLevel);
+if (thinkingBudgetValue !== undefined) childArgs.push('--thinking-budget', thinkingBudgetValue);
 const result = spawnSync(process.execPath, childArgs, {
   cwd: process.cwd(),
   shell: false,
   windowsHide: true,
   encoding: 'utf8',
-  maxBuffer: 1024 * 1024
+  maxBuffer: 1024 * 1024,
+  env: providerChildEnvironment(provider)
 });
 if (result.error !== undefined) {
   process.stdout.write(`${JSON.stringify({ ...blocked, status: 'unverified', reason: 'Live runner failed to start.' })}\n`);

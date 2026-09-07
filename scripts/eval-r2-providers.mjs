@@ -3,10 +3,16 @@ import { existsSync } from 'node:fs';
 import { writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { pathToFileURL } from 'node:url';
+
+import {
+  providerChildEnvironment,
+  providerKeyEnvironmentName,
+} from './r2-provider-key.mjs';
 
 const candidates = [
-  { provider: 'openai', model: 'gpt-5.6-luna' },
-  { provider: 'gemini', model: 'gemini-2.5-flash' }
+  { provider: 'openai', model: 'gpt-5.6-luna', reasoningEffort: 'none' },
+  { provider: 'gemini', model: 'gemini-3.6-flash', thinkingLevel: 'minimal' }
 ];
 const args = process.argv.slice(2);
 const valueAfter = (flag) => { const index = args.indexOf(flag); return index < 0 ? undefined : args[index + 1]; };
@@ -18,7 +24,7 @@ const offlineReport = {
   mode: 'offline-contract-only',
   candidates: candidates.map((candidate) => ({ ...candidate, trials: [], status: 'not_run' })),
   selection: { status: 'pending', reason: 'No live trial data exists; offline contracts cannot select a provider.' },
-  liveGate: { status: 'unverified', reason: 'An explicit live run, pricing profile and session key are required.' }
+  liveGate: { status: 'unverified', reason: 'An explicit live run, pricing profile and local provider keys are required.' }
 };
 
 async function emit(report) {
@@ -33,24 +39,34 @@ if (!args.includes('--live')) {
   process.exit(0);
 }
 
-const key = process.env.R2_PROVIDER_API_KEY;
 const maxCost = Number(valueAfter('--max-cost-usd'));
 const inputPrice = Number(valueAfter('--input-usd-per-million'));
 const outputPrice = Number(valueAfter('--output-usd-per-million'));
 const pricingSource = valueAfter('--pricing-source');
+const missingProviderKeys = candidates
+  .filter((candidate) => {
+    const key = process.env[providerKeyEnvironmentName(candidate.provider)];
+    return typeof key !== 'string' || key.length === 0;
+  })
+  .map((candidate) => candidate.provider);
 if (!Number.isFinite(maxCost) || maxCost <= 0 || !Number.isFinite(inputPrice) || inputPrice <= 0
   || !Number.isFinite(outputPrice) || outputPrice <= 0 || typeof pricingSource !== 'string' || !/^https:\/\//.test(pricingSource)
-  || typeof key !== 'string' || key.length === 0) {
-  await emit({ ...offlineReport, mode: 'live-eval', liveGate: { status: 'blocked', reason: 'Live eval needs a positive cost cap, pricing profile, source URL and session key.' } });
+  || missingProviderKeys.length > 0) {
+  const keyReason = missingProviderKeys.length > 0
+    ? ` Missing provider-specific key(s): ${missingProviderKeys.join(', ')}.`
+    : '';
+  await emit({ ...offlineReport, mode: 'live-eval', liveGate: { status: 'blocked', reason: `Live eval needs a positive cost cap, pricing profile, source URL and local provider keys.${keyReason}` } });
   process.exit(2);
 }
 
-const loader = resolve('apps/cli/src/typescript-resolution-loader.mjs');
-const runner = resolve('scripts/r2-live-runner.ts');
-if (!existsSync(loader) || !existsSync(runner)) {
+const loaderPath = resolve('apps/cli/src/typescript-resolution-loader.mjs');
+const runnerPath = resolve('scripts/r2-live-runner.ts');
+if (!existsSync(loaderPath) || !existsSync(runnerPath)) {
   await emit({ ...offlineReport, mode: 'live-eval', liveGate: { status: 'unverified', reason: 'Live runner is not available.' } });
   process.exit(3);
 }
+const loader = pathToFileURL(loaderPath).href;
+const runner = 'scripts/r2-live-runner.ts';
 
 function runCandidate(candidate) {
   const childArgs = [
@@ -60,10 +76,13 @@ function runCandidate(candidate) {
     '--input-usd-per-million', String(inputPrice), '--output-usd-per-million', String(outputPrice),
     '--pricing-source', pricingSource
   ];
-  const reasoning = valueAfter('--reasoning-effort');
+  const reasoning = valueAfter('--reasoning-effort') ?? candidate.reasoningEffort;
   if (reasoning !== undefined) childArgs.push('--reasoning-effort', reasoning);
+  if (candidate.thinkingLevel !== undefined) childArgs.push('--thinking-level', candidate.thinkingLevel);
+  if (candidate.thinkingBudget !== undefined) childArgs.push('--thinking-budget', String(candidate.thinkingBudget));
   const result = spawnSync(process.execPath, childArgs, {
-    cwd: process.cwd(), shell: false, windowsHide: true, encoding: 'utf8', maxBuffer: 2 * 1024 * 1024
+    cwd: process.cwd(), shell: false, windowsHide: true, encoding: 'utf8', maxBuffer: 2 * 1024 * 1024,
+    env: providerChildEnvironment(candidate.provider)
   });
   if (result.error !== undefined || result.status === null) return { ...candidate, trials: [], status: 'unverified', reason: 'Live candidate runner failed to start.' };
   const line = result.stdout.trim().split(/\r?\n/).filter(Boolean).at(-1);

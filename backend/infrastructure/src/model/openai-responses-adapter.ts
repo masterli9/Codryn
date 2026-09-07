@@ -11,6 +11,8 @@ export interface ProviderAdapterOptions {
   readonly transport: ProviderTransport;
   readonly ids: IdGenerator;
   readonly reasoningEffort?: 'none' | 'minimal' | 'low' | 'medium' | 'high';
+  readonly thinkingLevel?: 'minimal' | 'low' | 'medium' | 'high';
+  readonly thinkingBudget?: number;
 }
 
 interface CallState { readonly toolId: string; readonly toolVersion: number; readonly externalId: string; }

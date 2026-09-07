@@ -41,6 +41,8 @@ interface LiveArguments {
   readonly pricingSource: string;
   readonly series: 'live' | 'eval';
   readonly reasoningEffort?: 'none' | 'minimal' | 'low' | 'medium' | 'high';
+  readonly thinkingLevel?: 'minimal' | 'low' | 'medium' | 'high';
+  readonly thinkingBudget?: number;
 }
 
 interface TrialReport extends Trial {
@@ -51,6 +53,17 @@ interface TrialReport extends Trial {
   readonly reservedCostUsd: number;
   readonly usage: UsageTotals | null;
   readonly commandFailures: number;
+  readonly commandOutcomes: readonly {
+    readonly status: string;
+    readonly exitCode: number | null;
+    readonly treeStopped: boolean;
+    readonly truncated: boolean;
+  }[];
+  readonly resultStatus: string | null;
+  readonly verificationStatus: string | null;
+  readonly verificationReason: string | null;
+  readonly stepCount: number | null;
+  readonly revertStatus: string | null;
   readonly failureCode: string | null;
 }
 
@@ -84,6 +97,7 @@ class BudgetedModelAdapter implements ModelAdapter {
   private usageRequests = 0;
   private missingUsage = false;
   private readonly reservedValue = { value: 0 };
+  private failureCodeValue: string | null = null;
 
   constructor(
     private readonly inner: ModelAdapter,
@@ -97,6 +111,7 @@ class BudgetedModelAdapter implements ModelAdapter {
   get requestCount(): number { return this.requestCountValue; }
   get validCalls(): number { return this.validCallsValue; }
   get invalidCalls(): number { return this.invalidCallsValue; }
+  get failureCode(): string | null { return this.failureCodeValue; }
   get commandUsageTotals(): UsageTotals | null {
     return this.requestCountValue > 0 && !this.missingUsage ? this.commandUsage : null;
   }
@@ -126,6 +141,7 @@ class BudgetedModelAdapter implements ModelAdapter {
           yield event;
         }
       } catch (error) {
+        this.failureCodeValue ??= providerErrorCode(error);
         if (error instanceof ProviderAdapterError && error.code === 'invalid_tool_call') this.invalidCallsValue += 1;
         throw error;
       } finally {
@@ -145,6 +161,12 @@ function positiveNumber(value: string | undefined): number | null {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
 }
 
+function nonNegativeInteger(value: string | undefined): number | null {
+  if (value === undefined) return null;
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed >= 0 ? parsed : null;
+}
+
 function parseArguments(args: readonly string[]): LiveArguments {
   const provider = valueAfter(args, '--provider');
   const model = valueAfter(args, '--model');
@@ -153,11 +175,20 @@ function parseArguments(args: readonly string[]): LiveArguments {
   const outputUsdPerMillion = positiveNumber(valueAfter(args, '--output-usd-per-million'));
   const pricingSource = valueAfter(args, '--pricing-source');
   const reasoning = valueAfter(args, '--reasoning-effort');
+  const thinkingLevelValue = valueAfter(args, '--thinking-level');
+  const thinkingLevel = thinkingLevelValue;
+  const thinkingBudgetValue = valueAfter(args, '--thinking-budget');
+  const thinkingBudget = nonNegativeInteger(thinkingBudgetValue);
   const seriesValue = valueAfter(args, '--series');
   if ((provider !== 'openai' && provider !== 'gemini') || model === undefined || model.length === 0
     || maxCostUsd === null || inputUsdPerMillion === null || outputUsdPerMillion === null
     || pricingSource === undefined || !/^https:\/\//.test(pricingSource)
-    || (seriesValue !== 'live' && seriesValue !== 'eval')) {
+    || (seriesValue !== 'live' && seriesValue !== 'eval')
+    || (thinkingLevelValue !== undefined && !['minimal', 'low', 'medium', 'high'].includes(thinkingLevelValue))
+    || (thinkingLevelValue !== undefined && provider !== 'gemini')
+    || (thinkingBudgetValue !== undefined && thinkingBudget === null)
+    || (thinkingBudgetValue !== undefined && provider !== 'gemini')
+    || (thinkingLevelValue !== undefined && thinkingBudgetValue !== undefined)) {
     throw new Error('R2_LIVE_ARGUMENTS_INVALID');
   }
   if (reasoning !== undefined && !['none', 'minimal', 'low', 'medium', 'high'].includes(reasoning)) throw new Error('R2_LIVE_ARGUMENTS_INVALID');
@@ -168,7 +199,9 @@ function parseArguments(args: readonly string[]): LiveArguments {
     pricing: { inputUsdPerMillion, outputUsdPerMillion, maxOutputTokens },
     pricingSource,
     series: seriesValue,
-    ...(reasoning === undefined ? {} : { reasoningEffort: reasoning as LiveArguments['reasoningEffort'] })
+    ...(reasoning === undefined ? {} : { reasoningEffort: reasoning as LiveArguments['reasoningEffort'] }),
+    ...(thinkingLevel === undefined ? {} : { thinkingLevel: thinkingLevel as LiveArguments['thinkingLevel'] }),
+    ...(thinkingBudget === null ? {} : { thinkingBudget })
   };
 }
 
@@ -232,10 +265,12 @@ function failureOwner(error: unknown, result: { status?: string; verification?: 
   return 'model';
 }
 
-function taskFor(variant: TrialVariant): string {
-  if (variant === 'stale-hash') return 'Oprav pouze implementaci funkce sum v sum.mjs tak, aby vracela a + b. Nejprve pouzij text.search a file.read, potom file.patch s aktualnim hashem. Pokud patch selze kvuli zastaralemu hashi, znovu nacti soubor a neopakuj stary patch. Spust presne node test sum.test.mjs. Nakonec vrat kratke shrnuti.';
-  if (variant === 'test-failure') return 'Oprav pouze implementaci funkce sum v sum.mjs tak, aby vracela a + b. Pouzij text.search a file.read, potom file.patch s aktualnim hashem. Spust presne node test sum.test.mjs; pokud test selze, precti strukturovany vysledek, znovu nacti aktualni sum.mjs a proved dalsi cilenou opravu. Upravuj pouze sum.mjs, ne test. Nakonec vrat kratke shrnuti.';
-  return 'Oprav pouze implementaci funkce sum v sum.mjs tak, aby vracela a + b. Pouzij text.search a file.read, potom file.patch s aktualnim hashem. Spust presne node test sum.test.mjs. Nakonec vrat kratke shrnuti.';
+function taskFor(variant: TrialVariant, projectRoot: string, runtimeExecutable: string): string {
+  const command = JSON.stringify({ executable: runtimeExecutable, args: ['--test', 'sum.test.mjs'], cwd: projectRoot, timeoutMs: 30_000, maxOutputBytes: 256 * 1024 });
+  const commandInstruction = `Pro command.run pouzij presne tento prikazovy objekt: ${command}. Pro file.read, text.search a file.patch pouzij relativni cestu sum.mjs; absolutni cesta patri pouze do command.cwd.`;
+  if (variant === 'stale-hash') return `Oprav pouze implementaci funkce sum v sum.mjs tak, aby vracela a + b. Nejprve pouzij text.search a file.read, potom file.patch s aktualnim hashem. Pokud patch selze kvuli zastaralemu hashi, znovu nacti soubor a neopakuj stary patch. ${commandInstruction} Nakonec vrat kratke shrnuti.`;
+  if (variant === 'test-failure') return `Oprav pouze implementaci funkce sum v sum.mjs tak, aby vracela a + b. Pouzij text.search a file.read, potom file.patch s aktualnim hashem. ${commandInstruction} Spust test; pokud test selze, precti strukturovany vysledek, znovu nacti aktualni sum.mjs a proved dalsi cilenou opravu. Upravuj pouze sum.mjs, ne test. Nakonec vrat kratke shrnuti.`;
+  return `Oprav pouze implementaci funkce sum v sum.mjs tak, aby vracela a + b. Pouzij text.search a file.read, potom file.patch s aktualnim hashem. ${commandInstruction} Nakonec vrat kratke shrnuti.`;
 }
 
 async function runTrial(input: LiveArguments, mode: TrialMode, variant: TrialVariant, ledger: BudgetLedger, apiKey: string): Promise<TrialReport> {
@@ -246,14 +281,22 @@ async function runTrial(input: LiveArguments, mode: TrialMode, variant: TrialVar
   let staleInjected = false;
   let failureInjected = false;
   let commandFailures = 0;
+  const commandOutcomes: Array<TrialReport['commandOutcomes'][number]> = [];
   const secret = new SessionSecret(() => apiKey);
   const ids = new UuidGenerator();
   const inner = input.provider === 'openai'
     ? new OpenAIResponsesAdapter({ modelId: input.model, key: () => secret.get(), transport: new FetchProviderTransport(), ids, ...(input.reasoningEffort === undefined ? {} : { reasoningEffort: input.reasoningEffort }) })
-    : new GeminiAdapter({ modelId: input.model, key: () => secret.get(), transport: new FetchProviderTransport(), ids });
+    : new GeminiAdapter({
+        modelId: input.model,
+        key: () => secret.get(),
+        transport: new FetchProviderTransport(),
+        ids,
+        ...(input.thinkingLevel === undefined ? {} : { thinkingLevel: input.thinkingLevel }),
+        ...(input.thinkingBudget === undefined ? {} : { thinkingBudget: input.thinkingBudget })
+      });
   const model = new BudgetedModelAdapter(inner, ledger, input.pricing, input.maxCostUsd);
   let infrastructure: Awaited<ReturnType<typeof createR2Infrastructure>> | undefined;
-  let result: { status: string; verification: { status: string }; changeSetId: string | null } | undefined;
+  let result: { status: string; stepCount: number; verification: { status: string; reason: string }; changeSetId: string | null } | undefined;
   let failure: unknown;
   let revertStatus: string | null = null;
   try {
@@ -277,12 +320,13 @@ async function runTrial(input: LiveArguments, mode: TrialMode, variant: TrialVar
       },
       onCommandResult: async (command: CommandResult) => {
         if (command.status !== 'succeeded' || command.exitCode !== 0) commandFailures += 1;
+        commandOutcomes.push({ status: command.status, exitCode: command.exitCode, treeStopped: command.treeStopped, truncated: command.truncated });
       }
     });
     result = await infrastructure.agentLoop.executeR2({
       requestId: randomUUID(),
       projectRoot: fixture.root,
-      task: taskFor(variant),
+      task: taskFor(variant, fixture.root, process.execPath),
       contextReferences: [],
       maxSteps: maxRequestsPerTrial
     }, new AbortController().signal);
@@ -307,7 +351,9 @@ async function runTrial(input: LiveArguments, mode: TrialMode, variant: TrialVar
         costUsd: calculateUsageCost(usage, input.pricing), mode, variant,
         fixtureHash: fixture.fixtureHash, requestCount: model.requestCount,
         reservedCostUsd: model.reservedCostUsd, usage, commandFailures,
-        failureCode: successful ? null : `result_${result.verification.status}_${revertStatus ?? 'no_revert'}`
+        commandOutcomes, resultStatus: result.status, verificationStatus: result.verification.status,
+        verificationReason: result.verification.reason, stepCount: result.stepCount, revertStatus,
+        failureCode: successful ? null : model.failureCode ?? `result_${result.verification.status}_${revertStatus ?? 'no_revert'}`
       };
     }
   } catch (error) {
@@ -325,7 +371,9 @@ async function runTrial(input: LiveArguments, mode: TrialMode, variant: TrialVar
     costUsd: calculateUsageCost(usage, input.pricing), mode, variant,
     fixtureHash: fixture.fixtureHash, requestCount: model.requestCount,
     reservedCostUsd: model.reservedCostUsd, usage, commandFailures,
-    failureCode: providerErrorCode(failure)
+    commandOutcomes, resultStatus: result?.status ?? null, verificationStatus: result?.verification.status ?? null,
+    verificationReason: result?.verification.reason ?? null, stepCount: result?.stepCount ?? null, revertStatus,
+    failureCode: model.failureCode ?? providerErrorCode(failure)
   };
 }
 
@@ -333,7 +381,7 @@ async function main(): Promise<void> {
   const input = parseArguments(process.argv.slice(2));
   const apiKey = process.env.R2_PROVIDER_API_KEY;
   if (process.platform !== 'win32' || typeof apiKey !== 'string' || apiKey.length === 0) {
-    process.stdout.write(`${JSON.stringify({ schemaVersion: 1, status: 'unverified', reason: process.platform !== 'win32' ? 'R2 live process harness requires Windows.' : 'Session provider key is unavailable.', attempts: [] })}\n`);
+    process.stdout.write(`${JSON.stringify({ schemaVersion: 1, status: 'unverified', reason: process.platform !== 'win32' ? 'R2 live process harness requires Windows.' : 'Provider key is unavailable; configure the local .env or process environment.', attempts: [] })}\n`);
     process.exitCode = 3;
     return;
   }
@@ -359,7 +407,14 @@ async function main(): Promise<void> {
   process.stdout.write(`${JSON.stringify({
     schemaVersion: 1, protocolId, generatedAt: new Date().toISOString(), status, series: input.series,
     provider: input.provider, model: input.model,
-    settings: { maxRequestsPerTrial, maxOutputTokens, maxCostUsd: input.maxCostUsd, ...(input.reasoningEffort === undefined ? {} : { reasoningEffort: input.reasoningEffort }) },
+    settings: {
+      maxRequestsPerTrial,
+      maxOutputTokens,
+      maxCostUsd: input.maxCostUsd,
+      ...(input.reasoningEffort === undefined ? {} : { reasoningEffort: input.reasoningEffort }),
+      ...(input.thinkingLevel === undefined ? {} : { thinkingLevel: input.thinkingLevel }),
+      ...(input.thinkingBudget === undefined ? {} : { thinkingBudget: input.thinkingBudget })
+    },
     pricing: { ...input.pricing, source: input.pricingSource },
     trials, summary,
     liveGate: input.series === 'live'

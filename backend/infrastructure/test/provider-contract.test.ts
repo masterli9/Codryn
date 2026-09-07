@@ -65,16 +65,18 @@ describe('R2 provider adapters', () => {
     let turn = 0;
     const transport: ProviderTransport = { async *stream(input) {
       sent.push(input.body);
-      if (turn++ === 0) yield {
-        candidates: [{
-          content: {
-            role: 'model',
-            parts: [{ functionCall: { name: 'codryn_file_read_v1', args: { path: 'README.md' } } }]
-          }
-        }],
-        usageMetadata: { promptTokenCount: 4, candidatesTokenCount: 2 }
-      };
-      else yield { candidates: [{ content: { parts: [{ text: 'done' }] } }] };
+      if (turn++ === 0) {
+        yield {
+          candidates: [{
+            content: {
+              role: 'model',
+              parts: [{ functionCall: { name: 'codryn_file_read_v1', args: { path: 'README.md' } } }]
+            }
+          }],
+          usageMetadata: { promptTokenCount: 4, candidatesTokenCount: 2 }
+        };
+        yield { candidates: [{ content: { parts: [{ text: '' }] } }] };
+      } else yield { candidates: [{ content: { parts: [{ text: 'done' }] } }] };
     } };
     const adapter = new GeminiAdapter({ modelId: 'fixture', key: () => 'TEST_SECRET_CANARY', transport, ids });
     const first = await collectModelResponse(adapter.stream(request, new AbortController().signal), new AbortController().signal);
@@ -88,6 +90,44 @@ describe('R2 provider adapters', () => {
     await collectModelResponse(adapter.stream(nextRequest, new AbortController().signal), new AbortController().signal);
     expect(JSON.stringify(sent[1])).toContain('functionResponse');
     expect(JSON.stringify(sent)).not.toContain('TEST_SECRET_CANARY');
+  });
+
+  it('removes JSON Schema keywords unsupported by Gemini function declarations', async () => {
+    const sent: unknown[] = [];
+    const transport: ProviderTransport = { async *stream(input) {
+      sent.push(input.body);
+      yield { candidates: [{ content: { parts: [{ text: 'done' }] } }] };
+    } };
+    const adapter = new GeminiAdapter({ modelId: 'fixture', key: () => 'key', transport, ids });
+    const firstTool = request.tools[0];
+    if (firstTool === undefined) throw new Error('Expected one request tool');
+    const schemaRequest: ModelRequest = {
+      ...request,
+      tools: [{ ...firstTool, inputSchema: {
+        $schema: 'https://json-schema.org/draft/2020-12/schema', type: 'object', additionalProperties: false,
+        properties: { value: { type: 'number', exclusiveMinimum: 0 } }
+      } }]
+    };
+
+    await collectModelResponse(adapter.stream(schemaRequest, new AbortController().signal), new AbortController().signal);
+
+    expect(JSON.stringify(sent[0])).not.toContain('$schema');
+    expect(JSON.stringify(sent[0])).not.toContain('additionalProperties');
+    expect(JSON.stringify(sent[0])).not.toContain('exclusiveMinimum');
+  });
+
+  it('sets the configured Gemini thinking level in generationConfig', async () => {
+    const sent: unknown[] = [];
+    const transport: ProviderTransport = { async *stream(input) {
+      sent.push(input.body);
+      yield { candidates: [{ content: { parts: [{ text: 'done' }] } }] };
+    } };
+    const adapter = new GeminiAdapter({ modelId: 'gemini-3.6-flash', key: () => 'key', transport, ids, thinkingLevel: 'minimal' });
+
+    await collectModelResponse(adapter.stream(request, new AbortController().signal), new AbortController().signal);
+
+    expect(sent[0]).toMatchObject({ generationConfig: { thinkingConfig: { thinkingLevel: 'minimal' } } });
+    expect(sent[0]).not.toMatchObject({ generationConfig: { temperature: expect.anything() } });
   });
 
   it('rejects provider-invented function names before the harness can see a call', async () => {
