@@ -14,6 +14,12 @@ export class SqliteChangeSetStore implements ChangeSetStore {
     private readonly ids: IdGenerator
   ) {}
 
+  async projectId(setIdInput: string): Promise<string | null> {
+    const setId = uuidSchema.parse(setIdInput);
+    const row = this.database.prepare('SELECT project_id FROM change_sets WHERE id = ?').get(setId);
+    return row === undefined ? null : uuidSchema.parse(row.project_id);
+  }
+
   async open(projectIdInput: string, runIdInput: string): Promise<string> {
     const projectId = uuidSchema.parse(projectIdInput);
     const runId = uuidSchema.parse(runIdInput);

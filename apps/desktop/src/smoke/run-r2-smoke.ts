@@ -21,14 +21,13 @@ export async function runR2Smoke(userDataPath: string, fixtureSource: string, ru
   const infrastructure = await createR2Infrastructure({
     projectRoot: fixtureRoot,
     userDataPath,
-    scenario: {
-      ...changeVerifyReturnScenario({
-        expectedHash: createHash('sha256').update(before).digest('hex'),
-        originalContent: before.toString('utf8'),
-        projectRoot: fixtureRoot,
-        runtimeExecutable
-      })
-    },
+    scenario: changeVerifyReturnScenario({
+      expectedHash: createHash('sha256').update(before).digest('hex'),
+      originalContent: before.toString('utf8'),
+      projectRoot: fixtureRoot,
+      runtimeExecutable
+    }),
+    trustedVerificationExecutable: runtimeExecutable,
     permissionResponder: async () => 'allow_once'
   });
   try {

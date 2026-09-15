@@ -22,19 +22,23 @@ function WaitForPath([string]$Path) {
 }
 
 $powershell = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
-$fixture = Join-Path $PSScriptRoot 'r2-process-fixture.ps1'
+$fixtureSource = Join-Path $PSScriptRoot 'r2-process-fixture.cs'
+$fixture = Join-Path ([System.IO.Path]::GetTempPath()) 'codryn-r2-process-fixture.exe'
+if (-not [System.IO.File]::Exists($fixture) -or
+    [System.IO.File]::GetLastWriteTimeUtc($fixtureSource) -gt [System.IO.File]::GetLastWriteTimeUtc($fixture)) {
+  Add-Type -Path $fixtureSource -OutputType ConsoleApplication -OutputAssembly $fixture
+}
 
 if (-not [string]::IsNullOrWhiteSpace($BatchConfig)) {
   $specs = Get-Content -LiteralPath $BatchConfig -Raw | ConvertFrom-Json
   foreach ($spec in $specs) {
     $arguments = @(
-      '-NoLogo', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass',
-      '-File', $fixture, '-Scenario', [string]$spec.scenario, '-IdentityDirectory', [string]$spec.identityDirectory,
+      '-Scenario', [string]$spec.scenario, '-IdentityDirectory', [string]$spec.identityDirectory,
       '-StopMarker', [string]$spec.stopMarker, '-Depth', [int]$spec.depth, '-IdentityName', 'root'
     )
     $job = $null
     try {
-      $job = [R2ProcessJob]::Start($powershell, [string[]]$arguments, [string]$spec.root)
+      $job = [R2ProcessJob]::Start($fixture, [string[]]$arguments, [string]$spec.root)
       WaitForPath (Join-Path ([string]$spec.identityDirectory) 'root.json')
       if ([int]$spec.depth -ge 1) { WaitForPath (Join-Path ([string]$spec.identityDirectory) 'child.json') }
       if ([int]$spec.depth -ge 2) { WaitForPath (Join-Path ([string]$spec.identityDirectory) 'grandchild.json') }
@@ -60,8 +64,7 @@ if ([string]::IsNullOrWhiteSpace($Scenario) -or [string]::IsNullOrWhiteSpace($Ro
 }
 
 $arguments = @(
-  '-NoLogo', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass',
-  '-File', $fixture, '-Scenario', $Scenario, '-IdentityDirectory', $IdentityDirectory,
+  '-Scenario', $Scenario, '-IdentityDirectory', $IdentityDirectory,
   '-StopMarker', $StopMarker, '-Depth', $Depth, '-IdentityName', 'root'
 )
 
@@ -69,7 +72,7 @@ $job = $null
 try {
   # The process is created suspended, assigned to the kill-on-close Job Object,
   # and resumed only after ownership of the root process is established.
-  $job = [R2ProcessJob]::Start($powershell, [string[]]$arguments, $Root)
+  $job = [R2ProcessJob]::Start($fixture, [string[]]$arguments, $Root)
   WaitForPath (Join-Path $IdentityDirectory 'root.json')
   if ($Depth -ge 1) { WaitForPath (Join-Path $IdentityDirectory 'child.json') }
   if ($Depth -ge 2) { WaitForPath (Join-Path $IdentityDirectory 'grandchild.json') }

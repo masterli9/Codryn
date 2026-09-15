@@ -804,7 +804,7 @@ describeWindows('WindowsProcessRunner', () => {
     })).rejects.toThrow(/positive/i);
   });
 
-  it('does not launch taskkill after Node releases the process handle on exit', async () => {
+  it('does not launch taskkill after the child exit is observed', async () => {
     vi.useFakeTimers();
     const main = new ControlledChild(4_101);
     const taskkill = new ControlledChild(4_102);
@@ -812,7 +812,6 @@ describeWindows('WindowsProcessRunner', () => {
     const run = runner.run(controlledProcessSpec({ timeoutMs: 10, maxOutputBytes: 1 }));
 
     main.emitExit(0);
-    expect(main.processHandleReleased).toBe(true);
     main.stdout.write('ab');
     await vi.advanceTimersByTimeAsync(20);
 
@@ -823,6 +822,34 @@ describeWindows('WindowsProcessRunner', () => {
       exitCode: 0,
       stdout: 'a',
       stdoutTruncated: true,
+      treeTerminated: false
+    });
+  });
+
+  it('reports unconfirmed termination when taskkill loses the root after parent exit', async () => {
+    vi.useFakeTimers();
+    const main = new ControlledChild(4_151);
+    const taskkill = new ControlledChild(4_152);
+    const { runner, calls } = controlledRunner(main, taskkill);
+    const run = runner.run(controlledProcessSpec({ timeoutMs: 10 }));
+
+    await vi.advanceTimersByTimeAsync(10);
+
+    expect(calls).toHaveLength(2);
+    expect(calls[1]).toMatchObject({
+      executable: taskkillExecutable,
+      args: ['/PID', '4151', '/T', '/F']
+    });
+
+    main.emitExit(null, 'SIGTERM');
+    main.emitClose(null, 'SIGTERM');
+    taskkill.emitExit(1);
+    taskkill.emitClose(1);
+
+    expect(calls).toHaveLength(2);
+
+    await expect(run).resolves.toMatchObject({
+      termination: 'timed_out',
       treeTerminated: false
     });
   });

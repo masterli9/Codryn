@@ -17,6 +17,35 @@ const requestId = '64444444-4444-4444-8444-444444444444';
 const recordId = '65555555-5555-4555-8555-555555555555';
 
 describe('SqliteVerificationStore', () => {
+  it('preserves legacy UUID-only identities without guessing their project root', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'codryn-r2-legacy-'));
+    const database = openR0Database(join(directory, 'codryn.sqlite'));
+    try {
+      runMigrations(database, timestamp);
+      const store = new SqliteWorkspaceStore(database);
+      await store.observe(projectId, { fingerprint: 'a'.repeat(64), gitIdentity: null, complete: true });
+      const legacy = database.prepare('SELECT * FROM workspaces WHERE id = ?').get(projectId);
+      expect(legacy?.root_identity).toBe(projectId);
+      const canonicalRoot = 'c:/fixture';
+      const currentId = store.open(canonicalRoot, runId);
+      expect(currentId).not.toBe(projectId);
+      expect(new SqliteWorkspaceStore(database).open(canonicalRoot, callId)).toBe(currentId);
+      expect(database.prepare('SELECT * FROM workspaces WHERE id = ?').get(projectId)).toEqual(legacy);
+      expect(database.prepare('SELECT COUNT(*) AS count FROM workspaces').get()?.count).toBe(2);
+    } finally { database.close(); await rm(directory, { recursive: true, force: true }); }
+  });
+  it('keeps a stable generation current but invalidates ABA edits with identical file hashes', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'codryn-r2-generation-'));
+    const database = openR0Database(join(directory, 'codryn.sqlite'));
+    try {
+      runMigrations(database, timestamp);
+      const store = new SqliteWorkspaceStore(database);
+      const observation = { fingerprint: 'a'.repeat(64), gitIdentity: null, complete: true, watcherGeneration: 'observer:1' };
+      const first = await store.observe(projectId, observation);
+      expect((await store.observe(projectId, observation)).revision).toBe(first.revision);
+      expect((await store.observe(projectId, { ...observation, watcherGeneration: 'observer:3' })).revision).toBeGreaterThan(first.revision);
+    } finally { database.close(); await rm(directory, { recursive: true, force: true }); }
+  });
   it('preserves a historical result and derives stale from the current snapshot', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'codryn-r2-verification-'));
     const database = openR0Database(join(directory, 'codryn.sqlite'));

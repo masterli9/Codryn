@@ -5,6 +5,32 @@ import { describe, expect, it } from 'vitest';
 import { FileWorkspaceObserver } from '../src/filesystem/workspace-observer.js';
 
 describe('FileWorkspaceObserver', () => {
+  it('retains watcher evidence of an A to B to A edit between scans', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'codryn-r2-aba-'));
+    const observer = new FileWorkspaceObserver(root);
+    try {
+      await writeFile(join(root, 'file.txt'), 'A');
+      const before = await observer.inspect(new AbortController().signal);
+      await writeFile(join(root, 'file.txt'), 'B');
+      await writeFile(join(root, 'file.txt'), 'A');
+      const after = await observer.inspect(new AbortController().signal);
+      expect(after.fingerprint).toBe(before.fingerprint);
+      expect(after.watcherGeneration).not.toBe(before.watcherGeneration);
+    } finally { observer.close(); await rm(root, { recursive: true, force: true }); }
+  });
+
+  it.each(['head', 'branch', 'indexHash', 'conflicts'] as const)('includes Git %s in verification identity', async (field) => {
+    const root = await mkdtemp(join(tmpdir(), 'codryn-r2-git-identity-'));
+    const baseline = { mode: 'git' as const, head: 'head', branch: 'main', indexHash: 'index', conflicts: [] as string[], status: [], worktreeIdentity: root };
+    const observer = new FileWorkspaceObserver(root, { git: { inspect: async () => baseline } });
+    try {
+      const before = await observer.inspect(new AbortController().signal);
+      if (field === 'conflicts') baseline.conflicts = ['file.txt'];
+      else baseline[field] = 'changed';
+      const after = await observer.inspect(new AbortController().signal);
+      expect(after.gitIdentity).not.toBe(before.gitIdentity);
+    } finally { observer.close(); await rm(root, { recursive: true, force: true }); }
+  });
   it('hashes project files while excluding sensitive and runtime directories', async () => {
     const root = await mkdtemp(join(tmpdir(), 'codryn-r2-observer-'));
     try {

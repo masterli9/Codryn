@@ -56,6 +56,7 @@ describe('R2 recovery composition', () => {
       runMigrations(database, '2026-09-06T10:00:01.000Z');
       const journal = new SqliteMutationJournal(database, { now: () => '2026-09-06T10:00:01.000Z' }, ids);
       const recover = new RecoverR2Run({
+        projectId,
         mutations: new RecoverMutations({ journal, files: { readHash: async () => afterHash } }),
         toolCalls: new SqliteToolCallStore(database, { clock: { now: () => '2026-09-06T10:00:01.000Z' }, ids })
       });

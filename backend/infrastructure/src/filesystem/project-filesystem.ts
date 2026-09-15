@@ -99,11 +99,17 @@ export class ProjectFilesystem {
     const root = await this.#rootReady;
     const candidate = resolve(root, path);
     let target: string;
-    try { target = await realpath(candidate); } catch { throw new ProjectFilesystemFailure('R1_FILE_NOT_FOUND', 'Project file was not found.'); }
+    try { target = await realpath(candidate); } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+      throw new ProjectFilesystemFailure('R1_FILE_NOT_FOUND', 'Project file was not found.');
+    }
     if (!isWithin(root, target)) throw new ProjectFilesystemFailure('R1_PATH_OUTSIDE_ROOT', 'Project path resolves outside root.');
     rejectContextPath(relative(root, target).replaceAll('\\', '/') || '.', this.options.contextPolicy);
     let details;
-    try { details = await stat(target); } catch { throw new ProjectFilesystemFailure('R1_FILE_NOT_FOUND', 'Project file was not found.'); }
+    try { details = await stat(target); } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+      throw new ProjectFilesystemFailure('R1_FILE_NOT_FOUND', 'Project file was not found.');
+    }
     if (!details.isFile()) throw new ProjectFilesystemFailure('R1_FILE_NOT_REGULAR', 'Project path is not a regular file.');
     if (details.size > MAX_FILE_BYTES) throw new ProjectFilesystemFailure('R1_FILE_TOO_LARGE', 'Project file exceeds the read limit.');
     abortIfNeeded(signal);

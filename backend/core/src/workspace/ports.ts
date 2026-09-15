@@ -2,6 +2,9 @@ export interface WorkspaceObservation {
   fingerprint: string;
   gitIdentity: string | null;
   complete: boolean;
+  watcherGeneration?: string;
+  /** Files actually hashed by this observation; absent on persisted-only snapshots. */
+  observedPaths?: readonly string[];
 }
 
 export interface WorkspaceSnapshot extends WorkspaceObservation {

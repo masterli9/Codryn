@@ -3,6 +3,7 @@ import type { RecoverMutations } from '../changes/recover-mutations.js';
 import type { PermissionService } from '../permissions/permission-service.js';
 
 export interface RecoverR2RunDependencies {
+  readonly projectId: Uuid;
   readonly mutations: Pick<RecoverMutations, 'execute'>;
   readonly permissions?: Pick<PermissionService, 'listPending' | 'expireAllowedUnclaimed'>;
   readonly toolCalls?: { recoverInFlight(projectId: Uuid): Promise<number> };
@@ -22,6 +23,7 @@ export class RecoverR2Run {
   constructor(private readonly dependencies: RecoverR2RunDependencies) {}
 
   async execute(projectId: Uuid, signal: AbortSignal): Promise<R2RecoveryResult> {
+    if (projectId !== this.dependencies.projectId) throw new Error('R2_RECOVERY_PROJECT_MISMATCH');
     const expiredPermissionIds = this.dependencies.permissions === undefined
       ? []
       : [...await this.dependencies.permissions.expireAllowedUnclaimed(projectId)];

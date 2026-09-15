@@ -1,8 +1,8 @@
 # R2 – technická akceptace
 
-Datum implementačního průchodu: 2026-09-07. Stav popisuje skutečně ověřené
-lokální kontroly a autorizovaný OpenAI live gate; packaged Windows build a
-živý Gemini běh zůstávají otevřené.
+Datum implementačního průchodu: 2026-09-10. Stav popisuje skutečně ověřené
+lokální kontroly, packaged Windows smoke a autorizovaný OpenAI live gate; živý
+Gemini běh a autorský checklist zůstávají otevřené.
 
 | Požadavek | Implementace | Důkaz | Stav / omezení |
 | --- | --- | --- | --- |
@@ -14,7 +14,7 @@ lokální kontroly a autorizovaný OpenAI live gate; packaged Windows build a
 | Celý fake cyklus | `createR2Infrastructure`, CLI scenario | Git/non-Git cycle test | implementováno; repeatability script připraven |
 | Provider boundary | OpenAI Responses + Gemini adapters, bounded fetch transport | provider contract/context/transport testy; OpenAI live gate | implementováno; OpenAI live ověřen, Gemini blokuje Free Tier rate limit/quota |
 | Výběr modelu | eval report + explicitní live entrypoint | `verify:r2:live`: OpenAI 4/5, gate passed | OpenAI `gpt-5.6-luna` je prakticky ověřený kandidát; dvouproviderové srovnání čeká na Gemini |
-| Packaged desktop smoke | R2 smoke entrypoint, report a explicitní verifier | `verify-packaged-r2`, `tests/packaged/r2-smoke.test.ts` | připraveno; aktuální host skončil Chromium GPU chybou, čistý packaged důkaz zbývá |
+| Packaged desktop smoke | R2 smoke entrypoint, report a explicitní verifier | `verify-packaged-r0`, `verify-packaged-r2`, `tests/packaged/r2-smoke.test.ts` | ověřeno; R0 11/11 kontrol a R2 database/guarded-write/process-tree/baseline prošly |
 
 ## Známé hranice
 

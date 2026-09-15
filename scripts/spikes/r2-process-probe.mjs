@@ -13,6 +13,9 @@ const probeDirectory = dirname(fileURLToPath(import.meta.url));
 const repositoryRoot = join(probeDirectory, '..', '..');
 const worker = join(probeDirectory, 'r2-process-worker.ps1');
 const baseArgs = ['-NoLogo', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', worker];
+const diagnostic = (event, details) => {
+  if (process.env.CODRYN_PROCESS_PROBE_DIAGNOSTICS === '1') process.stderr.write(`${JSON.stringify({ event, ...details })}\n`);
+};
 
 async function waitForPath(path, timeoutMs) {
   const deadline = Date.now() + timeoutMs;
@@ -45,38 +48,60 @@ async function terminateWorker(child) {
   try { child.kill(); } catch { /* The close result records the failure. */ }
 }
 
-async function identitiesAreAlive(identities) {
-  const valid = identities.filter((identity) => Number.isInteger(identity.pid) && /^\d+$/.test(identity.startTimeUtcTicks));
-  if (valid.length === 0) return false;
-  const checks = valid.map((identity) => [
+export async function identitiesAreAlive(identities, execute = execFileAsync) {
+  const checkStartedAt = Date.now();
+  const valid = identities.filter((identity) => Number.isInteger(identity.pid) && identity.pid > 0 && /^\d+$/.test(identity.startTimeUtcTicks));
+  if (valid.length !== identities.length) return true;
+  const existing = valid.filter((identity) => {
+    try {
+      process.kill(identity.pid, 0);
+      return true;
+    } catch (error) {
+      // Only ESRCH proves absence. Access errors still require an identity check.
+      return error?.code !== 'ESRCH';
+    }
+  });
+  if (existing.length === 0) return false;
+  const checks = existing.map((identity) => [
     `$p = Get-Process -Id ([int]${identity.pid}) -ErrorAction SilentlyContinue`,
     `if ($null -ne $p -and $p.StartTime.ToUniversalTime().Ticks.ToString() -eq '${identity.startTimeUtcTicks}') { $alive = $true }`
   ]);
-  const command = ['$alive = $false', ...checks.flat(), 'if ($alive) { exit 1 }; exit 0'].join('; ');
+  const command = ["$ErrorActionPreference = 'Stop'", 'try { $alive = $false', ...checks.flat(), 'if ($alive) { exit 1 }; exit 0 } catch { exit 2 }'].join('; ');
   try {
-    await execFileAsync(powershell, [
+    await execute(powershell, [
       '-NoLogo', '-NoProfile', '-NonInteractive', '-Command', command
     ], { windowsHide: true, timeout: 1000, maxBuffer: 4096 });
     return false;
   } catch (error) {
-    return error?.code === 1;
+    diagnostic('identity-check-error', { elapsedMs: Date.now() - checkStartedAt, code: error?.code, killed: error?.killed, signal: error?.signal });
+    // A failed/expired checker is not evidence of termination.
+    return true;
   }
 }
 
-async function readIdentities(directory) {
-  const names = ['root', 'child', 'grandchild'];
+export async function readIdentities(directory, depth) {
+  const names = ['root'];
+  if (depth >= 1) names.push('child');
+  if (depth >= 2) names.push('grandchild');
   const identities = [];
+  let unknownIdentityCount = 0;
   for (const name of names) {
     try {
-      identities.push(JSON.parse(await readFile(join(directory, `${name}.json`), 'utf8')));
+      const identity = JSON.parse(await readFile(join(directory, `${name}.json`), 'utf8'));
+      if (!Number.isInteger(identity?.pid) || identity.pid <= 0 || typeof identity.processName !== 'string' || identity.processName.length === 0 || !/^\d+$/.test(identity.startTimeUtcTicks)) {
+        unknownIdentityCount++;
+        continue;
+      }
+      identities.push(identity);
     } catch {
-      // A missing identity means the worker failed before the ownership handshake.
+      unknownIdentityCount++;
     }
   }
-  return identities;
+  return { identities, evidenceComplete: unknownIdentityCount === 0 && identities.length === names.length, unknownIdentityCount };
 }
 
 async function runScenario(root, name, depth, crash = false) {
+  const scenarioStartedAt = Date.now();
   const directory = join(root, name);
   await mkdir(directory, { recursive: true });
   const identityDirectory = join(directory, 'identities');
@@ -90,6 +115,7 @@ async function runScenario(root, name, depth, crash = false) {
   ], { cwd: repositoryRoot, windowsHide: true, stdio: 'ignore' });
   const closed = closeResult(child);
   const handshake = await waitForPath(ready, 10000);
+  diagnostic('handshake', { name, handshake, elapsedMs: Date.now() - scenarioStartedAt });
   const startedAt = Date.now();
   if (handshake) {
     if (crash) await terminateWorker(child);
@@ -102,20 +128,40 @@ async function runScenario(root, name, depth, crash = false) {
     waitMs(3000).then(() => ({ code: null, signal: 'timeout' }))
   ]);
   if (close.signal === 'timeout') await terminateWorker(child);
-  const identities = await readIdentities(identityDirectory);
+  const identityEvidence = await readIdentities(identityDirectory, depth);
+  const identities = identityEvidence.identities;
   const deadline = Date.now() + 2000;
   let alive = identities;
   while (alive.length > 0 && Date.now() <= deadline) {
     if (!(await identitiesAreAlive(alive))) alive = [];
     else await waitMs(20);
   }
-  return {
-    passed: handshake && close.signal !== 'timeout' && alive.length === 0,
+  const result = {
+    passed: handshake && close.signal !== 'timeout' && identityEvidence.evidenceComplete && alive.length === 0,
     orphanCount: alive.length,
+    unknownIdentityCount: identityEvidence.unknownIdentityCount,
+    evidenceComplete: identityEvidence.evidenceComplete,
     terminationDelayMs: Math.max(0, Date.now() - startedAt),
     identities,
     close
   };
+  diagnostic('scenario', { name, elapsedMs: Date.now() - scenarioStartedAt, ...result });
+  return result;
+}
+
+export function fillIncompleteBatchResults(results, specifications) {
+  for (const specification of specifications) {
+    if (results.has(specification.name)) continue;
+    results.set(specification.name, {
+      passed: false,
+      orphanCount: 0,
+      unknownIdentityCount: specification.depth + 1,
+      evidenceComplete: false,
+      terminationDelayMs: 0,
+      identities: []
+    });
+  }
+  return results;
 }
 
 async function runBatch(root, specifications) {
@@ -138,16 +184,20 @@ async function runBatch(root, specifications) {
   const child = spawn(powershell, [...baseArgs, '-BatchConfig', configuration], {
     cwd: repositoryRoot,
     windowsHide: true,
-    stdio: 'ignore'
+    stdio: ['ignore', 'ignore', 'pipe']
   });
+  child.stderr.on('data', (chunk) => diagnostic('worker-stderr', { text: chunk.toString() }));
   const closed = closeResult(child);
   const results = new Map();
   for (const specification of batchSpecifications) {
+    const scenarioStartedAt = Date.now();
     const handshake = await waitForPath(specification.readyMarker, 10000);
+    diagnostic('handshake', { name: specification.name, handshake, elapsedMs: Date.now() - scenarioStartedAt });
     const startedAt = Date.now();
     if (handshake) await writeFile(specification.stopMarker, 'stop', 'ascii');
     const done = handshake && await waitForPath(specification.doneMarker, 3000);
-    const identities = await readIdentities(specification.identityDirectory);
+    const identityEvidence = await readIdentities(specification.identityDirectory, specification.depth);
+    const identities = identityEvidence.identities;
     const deadline = Date.now() + 2000;
     let alive = identities;
     while (alive.length > 0 && Date.now() <= deadline) {
@@ -155,11 +205,14 @@ async function runBatch(root, specifications) {
       else await waitMs(20);
     }
     results.set(specification.name, {
-      passed: handshake && done && alive.length === 0,
+      passed: handshake && done && identityEvidence.evidenceComplete && alive.length === 0,
       orphanCount: alive.length,
+      unknownIdentityCount: identityEvidence.unknownIdentityCount,
+      evidenceComplete: identityEvidence.evidenceComplete,
       terminationDelayMs: Math.max(0, Date.now() - startedAt),
       identities
     });
+    diagnostic('scenario', { name: specification.name, done, elapsedMs: Date.now() - scenarioStartedAt, ...results.get(specification.name) });
     if (!handshake || !done) break;
   }
   const close = await Promise.race([
@@ -167,22 +220,15 @@ async function runBatch(root, specifications) {
     waitMs(3000).then(() => ({ code: null, signal: 'timeout' }))
   ]);
   if (close.signal === 'timeout') await terminateWorker(child);
-  for (const specification of batchSpecifications) {
-    if (results.has(specification.name)) continue;
-    results.set(specification.name, {
-      passed: false,
-      orphanCount: 0,
-      terminationDelayMs: 0,
-      identities: []
-    });
-  }
-  return results;
+  diagnostic('batch-close', close);
+  return fillIncompleteBatchResults(results, batchSpecifications);
 }
 
 async function main() {
   const report = {
     supported: false,
     orphanCount: 0,
+    unknownIdentityCount: 0,
     maxTerminationDelayMs: 0,
     cases: []
   };
@@ -211,6 +257,7 @@ async function main() {
     for (const [name] of normalScenarios) {
       const result = normalResults.get(name);
       report.orphanCount += result.orphanCount;
+      report.unknownIdentityCount += result.unknownIdentityCount;
       report.maxTerminationDelayMs = Math.max(report.maxTerminationDelayMs, result.terminationDelayMs);
       if (name === 'pid-reuse-first' || name === 'pid-reuse-second') continue;
       report.cases.push({ name, passed: result.passed });
@@ -218,6 +265,7 @@ async function main() {
 
     const hostCrash = await runScenario(root, 'host-crash', 2, true);
     report.orphanCount += hostCrash.orphanCount;
+    report.unknownIdentityCount += hostCrash.unknownIdentityCount;
     report.maxTerminationDelayMs = Math.max(report.maxTerminationDelayMs, hostCrash.terminationDelayMs);
     report.cases.push({ name: 'host-crash', passed: hostCrash.passed });
 
@@ -226,17 +274,18 @@ async function main() {
     const firstByPid = new Map(first.identities.map((identity) => [identity.pid, identity.startTimeUtcTicks]));
     const reusedWithSameIdentity = second.identities.some((identity) => firstByPid.get(identity.pid) === identity.startTimeUtcTicks);
     report.orphanCount += first.orphanCount + second.orphanCount;
+    report.unknownIdentityCount += first.unknownIdentityCount + second.unknownIdentityCount;
     report.maxTerminationDelayMs = Math.max(report.maxTerminationDelayMs, first.terminationDelayMs, second.terminationDelayMs);
     report.cases.push({ name: 'pid-reuse-evidence', passed: first.passed && second.passed && !reusedWithSameIdentity });
     report.supported = report.cases.length === 8 && report.cases.every((testCase) => testCase.passed)
-      && report.orphanCount === 0 && report.maxTerminationDelayMs <= 2000;
+      && report.orphanCount === 0 && report.unknownIdentityCount === 0 && report.maxTerminationDelayMs <= 2000;
     process.stdout.write(JSON.stringify(report));
   } finally {
     await rm(root, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
   }
 }
 
-main().catch((error) => {
+if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) main().catch((error) => {
   process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
   process.exitCode = 1;
 });

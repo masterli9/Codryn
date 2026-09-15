@@ -176,12 +176,11 @@ describe('R2 revert SQLite integration', () => {
       await changeSets.seal(setId);
 
       const result = await new RevertChanges({
+        projectId,
         writer: createDiskWriter(projectRoot),
         blobs,
         journal,
         ids,
-        setId,
-        nextSequence: () => changeSets.reserveSequence(setId),
         hash,
         files: { readHash: async (relativePath) => hash(new Uint8Array(await readFile(join(projectRoot, relativePath)))) },
         changeSets,

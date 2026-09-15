@@ -118,6 +118,7 @@ function fixture(initialEntries: ChangeEntry[], currentBytes: Uint8Array) {
   const blobs = new FixtureBlobs();
   const transitions: string[] = [];
   const changeSets: ChangeSetStore = {
+    projectId: async () => projectId,
     open: async () => setId,
     reserveSequence: async () => 3,
     seal: async () => undefined,
@@ -132,7 +133,7 @@ function fixture(initialEntries: ChangeEntry[], currentBytes: Uint8Array) {
     '40000000-0000-4000-8000-000000000025'
   ];
   const ids: IdGenerator = { next: () => idValues.shift() as `${string}-${string}-${string}-${string}-${string}` };
-  return { state, guards, writer, journal, blobs, transitions, changeSets, ids };
+  return { projectId, state, guards, writer, journal, blobs, transitions, changeSets, ids };
 }
 
 describe('returnOrder', () => {
@@ -156,6 +157,41 @@ describe('returnOrder', () => {
 });
 
 describe('RevertChanges', () => {
+  it('rejects a foreign change set before reading files or changing either project', async () => {
+    const a = new TextEncoder().encode('A');
+    const b = new TextEncoder().encode('B');
+    const original = entry('40000000-0000-4000-8000-000000000015', 1, a, b);
+    const f = fixture([original], b);
+    await f.blobs.put(a); await f.blobs.put(b);
+    let reads = 0;
+    const revert = new RevertChanges({ ...f,
+      projectId: '40000000-0000-4000-8000-000000000099', hash,
+      files: { readHash: async () => { reads += 1; return hash(b); } },
+      changeSets: { ...f.changeSets, projectId: async () => projectId }
+    });
+    await expect(revert.execute({ setId, requestId: '40000000-0000-4000-8000-000000000014' }, new AbortController().signal))
+      .rejects.toThrow('R2_CHANGE_SET_PROJECT_MISMATCH');
+    expect(reads).toBe(0);
+    expect(f.state.bytes).toEqual(b);
+    expect(f.transitions).toEqual([]);
+    expect(f.journal.intents).toEqual([]);
+  });
+  it('uses the requested set for publication and sequence even if another set is active', async () => {
+    const a = new TextEncoder().encode('A');
+    const b = new TextEncoder().encode('B');
+    const original = entry('40000000-0000-4000-8000-000000000015', 1, a, b);
+    const f = fixture([original], b);
+    await f.blobs.put(a); await f.blobs.put(b);
+    const sequenceSets: string[] = [];
+    f.changeSets.reserveSequence = async (id) => { sequenceSets.push(id); return 2; };
+    const result = await new RevertChanges({
+      ...f, ...{ setId: '40000000-0000-4000-8000-000000000099', nextSequence: async () => 99 },
+      hash, files: { readHash: async () => hash(f.state.bytes) }
+    }).execute({ setId, requestId: '40000000-0000-4000-8000-000000000014' }, new AbortController().signal);
+    expect(result.status).toBe('reverted');
+    expect(f.journal.intents[0]?.entry).toMatchObject({ setId, sequence: 2 });
+    expect(sequenceSets).toEqual([setId]);
+  });
   it('returns a same-file chain from newest to oldest without blocking the older entry', async () => {
     const a = new TextEncoder().encode('A\n');
     const b = new TextEncoder().encode('B\n');
@@ -172,12 +208,11 @@ describe('RevertChanges', () => {
       callId: '40000000-0000-4000-8000-000000000013'
     };
     const result = await new RevertChanges({
+      projectId,
       writer: f.writer,
       blobs: f.blobs,
       journal: f.journal,
       ids: f.ids,
-      setId,
-      nextSequence: async () => 3,
       hash,
       files: { readHash: async () => hash(f.state.bytes) },
       changeSets: f.changeSets,
@@ -197,12 +232,11 @@ describe('RevertChanges', () => {
     const original = entry('40000000-0000-4000-8000-000000000015', 1, new TextEncoder().encode('before\n'), expected);
     const f = fixture([original], manual);
     const result = await new RevertChanges({
+      projectId,
       writer: f.writer,
       blobs: f.blobs,
       journal: f.journal,
       ids: f.ids,
-      setId,
-      nextSequence: async () => 2,
       hash,
       files: { readHash: async () => hash(f.state.bytes) },
       changeSets: f.changeSets

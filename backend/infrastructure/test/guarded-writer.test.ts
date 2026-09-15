@@ -23,7 +23,7 @@ describe('WindowsGuardedWriter', () => {
     } finally {
       await rm(directory, { recursive: true, force: true });
     }
-  }, 30_000);
+  });
 
   it('fails closed outside Windows instead of using an unsafe fallback', async () => {
     if (process.platform === 'win32') return;

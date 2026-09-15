@@ -14,29 +14,12 @@ type SpawnProcess = (
 interface WindowsProcessRunnerInternalOptions {
   readonly spawnProcess: SpawnProcess;
   readonly terminationGraceMs: number;
-  readonly fallbackSpawnProcess?: SpawnProcess;
 }
 
 const defaultTerminationGraceMs = 1_000;
 const defaultSpawnProcess: SpawnProcess = (executable, args, options) => (
   spawn(executable, [...args], options)
 );
-
-function fallbackTerminationArgs(pid: number): readonly string[] {
-  const script = [
-    `$rootId = ${String(pid)}`,
-    '$processes = @(Get-Process -ErrorAction Stop)',
-    '$ids = [System.Collections.Generic.List[int]]::new()',
-    'function Add-Descendant([int] $parentId) { foreach ($process in $processes) { try { $parent = $process.Parent; $childId = [int]$process.Id; if ($null -ne $parent -and [int]$parent.Id -eq $parentId -and -not $ids.Contains($childId)) { $null = $ids.Add($childId); Add-Descendant $childId } } catch { } } }',
-    '$null = $ids.Add($rootId)',
-    'Add-Descendant $rootId',
-    'foreach ($id in @($ids.ToArray() | Sort-Object -Descending)) { Stop-Process -Id $id -Force -ErrorAction SilentlyContinue }',
-    'Start-Sleep -Milliseconds 100',
-    '$remaining = @(Get-Process -ErrorAction Stop | Where-Object { $ids.Contains([int]$_.Id) })',
-    'if ($remaining.Count -eq 0) { exit 0 } else { exit 1 }'
-  ].join('; ');
-  return ['-NoLogo', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', script];
-}
 
 function requireSystemRoot(env: ProcessSpec['env']): string {
   const configured = Object.entries(env).find(([key]) => key.toLowerCase() === 'systemroot')?.[1];
@@ -64,12 +47,10 @@ function elapsedSince(startedAt: number): number {
 class WindowsProcessRunnerLifecycle implements ProcessRunner {
   private readonly spawnProcess: SpawnProcess;
   private readonly terminationGraceMs: number;
-  private readonly fallbackSpawnProcess: SpawnProcess | undefined;
 
   constructor(options: WindowsProcessRunnerInternalOptions) {
     this.spawnProcess = options.spawnProcess;
     this.terminationGraceMs = options.terminationGraceMs;
-    this.fallbackSpawnProcess = options.fallbackSpawnProcess;
     if (!Number.isFinite(this.terminationGraceMs) || this.terminationGraceMs <= 0) {
       throw new Error('Process termination grace must be positive.');
     }
@@ -102,15 +83,13 @@ class WindowsProcessRunnerLifecycle implements ProcessRunner {
       };
     }
 
-    // Node/libuv owns the native Windows process handle through its exit callback.
-    // Node initiates handle release immediately before emitting `exit`; keeping
-    // this ChildProcess lifecycle referenced until settlement and blocking
-    // taskkill after `exit` prevents the numeric PID from being reused at launch.
+    // Do not launch taskkill after Node reports `exit`, so the runner never
+    // submits a PID it already knows is stale. This does not prove ownership
+    // across the remaining taskkill PID-reuse race; R0 is fixture-only.
     const retainedChild = child;
 
     const spawnProcess = this.spawnProcess;
     const terminationGraceMs = this.terminationGraceMs;
-    const fallbackSpawnProcess = this.fallbackSpawnProcess;
 
     return new Promise<ProcessResult>((resolve) => {
       let settled = false;
@@ -120,12 +99,9 @@ class WindowsProcessRunnerLifecycle implements ProcessRunner {
       let childSignal: string | null = retainedChild.signalCode;
       let spawnFailed = false;
       let forcedTermination: ForcedTermination | null = null;
-      let fallbackAttempted = false;
       let taskkillProcess: ChildProcess | null = null;
       let taskkillClosed = false;
       let taskkillOutcome: boolean | null = null;
-      let fallbackProcess: ChildProcess | null = null;
-      let fallbackClosed = false;
       let processTimeout: NodeJS.Timeout | null = null;
       let taskkillTimeout: NodeJS.Timeout | null = null;
       let childCloseTimeout: NodeJS.Timeout | null = null;
@@ -171,13 +147,6 @@ class WindowsProcessRunnerLifecycle implements ProcessRunner {
         taskkillClosed = true;
         recordTaskkillOutcome(code === 0);
       };
-      const onFallbackError = (): void => {
-        recordFallbackOutcome(false);
-      };
-      const onFallbackClose = (code: number | null): void => {
-        fallbackClosed = true;
-        recordFallbackOutcome(code === 0);
-      };
       const ignoreLateChildError = (): void => undefined;
       const ignoreLateTaskkillError = (): void => undefined;
 
@@ -213,54 +182,6 @@ class WindowsProcessRunnerLifecycle implements ProcessRunner {
         retainedChild.stderr?.destroy();
       }
 
-      function bestEffortParentFallback(): void {
-        if (fallbackAttempted || processHasExited() || retainedChild.pid === undefined) return;
-        fallbackAttempted = true;
-        if (fallbackSpawnProcess === undefined) {
-          try {
-            retainedChild.kill();
-          } catch {
-            // The stable result records unconfirmed tree termination below.
-          }
-          return;
-        }
-        try {
-          fallbackProcess = fallbackSpawnProcess(
-            win32.join(systemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe'),
-            fallbackTerminationArgs(retainedChild.pid),
-            {
-              cwd: spec.cwd,
-              env: { ...spec.env },
-              shell: false,
-              windowsHide: true,
-              stdio: 'ignore'
-            }
-          );
-          fallbackProcess.once('error', onFallbackError);
-          fallbackProcess.once('close', onFallbackClose);
-          taskkillTimeout = setTimeout(() => {
-            taskkillTimeout = null;
-            try { fallbackProcess?.kill(); } catch { /* The result remains unconfirmed. */ }
-            recordFallbackOutcome(false);
-          }, terminationGraceMs);
-        } catch {
-          // The stable result records unconfirmed tree termination below.
-          try { retainedChild.kill(); } catch { /* The result remains unconfirmed. */ }
-        }
-      }
-
-      function recordFallbackOutcome(succeeded: boolean): void {
-        if (settled || taskkillOutcome !== null) return;
-        if (!succeeded) {
-          try { retainedChild.kill(); } catch { /* The result remains unconfirmed. */ }
-        }
-        taskkillOutcome = succeeded;
-        clearTaskkillTimeout();
-        releaseOutput();
-        completeIfReady();
-        if (!settled) armChildCloseTimeout();
-      }
-
       function guardLateErrors(): void {
         retainedChild.off('error', onChildError);
         if (!childClosed) {
@@ -279,14 +200,6 @@ class WindowsProcessRunnerLifecycle implements ProcessRunner {
           });
         }
 
-        fallbackProcess?.off('error', onFallbackError);
-        if (fallbackProcess !== null && !fallbackClosed) {
-          const pendingFallback = fallbackProcess;
-          pendingFallback.on('error', ignoreLateTaskkillError);
-          pendingFallback.once('close', () => {
-            pendingFallback.off('error', ignoreLateTaskkillError);
-          });
-        }
       }
 
       function cleanup(): void {
@@ -339,7 +252,6 @@ class WindowsProcessRunnerLifecycle implements ProcessRunner {
         childCloseTimeout = setTimeout(() => {
           childCloseTimeout = null;
           releaseOutput();
-          if (forcedTermination !== null && taskkillOutcome !== true) bestEffortParentFallback();
           destroyOutput();
           if (forcedTermination !== null) {
             settle(forcedTermination, null, null, taskkillOutcome === true);
@@ -351,14 +263,16 @@ class WindowsProcessRunnerLifecycle implements ProcessRunner {
 
       function recordTaskkillOutcome(succeeded: boolean): void {
         if (settled || taskkillOutcome !== null) return;
-        if (!succeeded && fallbackSpawnProcess !== undefined && retainedChild.pid !== undefined) {
-          bestEffortParentFallback();
-          if (fallbackProcess !== null) return;
-        }
         taskkillOutcome = succeeded;
         clearTaskkillTimeout();
         releaseOutput();
-        if (!succeeded) bestEffortParentFallback();
+        if (!succeeded && !processHasExited()) {
+          try {
+            retainedChild.kill();
+          } catch {
+            // The stable result records unconfirmed tree termination below.
+          }
+        }
         completeIfReady();
         if (!settled) armChildCloseTimeout();
       }
@@ -445,8 +359,7 @@ export class WindowsProcessRunner implements ProcessRunner {
   constructor() {
     this.lifecycle = createWindowsProcessRunnerInternal({
       spawnProcess: defaultSpawnProcess,
-      terminationGraceMs: defaultTerminationGraceMs,
-      fallbackSpawnProcess: defaultSpawnProcess
+      terminationGraceMs: defaultTerminationGraceMs
     });
   }
 

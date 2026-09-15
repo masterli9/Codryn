@@ -20,6 +20,7 @@ export function assessVerification(input: VerificationAssessment): VerificationR
   if (!input.relevant || !input.treeStopped || input.truncated
     || !input.before.complete || !input.after.complete || input.watcherChanged
     || input.before.revision !== input.after.revision
+    || input.before.gitIdentity !== input.after.gitIdentity
     || input.before.fingerprint !== input.after.fingerprint) return 'incomplete';
   if (input.processStatus === 'succeeded' && input.exitCode === 0) return 'passed';
   if (input.processStatus === 'failed' && input.exitCode !== null) return 'failed';
@@ -32,7 +33,8 @@ function reasonFor(result: VerificationRecord['result'], process: CommandResult,
   if (!process.treeStopped) return 'The complete process tree was not proven stopped.';
   if (process.truncated) return 'Process output exceeded the configured limit.';
   if (!before.complete || !after.complete) return 'Workspace observation was incomplete.';
-  if (before.revision !== after.revision || before.fingerprint !== after.fingerprint) return 'The project changed during or after the test.';
+  if (before.revision !== after.revision || before.fingerprint !== after.fingerprint || before.gitIdentity !== after.gitIdentity
+    || before.watcherGeneration !== after.watcherGeneration) return 'The project changed during or after the test.';
   return 'Verification conditions were not all satisfied.';
 }
 
@@ -43,14 +45,22 @@ export interface VerifyCommandDependencies {
   readonly store: VerificationStore;
   readonly ids: IdGenerator;
   readonly clock: Clock;
+  readonly isRelevant?: (command: CommandSpec, snapshot: WorkspaceSnapshot) => boolean | Promise<boolean>;
+  readonly onResult?: (result: CommandResult) => Promise<void>;
 }
 
 export class VerifyCommand {
   constructor(private readonly dependencies: VerifyCommandDependencies) {}
 
   async execute(command: CommandSpec, actor: ChangeActor, signal: AbortSignal): Promise<VerificationRecord> {
+    return (await this.executeWithResult(command, actor, signal)).record;
+  }
+
+  async executeWithResult(command: CommandSpec, actor: ChangeActor, signal: AbortSignal): Promise<{ record: VerificationRecord; process: CommandResult }> {
     const before = await this.snapshot(actor.projectId, signal);
+    const relevant = await this.dependencies.isRelevant?.(command, before) ?? false;
     const process = await this.dependencies.runner.run(command, signal);
+    await this.dependencies.onResult?.(process);
     const after = await this.snapshot(actor.projectId, signal);
     const result = assessVerification({
       exitCode: process.exitCode,
@@ -59,8 +69,8 @@ export class VerifyCommand {
       processStatus: process.status,
       before,
       after,
-      watcherChanged: false,
-      relevant: true
+      watcherChanged: before.watcherGeneration !== after.watcherGeneration,
+      relevant
     });
     const record = verificationRecordSchema.parse({
       id: this.dependencies.ids.next(),
@@ -75,11 +85,11 @@ export class VerifyCommand {
       occurredAt: this.dependencies.clock.now(),
       result,
       stale: false,
-      reason: reasonFor(result, process, before, after),
+      reason: relevant ? reasonFor(result, process, before, after) : 'Command is not a trusted project verification check.',
       exitCode: process.exitCode
     });
     await this.dependencies.store.append(record);
-    return record;
+    return { record, process };
   }
 
   private async snapshot(projectId: string, signal: AbortSignal): Promise<WorkspaceSnapshot> {

@@ -7,6 +7,18 @@ import type { ProviderAdapterOptions } from './openai-responses-adapter.js';
 import { externalToolMap, externalToolName } from './provider-tool-names.js';
 import type { ModelToolDefinition } from '@codryn/shared';
 
+interface GeminiFunctionCallState {
+  readonly name: string;
+  readonly id?: string;
+}
+
+interface GeminiRunState {
+  readonly assistantPartsByTurn: Map<number, readonly unknown[]>;
+  readonly functionCallsByInternal: Map<string, GeminiFunctionCallState>;
+}
+
+const MAX_RUN_HISTORIES = 32;
+
 function descriptor(modelId: string): ModelDescriptor {
   return {
     adapterId: 'gemini-generate-content', modelId,
@@ -33,31 +45,55 @@ function geminiSchema(value: unknown): unknown {
 
 export class GeminiAdapter implements ModelAdapter {
   readonly descriptor: ModelDescriptor;
-  private readonly externalByInternal = new Map<string, string>();
-  private lastAssistantParts: unknown[] = [];
+  private readonly runs = new Map<string, GeminiRunState>();
+  private readonly activeRuns = new Set<string>();
 
   constructor(private readonly options: ProviderAdapterOptions, private readonly endpoint = 'https://generativelanguage.googleapis.com/v1beta/models') {
     this.descriptor = descriptor(options.modelId);
   }
 
   async *stream(request: ModelRequest, signal: AbortSignal): AsyncIterable<ModelStreamEvent> {
+    if (this.activeRuns.has(request.runId)) throw new ProviderAdapterError('provider_error');
+    this.activeRuns.add(request.runId);
+    try {
+      yield* this.streamLocked(request, signal);
+    } finally {
+      this.activeRuns.delete(request.runId);
+    }
+  }
+
+  private async *streamLocked(request: ModelRequest, signal: AbortSignal): AsyncIterable<ModelStreamEvent> {
     const key = this.options.key();
     if (key.length === 0) throw new ProviderAdapterError('auth');
     let toolMap: Map<string, ModelToolDefinition>;
     try { toolMap = externalToolMap(request.tools); } catch (error) { throw this.normalize(error); }
+    const run = this.getRun(request.runId);
     const contents: unknown[] = [{ role: 'user', parts: [{ text: request.task }] }];
     for (const source of request.context) contents.push({ role: 'user', parts: [{ text: `Context ${source.path}:\n${source.content}` }] });
+    let assistantTurnIndex = 0;
     for (const turn of request.history ?? []) {
       if (turn.kind === 'assistant') {
         for (const call of turn.calls) {
           const tool = toolMap.get(externalToolName(call.toolId, call.toolVersion));
           if (tool?.toolId !== call.toolId || tool.toolVersion !== call.toolVersion) throw new ProviderAdapterError('invalid_tool_call');
+          if (run?.functionCallsByInternal.has(call.callId) !== true) throw new ProviderAdapterError('invalid_tool_call');
         }
-        contents.push({ role: 'model', parts: this.lastAssistantParts.length > 0 ? this.lastAssistantParts : [{ text: turn.text }] });
+        const storedParts = run?.assistantPartsByTurn.get(assistantTurnIndex++);
+        if (storedParts === undefined && turn.calls.length > 0) throw new ProviderAdapterError('invalid_tool_call');
+        contents.push({ role: 'model', parts: storedParts ?? [{ text: turn.text }] });
       } else {
-        const externalId = this.externalByInternal.get(turn.result.callId);
-        if (externalId === undefined) throw new ProviderAdapterError('invalid_tool_call');
-        contents.push({ role: 'user', parts: [{ functionResponse: { name: externalId, response: { result: turn.result } } }] });
+        const functionCall = run?.functionCallsByInternal.get(turn.result.callId);
+        if (functionCall === undefined) throw new ProviderAdapterError('invalid_tool_call');
+        contents.push({
+          role: 'user',
+          parts: [{
+            functionResponse: {
+              name: functionCall.name,
+              ...(functionCall.id === undefined ? {} : { id: functionCall.id }),
+              response: { result: turn.result }
+            }
+          }]
+        });
       }
     }
     let events: AsyncIterable<unknown>;
@@ -83,26 +119,45 @@ export class GeminiAdapter implements ModelAdapter {
       }, signal);
     } catch (error) { throw this.normalize(error); }
     try {
+      const responseParts: unknown[] = [];
+      const bufferedEvents: ModelStreamEvent[] = [];
+      const bufferedCalls = new Map<string, GeminiFunctionCallState>();
+      let completed = false;
       for await (const raw of events) {
         const payload = raw as Record<string, unknown>;
         if (payload.error !== undefined) throw this.normalize(payload.error);
         const candidates = Array.isArray(payload.candidates) ? payload.candidates : [];
+        if (completed) {
+          const usageMetadata = payload.usageMetadata as Record<string, unknown> | undefined;
+          if (candidates.length > 0 || usageMetadata === undefined || typeof usageMetadata.promptTokenCount !== 'number' || typeof usageMetadata.candidatesTokenCount !== 'number') {
+            throw new ProviderAdapterError('provider_error');
+          }
+          usage = { inputTokens: usageMetadata.promptTokenCount, outputTokens: usageMetadata.candidatesTokenCount };
+          continue;
+        }
         const content = candidates[0] as Record<string, unknown> | undefined;
         const parts = Array.isArray(content?.content && (content.content as Record<string, unknown>).parts)
           ? (content?.content as Record<string, unknown>).parts as unknown[] : [];
-        this.lastAssistantParts = parts;
+        responseParts.push(...parts);
+        const finishReason = content?.finishReason;
+        if (finishReason !== undefined) {
+          if (finishReason !== 'STOP' || completed) throw new ProviderAdapterError('provider_error');
+          completed = true;
+        }
         for (const rawPart of parts) {
           const part = rawPart as Record<string, unknown>;
-          if (typeof part.text === 'string' && part.text.length > 0) yield { type: 'text_delta', text: part.text };
+          if (typeof part.text === 'string' && part.text.length > 0) bufferedEvents.push({ type: 'text_delta', text: part.text });
           const functionCall = part.functionCall as Record<string, unknown> | undefined;
           if (functionCall !== undefined && typeof functionCall.name === 'string') {
             const tool = toolMap.get(functionCall.name);
             if (tool === undefined) throw new ProviderAdapterError('invalid_tool_call');
-            const externalId = functionCall.name;
             if (Buffer.byteLength(JSON.stringify(functionCall.args ?? {}), 'utf8') > 64 * 1024) throw new ProviderAdapterError('invalid_tool_call');
             const call = modelToolCallSchema.parse({ callId: this.options.ids.next(), toolId: tool.toolId, toolVersion: tool.toolVersion, arguments: functionCall.args ?? {} });
-            this.externalByInternal.set(call.callId, externalId);
-            yield { type: 'tool_call', call };
+            bufferedCalls.set(call.callId, {
+              name: functionCall.name,
+              ...(typeof functionCall.id === 'string' ? { id: functionCall.id } : {})
+            });
+            bufferedEvents.push({ type: 'tool_call', call });
           }
         }
         const usageMetadata = payload.usageMetadata as Record<string, unknown> | undefined;
@@ -110,6 +165,14 @@ export class GeminiAdapter implements ModelAdapter {
           usage = { inputTokens: usageMetadata.promptTokenCount, outputTokens: usageMetadata.candidatesTokenCount };
         }
       }
+      if (!completed) throw new ProviderAdapterError('provider_error');
+      if (bufferedCalls.size === 0) this.runs.delete(request.runId);
+      else {
+        const nextRun = run ?? this.createRun(request.runId);
+        nextRun.assistantPartsByTurn.set(assistantTurnIndex, [...responseParts]);
+        for (const [callId, functionCall] of bufferedCalls) nextRun.functionCallsByInternal.set(callId, functionCall);
+      }
+      for (const event of bufferedEvents) yield event;
       if (usage !== undefined) yield { type: 'usage', ...usage };
       yield { type: 'completed' };
     } catch (error) {
@@ -122,5 +185,25 @@ export class GeminiAdapter implements ModelAdapter {
   private normalize(error: unknown): ProviderAdapterError {
     if (error instanceof ProviderTransportError) return new ProviderAdapterError(error.code);
     return new ProviderAdapterError(normalizeProviderError(providerStatus(error), false));
+  }
+
+  private getRun(runId: string): GeminiRunState | undefined {
+    const run = this.runs.get(runId);
+    if (run !== undefined) {
+      this.runs.delete(runId);
+      this.runs.set(runId, run);
+    }
+    return run;
+  }
+
+  private createRun(runId: string): GeminiRunState {
+    if (this.runs.size === MAX_RUN_HISTORIES) {
+      const evictedRunId = Array.from(this.runs.keys()).find((candidate) => !this.activeRuns.has(candidate));
+      if (evictedRunId === undefined) throw new ProviderAdapterError('provider_error');
+      this.runs.delete(evictedRunId);
+    }
+    const run = { assistantPartsByTurn: new Map<number, readonly unknown[]>(), functionCallsByInternal: new Map<string, GeminiFunctionCallState>() };
+    this.runs.set(runId, run);
+    return run;
   }
 }

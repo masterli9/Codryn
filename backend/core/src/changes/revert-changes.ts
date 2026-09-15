@@ -10,7 +10,8 @@ export interface RevertResult {
   blockedIds: readonly string[];
 }
 
-export interface RevertChangesDependencies extends PublishMutationDependencies {
+export interface RevertChangesDependencies extends Omit<PublishMutationDependencies, 'setId' | 'nextSequence'> {
+  projectId: string;
   journal: MutationJournal;
   blobs: BlobStore;
   files: FileHashReader;
@@ -46,7 +47,10 @@ export class RevertChanges {
   async execute(input: { setId: string; entryId?: string; requestId: string }, signal: AbortSignal): Promise<RevertResult> {
     const setId = uuidSchema.parse(input.setId);
     const requestId = uuidSchema.parse(input.requestId);
+    const projectId = uuidSchema.parse(this.dependencies.projectId);
+    if (await this.dependencies.changeSets.projectId(setId) !== projectId) throw new Error('R2_CHANGE_SET_PROJECT_MISMATCH');
     const entries = activeEntries(await this.dependencies.journal.entries(setId));
+    if (entries.some((entry) => entry.projectId !== projectId || entry.setId !== setId)) throw new Error('R2_CHANGE_SET_PROJECT_MISMATCH');
     const selected = returnOrder(input.entryId === undefined ? entries : entries.filter((entry) => entry.id === uuidSchema.parse(input.entryId)));
     if (selected.length === 0) return { status: 'reverted', revertedIds: [], blockedIds: [] };
     if (signal.aborted) throw new DOMException('The operation was aborted', 'AbortError');
@@ -72,7 +76,10 @@ export class RevertChanges {
       await this.dependencies.createAuditCall?.({ callId, runId: original.runId, projectId: original.projectId, requestId });
       const beforeBytes = await this.dependencies.blobs.get(original.afterBlob);
       const afterBytes = await this.dependencies.blobs.get(original.beforeBlob);
-      const result = await new PublishMutation(this.dependencies).execute({
+      const result = await new PublishMutation({
+        ...this.dependencies, setId,
+        nextSequence: () => this.dependencies.changeSets.reserveSequence(setId)
+      }).execute({
         path: original.path,
         beforeBytes,
         afterBytes,

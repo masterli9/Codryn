@@ -1,6 +1,6 @@
 # Kontext projektu – maturitní práce
 
-## Aktualizace po implementaci R2 backendového průřezu – 6. září 2026
+## Aktualizace po review a packaged ověření R2 – 14. září 2026
 
 - Lokální R2 průřez je implementovaný přes W1–W5, D1–D3, P1–P5 a M1–M3;
   M4/M5 mají připravený bounded eval/live runner, explicitní local verify a
@@ -12,10 +12,14 @@
 - OpenAI Responses a Gemini Generate Content mají offline adaptéry se stejným
   core kontraktem; OD-04 zůstává pending, protože nebyla provedena autorizovaná
   živá evaluace pěti pokusů.
-- Packaged R2 smoke a lokální verify gate jsou připravené, ale čistý packaged
-  důkaz na tomto hostu selhal v Chromium GPU procesu; finální acceptance gate a
-  autorizovaná live evaluace proto zůstávají neuzavřené. R2 shell není sandbox
-  a produktové UI patří do R3.
+- Po opravě Windows process-tree fallbacku prošel čistý packaged R0 smoke
+  (11/11 kontrol) i packaged R2 smoke (databáze, guarded write, process tree a
+  návrat baseline). Typecheck, lint a kontrola závislostí také prošly. R2 shell
+  není sandbox a produktové UI patří do R3.
+- Review nálezy jsou opravené; finální plná sada má 510 úspěšných a 3 záměrně
+  přeskočené testy. Typecheck, lint, kontrola závislostí, R1/R2 opakovatelnost,
+  package a packaged R0/R2 smoke prošly. Formálně stále zbývá autorský checklist
+  a autorizovaná live provider evaluace; OD-04 proto zůstává pending.
 
 > Tento soubor je živá pracovní paměť pro budoucí práci v tomto repozitáři.
 > Před návrhem, implementací nebo změnou architektury jej vždy přečti a po

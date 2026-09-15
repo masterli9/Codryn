@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { watch, type FSWatcher } from 'node:fs';
 import { lstat, readdir, readFile, realpath } from 'node:fs/promises';
 import { isAbsolute, relative, resolve } from 'node:path';
@@ -24,6 +24,7 @@ export class FileWorkspaceObserver implements WorkspaceObserver {
   private readonly rootReady: Promise<string>;
   private watcher: FSWatcher | undefined;
   private generation = 0;
+  private readonly watcherId = randomUUID();
   private watcherHealthy = true;
 
   constructor(rootDirectory: string, private readonly options: WorkspaceObserverOptions = {}) {
@@ -40,6 +41,7 @@ export class FileWorkspaceObserver implements WorkspaceObserver {
     const startGeneration = this.generation;
     const startedAt = Date.now();
     const entries: string[] = [];
+    const observedPaths: string[] = [];
     let totalBytes = 0;
     let complete = this.watcherHealthy;
     const visit = async (current: string): Promise<void> => {
@@ -63,6 +65,7 @@ export class FileWorkspaceObserver implements WorkspaceObserver {
       const after = await lstat(current).catch(() => null);
       if (after === null || after.size !== info.size || after.mtimeMs !== info.mtimeMs || after.isSymbolicLink()) { complete = false; return; }
       entries.push(`${rel}\0${createHash('sha256').update(bytes).digest('hex')}\0${bytes.length}`);
+      observedPaths.push(rel);
       totalBytes += bytes.length;
     };
     try { await visit(root); } catch {
@@ -76,13 +79,17 @@ export class FileWorkspaceObserver implements WorkspaceObserver {
     if (this.options.git !== undefined) {
       try {
         const baseline = await this.options.git.inspect(signal);
-        gitIdentity = baseline.mode === 'git' ? baseline.worktreeIdentity : null;
+        gitIdentity = baseline.mode === 'git' ? createHash('sha256').update(JSON.stringify({
+          worktree: baseline.worktreeIdentity, head: baseline.head, branch: baseline.branch,
+          index: baseline.indexHash, conflicts: baseline.conflicts
+        })).digest('hex') : null;
       } catch (error) {
         if (signal.aborted) throw error;
         complete = false;
       }
     }
-    return { fingerprint, gitIdentity, complete };
+    if (this.generation !== startGeneration || !this.watcherHealthy) complete = false;
+    return { fingerprint, gitIdentity, complete, observedPaths, watcherGeneration: `${this.watcherId}:${this.generation}` };
   }
 
   close(): void {
@@ -105,6 +112,8 @@ export class FileWorkspaceObserver implements WorkspaceObserver {
 
   private isIgnored(relativeName: string): boolean {
     const segments = relativeName.split('/');
+    // Git metadata changes can invalidate verification even when file bytes return to baseline.
+    if (segments[0]?.toLowerCase() === '.git') return false;
     return segments.some((segment) => ignoredDirectories.has(segment.toLowerCase()))
       || isR1SensitiveRelativePath(relativeName)
       || this.options.contextPolicy?.allowed(relativeName) === false;

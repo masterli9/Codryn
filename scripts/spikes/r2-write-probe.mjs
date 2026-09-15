@@ -24,6 +24,9 @@ const powerShellArgs = [
   '-File',
   worker
 ];
+const barrierTimeoutMs = 30_000;
+const workerTimeoutMs = 30_000;
+const activeWorkers = new Set();
 
 function parseIterations(argv) {
   const index = argv.indexOf('--iterations');
@@ -67,11 +70,15 @@ function startWorker(args) {
   });
   const stderr = [];
   child.stderr?.on('data', (chunk) => stderr.push(String(chunk)));
+  const workerRecord = { child, done: null };
   const done = new Promise((resolveDone) => {
     child.once('close', (code, signalCode) => resolveDone({ code, signal: signalCode, stderr: stderr.join('') }));
     child.once('error', (error) => resolveDone({ code: null, signal: null, stderr: String(error) }));
   });
-  return { child, done };
+  workerRecord.done = done;
+  activeWorkers.add(workerRecord);
+  done.finally(() => activeWorkers.delete(workerRecord)).catch(() => {});
+  return workerRecord;
 }
 
 function startStreamWorker(args) {
@@ -96,11 +103,13 @@ function startStreamWorker(args) {
     else lines.push(line);
   });
   let closed = null;
+  const workerRecord = { child, done: null };
   const done = new Promise((resolveDone) => {
     child.once('close', (code, signalCode) => {
       closed = { code, signal: signalCode, stderr: stderr.join('') };
       debug('worker close', code, signalCode);
       for (const waiter of waiters.splice(0)) {
+        clearTimeout(waiter.timer);
         waiter.reject(new Error(`worker exited before its response: ${JSON.stringify(closed)}`));
       }
       resolveDone(closed);
@@ -108,22 +117,42 @@ function startStreamWorker(args) {
     child.once('error', (error) => {
       closed = { code: null, signal: null, stderr: String(error) };
       for (const waiter of waiters.splice(0)) {
+        clearTimeout(waiter.timer);
         waiter.reject(error);
       }
       debug('worker error', error);
       resolveDone(closed);
     });
   });
+  workerRecord.done = done;
+  activeWorkers.add(workerRecord);
+  done.finally(() => activeWorkers.delete(workerRecord)).catch(() => {});
   return {
-    child,
-    done,
+    ...workerRecord,
     send(command) { child.stdin?.write(`${command}\n`); },
-    async waitForAnyLine(expectedLines) {
+    async waitForAnyLine(expectedLines, timeoutMs = barrierTimeoutMs) {
       const line = lines.length > 0
         ? lines.shift()
         : closed
           ? (() => { throw new Error(`worker exited before ${expectedLines.join(' or ')}: ${JSON.stringify(closed)}`); })()
-          : await new Promise((resolveLine, rejectLine) => waiters.push({ resolve: resolveLine, reject: rejectLine }));
+          : await new Promise((resolveLine, rejectLine) => {
+            const waiter = {
+              resolve: (value) => {
+                clearTimeout(waiter.timer);
+                resolveLine(value);
+              },
+              reject: (error) => {
+                clearTimeout(waiter.timer);
+                rejectLine(error);
+              },
+              timer: setTimeout(() => {
+                const index = waiters.indexOf(waiter);
+                if (index >= 0) waiters.splice(index, 1);
+                rejectLine(new Error(`worker barrier timeout after ${timeoutMs} ms: ${expectedLines.join(' or ')}`));
+              }, timeoutMs)
+            };
+            waiters.push(waiter);
+          });
       if (!expectedLines.includes(line)) {
         throw new Error(`unexpected worker barrier: ${line} (expected ${expectedLines.join(' or ')})`);
       }
@@ -133,6 +162,37 @@ function startStreamWorker(args) {
       return this.waitForAnyLine([expected]);
     }
   };
+}
+
+async function waitForWorkerDone(worker, label, timeoutMs = workerTimeoutMs) {
+  let timer;
+  try {
+    return await Promise.race([
+      worker.done,
+      new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`${label} worker timeout after ${timeoutMs} ms`)), timeoutMs);
+      })
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function terminateWorker(worker) {
+  if (worker.child.exitCode !== null || worker.child.signalCode !== null) return;
+  try {
+    worker.child.kill();
+  } catch {
+    // The process may have exited between the status check and kill().
+  }
+  await Promise.race([
+    worker.done,
+    new Promise((resolveDone) => setTimeout(resolveDone, 2_000))
+  ]);
+}
+
+async function terminateActiveWorkers() {
+  await Promise.all([...activeWorkers].map((worker) => terminateWorker(worker)));
 }
 
 async function outcome(path) {
@@ -157,7 +217,7 @@ function startExternal(root, target, role, payload = 'EXTERNAL') {
     attempt,
     process,
     async wait() {
-      const result = await process.done;
+      const result = await waitForWorkerDone(process, 'external');
       return { ...result, outcome: await outcome(marker) };
     }
   };
@@ -208,7 +268,7 @@ async function runAtomicScenario(root, name, target, {
   }) : (externalRole ? startExternal(barrierDirectory, target, externalRole, payload) : null);
   if (externalControl?.attempt) await waitFor(externalControl.attempt);
   await signal(publish);
-  const guardedResult = await guarded.done;
+  const guardedResult = await waitForWorkerDone(guarded, 'guarded');
   if (externalControl?.afterPublish) await externalControl.afterPublish();
   const external = externalControl?.wait ? await externalControl.wait() : externalControl;
   return {
@@ -266,7 +326,7 @@ async function runAtomicLoopRace(root, iterations, directoryName = 'race-loop') 
     if (iteration < iterations - 1) guarded.send('next');
   }
   await guarded.waitForLine('complete');
-  const guardedResult = await guarded.done;
+  const guardedResult = await waitForWorkerDone(guarded, 'atomic-loop guarded');
   await external.waitForLine('complete');
   return { overwritten, guarded: guardedResult };
 }
@@ -293,9 +353,14 @@ async function runOpenWriterCase(root) {
     '-PublishMarker', join(barrierDirectory, 'guarded-publish'),
     '-OutcomeMarker', outcomeMarker
   ]);
-  const guardedResult = await guarded.done;
-  await signal(release);
-  await holder.done;
+  await signal(join(barrierDirectory, 'guarded-check'));
+  let guardedResult;
+  try {
+    guardedResult = await waitForWorkerDone(guarded, 'open-writer guarded');
+  } finally {
+    await signal(release);
+    await waitForWorkerDone(holder, 'open-writer holder');
+  }
   return {
     rejected: guardedResult.code !== 0,
     unchanged: (await readFile(target, 'utf8')) === 'ORIGINAL-CONTENT',
@@ -330,7 +395,7 @@ async function runHandleRaceCase(root) {
   await waitFor(checked);
   const external = await runExternal(barrierDirectory, target, 'external-in-place', 'EXTERNAL-CONTENT');
   await signal(publish);
-  const guardedResult = await guarded.done;
+  const guardedResult = await waitForWorkerDone(guarded, 'handle-race guarded');
   return {
     external,
     guarded: { ...guardedResult, outcome: await outcome(outcomeMarker) },
@@ -353,7 +418,7 @@ async function runAtomicCrashCase(root) {
     '-TimeoutMs', '10000'
   ]);
   await waitFor(writing);
-  const result = await guarded.done;
+  const result = await waitForWorkerDone(guarded, 'atomic-crash guarded');
   const bytes = await readFile(target);
   return {
     processCrashed: result.code !== 0,
@@ -574,6 +639,7 @@ async function main() {
       report.escapedPaths === 0;
     process.stdout.write(JSON.stringify(report));
   } finally {
+    await terminateActiveWorkers();
     await rm(root, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
   }
 }

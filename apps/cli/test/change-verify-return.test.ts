@@ -77,12 +77,12 @@ describe('R2 change-verify-return composition', () => {
     expect(result.readCalls).toBeGreaterThanOrEqual(2);
     expect(result.returnedToBaseline).toBe(true);
     expect(result.indexPreserved).toBe(true);
-  }, 30_000);
+  });
 
   it('proves the negative fixture test fails before the model run', async () => {
     const fixture = await createR2Project('non-git');
     try {
       await expect(execFileAsync(process.execPath, ['--test', 'sum.test.mjs'], { cwd: fixture.root, shell: false })).rejects.toBeDefined();
     } finally { await fixture.close(); }
-  }, 30_000);
+  });
 });

@@ -15,6 +15,39 @@ const processResult: CommandResult = {
 };
 
 describe('verification', () => {
+  it('includes relevance inspection in the observed verification interval', async () => {
+    let generation = '1';
+    const service = new VerifyCommand({
+      runner: { run: async () => processResult },
+      observer: { inspect: async () => ({ ...before, watcherGeneration: generation }) },
+      workspaces: { observe: async (_id, value) => ({ ...value, revision: 1 }), current: async () => before },
+      store: { append: async () => {}, current: async () => null },
+      ids: { next: () => '54444444-4444-4444-8444-444444444444' },
+      clock: { now: () => '2026-09-06T10:30:00.000Z' },
+      isRelevant: () => { generation = '2'; return true; }
+    });
+    expect((await service.execute(command, actor, new AbortController().signal)).result).toBe('incomplete');
+  });
+  it('rejects a changed Git identity even if a store returns the same revision', () => {
+    expect(assessVerification({ exitCode: 0, treeStopped: true, truncated: false, processStatus: 'succeeded',
+      before, after: { ...before, gitIdentity: 'new-head' }, watcherChanged: false, relevant: true })).toBe('incomplete');
+  });
+  it.each([
+    { name: 'an arbitrary successful command', relevant: false, generations: ['1', '1'] },
+    { name: 'an ABA edit during a relevant command', relevant: true, generations: ['1', '3'] }
+  ])('rejects $name', async ({ relevant, generations }) => {
+    let index = 0;
+    const service = new VerifyCommand({
+      runner: { run: async () => processResult },
+      observer: { inspect: async () => ({ ...before, watcherGeneration: generations[index++] ?? 'unknown' }) },
+      workspaces: { observe: async (_id, value) => ({ ...value, revision: 1 }), current: async () => before },
+      store: { append: async () => {}, current: async () => null },
+      ids: { next: () => '54444444-4444-4444-8444-444444444444' },
+      clock: { now: () => '2026-09-06T10:30:00.000Z' },
+      isRelevant: () => relevant
+    });
+    expect((await service.execute(command, actor, new AbortController().signal)).result).toBe('incomplete');
+  });
   it('does not call a green process verified when the workspace changed', () => {
     expect(assessVerification({
       exitCode: 0, treeStopped: true, truncated: false, processStatus: 'succeeded',

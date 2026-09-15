@@ -5,6 +5,7 @@ describe('RecoverR2Run', () => {
   it('expires unclaimed approvals, returns pending approvals, and marks in-flight effects without replaying a model', async () => {
     const order: string[] = [];
     const recover = new RecoverR2Run({
+      projectId: '44444444-4444-4444-8444-444444444444',
       permissions: {
         async expireAllowedUnclaimed() { order.push('expire'); return ['11111111-1111-4111-8111-111111111111']; },
         async listPending() {
@@ -38,7 +39,7 @@ describe('RecoverR2Run', () => {
     });
     const controller = new AbortController();
     controller.abort();
-    const recover = new RecoverR2Run({ mutations: { execute } });
+    const recover = new RecoverR2Run({ projectId: '44444444-4444-4444-8444-444444444444', mutations: { execute } });
     await expect(recover.execute('44444444-4444-4444-8444-444444444444', controller.signal)).rejects.toThrow();
     expect(execute).toHaveBeenCalledOnce();
   });

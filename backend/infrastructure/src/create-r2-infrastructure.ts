@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { mkdir, readFile } from 'node:fs/promises';
+import { mkdir, readFile, realpath } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import {
   ApplyPatch, ContextAssembler, ControlledPermissionPolicy, GetChangeDiff, PermissionService,
@@ -10,7 +10,7 @@ import {
 } from '@codryn/core';
 import type { R2RunResult, RunAgentRequest } from '@codryn/shared';
 import type { FakeScenario } from './model/scripted-model-adapter.js';
-import { ProjectFilesystem } from './filesystem/project-filesystem.js';
+import { ProjectFilesystem, ProjectFilesystemFailure } from './filesystem/project-filesystem.js';
 import { ContextPathPolicy } from './filesystem/context-path-policy.js';
 import { FileWorkspaceObserver } from './filesystem/workspace-observer.js';
 import { ContentBlobStore } from './filesystem/content-blob-store.js';
@@ -72,6 +72,7 @@ export async function createR2Infrastructure(options: {
     readonly projectRoot: string;
   readonly scenario?: FakeScenario | 'change-verify-return';
   readonly model?: ModelAdapter;
+  readonly trustedVerificationExecutable?: string;
   readonly permissionResponder?: PermissionResponder;
   readonly onRead?: (path: string, readCount: number) => Promise<void>;
   readonly onPatch?: (path: string) => Promise<void>;
@@ -95,13 +96,14 @@ export async function createR2Infrastructure(options: {
       : options.scenario;
     if (options.model === undefined && scenario === undefined) throw new Error('R2_MODEL_NOT_CONFIGURED');
     runMigrations(database, clock.now());
-    const projectId = ids.next();
+    const workspaces = new SqliteWorkspaceStore(database);
+    const canonicalRoot = await realpath(projectRoot);
+    const projectId = workspaces.open(process.platform === 'win32' ? canonicalRoot.toLowerCase() : canonicalRoot, ids.next());
     const contextPolicy = await ContextPathPolicy.fromProjectRoot(projectRoot);
     const filesystem = new ProjectFilesystem(projectRoot, { contextPolicy });
     let readCalls = 0;
     const git = new ProjectGitState(projectRoot);
     const observer = new FileWorkspaceObserver(projectRoot, { git, contextPolicy });
-    const workspaces = new SqliteWorkspaceStore(database);
     await workspaces.observe(projectId, await observer.inspect(new AbortController().signal));
     const eventStore = new SqliteEventStore(database);
     const toolCalls = new SqliteToolCallStore(database, { clock, ids });
@@ -110,10 +112,24 @@ export async function createR2Infrastructure(options: {
     const journal = new SqliteMutationJournal(database, clock, ids);
     const blobs = new ContentBlobStore(userDataPath);
     const baseline = new SqliteProjectBaselineStore(database);
-    const guardedWriter = new WindowsGuardedWriter(projectRoot);
+    const diskWriter = new WindowsGuardedWriter(projectRoot);
+    const guardedWriter = {
+      open: async (path: string, expectedHash: string, signal: AbortSignal) => {
+        const state = await git.inspect(signal);
+        const target = resolve(projectRoot, path).toLowerCase();
+        if (state.mode === 'git' && state.conflicts.some((conflict) => resolve(projectRoot, conflict).toLowerCase() === target)) {
+          throw new Error('R2_GIT_CONFLICT');
+        }
+        return diskWriter.open(path, expectedHash, signal);
+      }
+    };
     const fileHashes = {
       readHash: async (path: string, signal: AbortSignal): Promise<string | null> => {
-        try { return (await filesystem.readFile({ path }, signal)).contentHash; } catch { return null; }
+        try { return (await filesystem.readFile({ path }, signal)).contentHash; } catch (error) {
+          if ((error instanceof ProjectFilesystemFailure && error.code === 'R1_FILE_NOT_FOUND')
+            || (error as NodeJS.ErrnoException).code === 'ENOENT') return null;
+          throw error;
+        }
       }
     };
     const commandRunner = new R2CommandRunner(projectRoot);
@@ -125,18 +141,19 @@ export async function createR2Infrastructure(options: {
       verifications,
       ids,
       clock,
+      isRelevant: async (command, snapshot) => {
+        if (command.executable !== (options.trustedVerificationExecutable ?? process.execPath) || resolve(command.cwd) !== projectRoot
+          || command.args.length !== 2 || command.args[0] !== '--test' || command.args[1] !== 'sum.test.mjs') return false;
+        // Both the assertion file and its known input must participate in the same complete snapshot.
+        const manifest = ['sum.test.mjs', 'sum.mjs'] as const;
+        if (!snapshot.complete || !manifest.every((path) => snapshot.observedPaths?.includes(path) && contextPolicy.allowed(path))) return false;
+        try {
+          // Backend-owned reference fixture profile: the model cannot nominate a check or rewrite its assertions.
+          const test = await readFile(join(projectRoot, 'sum.test.mjs'), 'utf8');
+          return createHash('sha256').update(test.replaceAll('\r\n', '\n')).digest('hex') === '66c51424f33087ac403d414fe1ef35b5ac8e4e976ed674687fcd85fafc7384d8';
+        } catch { return false; }
+      },
       ...(options.onCommandResult === undefined ? {} : { onResult: options.onCommandResult })
-    });
-    let activeSetId: string | null = null;
-    let activeRunId: string | null = null;
-    const patch = new ApplyPatch({
-      writer: guardedWriter,
-      blobs,
-      journal,
-      ids,
-      get setId() { if (activeSetId === null) throw new Error('R2_CHANGE_SET_NOT_OPEN'); return activeSetId; },
-      nextSequence: async () => { if (activeSetId === null) throw new Error('R2_CHANGE_SET_NOT_OPEN'); return changeSets.reserveSequence(activeSetId); },
-      hash: (bytes) => createHash('sha256').update(bytes).digest('hex')
     });
     const registry = new ToolRegistry([
       fileReadTool(async (input, signal) => {
@@ -147,7 +164,12 @@ export async function createR2Infrastructure(options: {
       }),
       textSearchTool(async (input, signal) => { readCalls += 1; return filesystem.searchText(input, signal); }),
       filePatchTool({ execute: async (input, actor, signal) => {
-        const result = await patch.execute(input, actor, signal);
+        const setId = await changeSets.open(actor.projectId, actor.runId);
+        const result = await new ApplyPatch({
+          writer: guardedWriter, blobs, journal, ids, setId,
+          nextSequence: () => changeSets.reserveSequence(setId),
+          hash: (bytes) => createHash('sha256').update(bytes).digest('hex')
+        }).execute(input, actor, signal);
         if (result.status === 'applied' && options.onPatch !== undefined) await options.onPatch(result.entry.path);
         return result;
       } }),
@@ -179,12 +201,11 @@ export async function createR2Infrastructure(options: {
     const changes = {
       diff: new GetChangeDiff({ journal, blobs, files: fileHashes }),
       revert: new RevertChanges({
+        projectId,
         writer: guardedWriter,
         blobs,
         journal,
         ids,
-        get setId() { if (activeSetId === null) throw new Error('R2_CHANGE_SET_NOT_OPEN'); return activeSetId; },
-        nextSequence: async () => { if (activeSetId === null) throw new Error('R2_CHANGE_SET_NOT_OPEN'); return changeSets.reserveSequence(activeSetId); },
         hash: (bytes) => createHash('sha256').update(bytes).digest('hex'),
         files: fileHashes,
         changeSets,
@@ -206,6 +227,7 @@ export async function createR2Infrastructure(options: {
       changeSets
     };
     const recover = new RecoverR2Run({
+      projectId,
       mutations: new RecoverMutations({ journal, files: fileHashes }),
       permissions,
       toolCalls
@@ -213,23 +235,23 @@ export async function createR2Infrastructure(options: {
     const agentLoop: R2Infrastructure['agentLoop'] = {
       executeR2: async (request, signal) => {
         let runSetId: string | null = null;
+        let runId: string | null = null;
         const result = await loop.executeR2(request, signal, {
           projectId,
           changeSetId: null,
-          openChangeSet: async (runId) => {
-            const createdSetId = await changeSets.open(projectId, runId);
+          openChangeSet: async (openedRunId) => {
+            const createdSetId = await changeSets.open(projectId, openedRunId);
             runSetId = createdSetId;
-            activeRunId = runId;
-            activeSetId = createdSetId;
+            runId = openedRunId;
             await baseline.saveOnce(createdSetId, await git.inspect(signal));
             return createdSetId;
           },
           completion: async () => {
-            const setId = runSetId ?? activeSetId;
+            const setId = runSetId;
             const entries = setId === null ? [] : await journal.entries(setId);
             const pending = await journal.pending(projectId);
-            const snapshot = await workspaces.current(projectId);
-            const record = activeRunId === null ? null : await verifications.current(activeRunId, snapshot);
+            const snapshot = await workspaces.observe(projectId, await observer.inspect(signal));
+            const record = runId === null ? null : await verifications.current(runId, snapshot);
             const verification = record === null
               ? { status: 'unverified' as const, recordId: null, reason: 'No persisted verification record exists.' }
               : { status: record.stale ? 'stale' as const : record.result === 'passed' ? 'verified' as const : 'unverified' as const, recordId: record.id, reason: record.reason };

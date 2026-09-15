@@ -44,7 +44,17 @@ function validateObservation(input: WorkspaceObservation): WorkspaceObservation 
 }
 
 export class SqliteWorkspaceStore implements WorkspaceStore {
+  private readonly watcherGenerations = new Map<string, string>();
   constructor(private readonly database: DatabaseSync) {}
+
+  open(rootIdentity: string, proposedId: string): string {
+    const id = uuidSchema.parse(proposedId);
+    this.database.prepare(`INSERT INTO workspaces
+      (id, root_identity, revision, fingerprint, git_identity, observation_complete)
+      VALUES (?, ?, 0, 'unobserved', NULL, 0) ON CONFLICT(root_identity) DO NOTHING`).run(id, rootIdentity);
+    const row = this.database.prepare('SELECT id FROM workspaces WHERE root_identity = ?').get(rootIdentity);
+    return uuidSchema.parse(row?.id);
+  }
 
   async observe(projectIdInput: string, observationInput: WorkspaceObservation): Promise<WorkspaceSnapshot> {
     const projectId = uuidSchema.parse(projectIdInput);
@@ -69,13 +79,15 @@ export class SqliteWorkspaceStore implements WorkspaceStore {
         );
         this.database.exec('COMMIT;');
         transactionStarted = false;
+        if (observation.watcherGeneration !== undefined) this.watcherGenerations.set(projectId, observation.watcherGeneration);
         return { ...observation, revision: 0 };
       }
 
       const current = snapshotFromRow(existing);
       const changed = current.fingerprint !== observation.fingerprint
         || current.gitIdentity !== observation.gitIdentity
-        || current.complete !== observation.complete;
+        || current.complete !== observation.complete
+        || (observation.watcherGeneration !== undefined && this.watcherGenerations.get(projectId) !== observation.watcherGeneration);
       const revision = current.revision + (changed ? 1 : 0);
       this.database.prepare(`UPDATE workspaces SET
         revision = ?, fingerprint = ?, git_identity = ?, observation_complete = ?
@@ -88,6 +100,7 @@ export class SqliteWorkspaceStore implements WorkspaceStore {
       );
       this.database.exec('COMMIT;');
       transactionStarted = false;
+      if (observation.watcherGeneration !== undefined) this.watcherGenerations.set(projectId, observation.watcherGeneration);
       return { ...observation, revision };
     } catch (error) {
       if (transactionStarted) {

@@ -3,8 +3,8 @@
 ## Stav
 
 Přijato pro P3 `command.run@1` (6. září 2026). R0 `WindowsProcessRunner`
-zůstává nezměněný a jeho `taskkill /T /F` není tímto ADR povýšen na bezpečnostní
-hranici.
+zůstává mimo R2 safety boundary a jeho `taskkill /T /F` není tímto ADR povýšen
+na důkaz vlastnictví stromu.
 
 ## Kontext
 
@@ -16,7 +16,8 @@ child ani `taskkill /T /F` neposkytují tento důkaz pro obecný shell.
 ## Rozhodnutí
 
 P1 používá malý nativní helper `scripts/spikes/r2-process-job.cs` přes
-PowerShell worker `scripts/spikes/r2-process-worker.ps1`:
+PowerShell worker `scripts/spikes/r2-process-worker.ps1`; worker spouští jednu
+kompilovanou C# fixture `scripts/spikes/r2-process-fixture.cs`:
 
 1. helper vytvoří Job Object s `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`;
 2. cílový proces vytvoří v režimu `CREATE_SUSPENDED`;
@@ -49,7 +50,7 @@ Výsledek na Windows 11:
 }
 ```
 
-Host test dokončil 1 test bez chyb za 18,59 s. Probe obsahuje 8 reportovaných
+Host test dokončil 8 testů bez chyb za 10,49 s. Probe obsahuje 8 reportovaných
 případů; `pid-reuse-evidence` spouští dvě samostatné identity. Před vystavením
 P3 musí stejný ownership adapter používat command runner, ne pouze tento
 experiment.
