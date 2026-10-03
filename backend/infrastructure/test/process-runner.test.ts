@@ -11,6 +11,7 @@ import { afterEach, describe, expect, expectTypeOf, it, vi } from 'vitest';
 import { BoundedOutput } from '../src/process/bounded-output.js';
 import * as Infrastructure from '../src/index.js';
 import { WindowsProcessRunner } from '../src/index.js';
+import { R2CommandRunner } from '../src/process/r2-command-runner.js';
 import { createWindowsProcessRunnerInternal } from '../src/process/windows-process-runner.js';
 
 const systemRoot = process.env.SystemRoot ?? 'C:\\Windows';
@@ -59,12 +60,14 @@ interface SpawnCall {
 
 const ownedFixtures: OwnedFixture[] = [];
 const temporaryRoot = resolve(tmpdir());
-const inspectProcessCommand = [
-  '$target = Get-Process -Id ([int]$args[0]) -ErrorAction SilentlyContinue',
-  'if ($null -ne $target) {',
-  "[Console]::Out.Write($target.ProcessName + '|' + $target.StartTime.ToUniversalTime().Ticks)",
-  '}'
-].join('; ');
+function inspectProcessCommand(pid: number): string {
+  return [
+    `$target = Get-Process -Id ([int]${pid}) -ErrorAction SilentlyContinue`,
+    'if ($null -ne $target) {',
+    "[Console]::Out.Write($target.ProcessName + '|' + $target.StartTime.ToUniversalTime().Ticks)",
+    '}'
+  ].join('; ');
+}
 const terminateOwnedProcessCommand = [
   '$expectedPid = [int]$env:CODRYN_OWNED_PID',
   '$expectedName = $env:CODRYN_OWNED_PROCESS_NAME',
@@ -296,8 +299,7 @@ async function inspectProcess(pid: number): Promise<RecordedProcessIdentity | nu
       '-ExecutionPolicy',
       'Bypass',
       '-Command',
-      inspectProcessCommand,
-      String(pid)
+      inspectProcessCommand(pid)
     ], {
       cwd: temporaryRoot,
       env: {
@@ -1026,4 +1028,65 @@ describeWindows('WindowsProcessRunner', () => {
     expect(() => main.emit('error', new Error('late controlled child error'))).not.toThrow();
     main.emitClose(null, 'SIGTERM');
   });
+});
+
+describeWindows('R2CommandRunner cancellation integration', () => {
+  it('cancels the fixture parent and child without claiming tree termination', async () => {
+    const ownedFixture = await createOwnedFixture();
+    const childPidFile = join(ownedFixture.directory, 'child.pid');
+    const parentIdentityFile = join(ownedFixture.directory, 'parent-process-identity.json');
+    const childIdentityFile = join(ownedFixture.directory, 'child-process-identity.json');
+    ownedFixture.identityFile = parentIdentityFile;
+    ownedFixture.childIdentityFile = childIdentityFile;
+
+    const controller = new AbortController();
+    const run = new R2CommandRunner(ownedFixture.directory).run({
+      executable: powershell,
+      args: [
+        ...baseArgs,
+        fixture('spawn-child-tree.ps1'),
+        '-ChildPidFile', childPidFile,
+        '-ParentIdentityFile', parentIdentityFile,
+        '-ChildIdentityFile', childIdentityFile
+      ],
+      cwd: ownedFixture.directory,
+      timeoutMs: 15_000,
+      maxOutputBytes: 16_384
+    }, controller.signal);
+
+    try {
+      await eventually(async () => {
+        const parent = await readFixtureProcessIdentity(parentIdentityFile);
+        const child = await readRecordedProcessIdentityFile(childIdentityFile);
+        const childPid = await readRecordedPid(childPidFile);
+        expect(parent).not.toBeNull();
+        expect(child).not.toBeNull();
+        expect(childPid).not.toBeNull();
+        if (parent === null || child === null || childPid === null) {
+          throw new Error('The fixture did not record both process identities.');
+        }
+        expect(child.pid).toBe(childPid);
+        expect(child.pid).not.toBe(parent.parent.pid);
+        expect(await isSameOwnedProcessAlive(parent.parent)).toBe(true);
+        expect(await isSameOwnedProcessAlive(child)).toBe(true);
+      }, { timeoutMs: 8_000, intervalMs: 25 });
+
+      controller.abort();
+      const result = await run;
+      expect(result).toMatchObject({ status: 'cancelled', treeStopped: false });
+
+      const parent = await readFixtureProcessIdentity(parentIdentityFile);
+      const child = await readRecordedProcessIdentityFile(childIdentityFile);
+      if (parent === null || child === null) {
+        throw new Error('The fixture did not retain both process identities.');
+      }
+      await eventually(async () => {
+        expect(await isSameOwnedProcessAlive(parent.parent)).toBe(false);
+        expect(await isSameOwnedProcessAlive(child)).toBe(false);
+      }, { timeoutMs: 3_000, intervalMs: 25 });
+    } finally {
+      controller.abort();
+      await run;
+    }
+  }, 30_000);
 });
