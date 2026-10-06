@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import type { BlobStore, ChangeEntry, FileHashReader, MutationJournal } from '../src/index.js';
 import { buildFileDiff, GetChangeDiff } from '../src/changes/get-change-diff.js';
@@ -48,6 +48,33 @@ describe('buildFileDiff', () => {
 });
 
 describe('GetChangeDiff', () => {
+  it.each([false, true])('reports remaining changes after a multi-patch revert (complete=%s)', async (complete) => {
+    const contents = ['A\n', 'B\n', 'C\n'];
+    const hashes = contents.map(digest);
+    const makeEntry = (sequence: number, before: number, after: number, kind: ChangeEntry['kind']): ChangeEntry => {
+      const beforeHash = hashes[before];
+      const afterHash = hashes[after];
+      if (beforeHash === undefined || afterHash === undefined) throw new Error('Invalid fixture index');
+      return { ...entry, id: randomUUID(), sequence, beforeHash, afterHash, beforeBlob: beforeHash, afterBlob: afterHash, kind };
+    };
+    const first = makeEntry(1, 0, 1, 'patch');
+    const second = makeEntry(2, 1, 2, 'patch');
+    const entries = [first, second, { ...makeEntry(3, 2, 1, 'revert'), reversesId: second.id }];
+    if (complete) entries.push({ ...makeEntry(4, 1, 0, 'revert'), reversesId: first.id });
+    const journal: MutationJournal = {
+      async entries() { return entries; }, async pending() { return []; },
+      async prepare() {}, async confirm() { return 1; }, async resolve() {}
+    };
+    const blobs: BlobStore = {
+      async get(hash) { return new TextEncoder().encode(contents[hashes.indexOf(hash)]); },
+      async put(bytes) { return digest(new TextDecoder().decode(bytes)); }
+    };
+    const files: FileHashReader = { async readHash() { return digest(complete ? 'A\n' : 'B\n'); } };
+    const [diff] = await new GetChangeDiff({ journal, blobs, files }).execute(entry.setId, new AbortController().signal);
+    expect(diff?.status).toBe(complete ? 'reverted' : 'changed');
+    if (!complete) expect(diff?.lines).toContainEqual({ kind: 'added', text: 'B' });
+  });
+
   it('builds the diff from journaled blobs and marks a newer file as conflicted', async () => {
     const blobs = new Map<string, Uint8Array>([
       [entry.beforeBlob, new TextEncoder().encode('// user\nconst a = 1;\n')],

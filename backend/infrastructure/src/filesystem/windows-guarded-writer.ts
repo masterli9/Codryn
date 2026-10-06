@@ -66,10 +66,13 @@ class GuardWorker {
   private buffered = '';
   private waiting: { resolve: (response: WorkerReady | WorkerResponse) => void; reject: (error: Error) => void } | undefined;
   private exited = false;
+  private readonly closed: Promise<void>;
 
-  constructor(private readonly child: ChildProcessWithoutNullStreams) {
+  constructor(private readonly child: ChildProcessWithoutNullStreams, private readonly signal: AbortSignal, private readonly commandTimeoutMs: number) {
+    this.closed = new Promise((resolveClosed) => child.once('close', () => resolveClosed()));
     child.stdout.setEncoding('utf8');
     child.stderr.resume();
+    child.stdin.on('error', (error) => this.reject(error));
     child.stdout.on('data', (chunk: string) => this.consume(chunk));
     child.on('error', (error) => this.reject(error));
     child.on('exit', () => {
@@ -106,17 +109,46 @@ class GuardWorker {
 
   async command(command: Record<string, string>): Promise<WorkerReady | WorkerResponse> {
     if (this.exited) throw fail('R2_GUARD_WORKER_EXITED');
+    if (this.waiting !== undefined) throw fail('R2_GUARD_BUSY');
+    if (this.signal.aborted) {
+      await this.terminate();
+      throw fail('R2_CHANGE_ABORTED');
+    }
+    let mustTerminate = false;
+    let timer: NodeJS.Timeout | undefined;
+    const interrupt = (code: string) => {
+      mustTerminate = true;
+      this.reject(fail(code));
+    };
+    const onAbort = () => interrupt('R2_CHANGE_ABORTED');
     const response = new Promise<WorkerReady | WorkerResponse>((resolveResponse, rejectResponse) => {
       this.waiting = { resolve: resolveResponse, reject: rejectResponse };
+      timer = setTimeout(() => interrupt('R2_GUARD_TIMEOUT'), this.commandTimeoutMs);
+      this.signal.addEventListener('abort', onAbort, { once: true });
+      this.child.stdin.write(`${JSON.stringify(command)}\n`, 'utf8', (error) => {
+        if (error !== null && error !== undefined) {
+          mustTerminate = true;
+          this.reject(error);
+        }
+      });
     });
-    await new Promise<void>((resolveWrite, rejectWrite) => {
-      this.child.stdin.write(`${JSON.stringify(command)}\n`, 'utf8', (error) => error ? rejectWrite(error) : resolveWrite());
-    });
-    return response;
+    try { return await response; }
+    finally {
+      clearTimeout(timer);
+      this.signal.removeEventListener('abort', onAbort);
+      if (mustTerminate) await this.terminate();
+    }
   }
 
   async terminate(): Promise<void> {
     if (!this.exited) this.child.kill();
+    let timer: NodeJS.Timeout | undefined;
+    try {
+      await Promise.race([
+        this.closed,
+        new Promise<never>((_, reject) => { timer = setTimeout(() => reject(fail('R2_GUARD_TERMINATION_FAILED')), 5_000); })
+      ]);
+    } finally { clearTimeout(timer); }
   }
 }
 
@@ -154,6 +186,7 @@ export interface WindowsGuardedWriterOptions {
   readonly workerPath?: string;
   readonly nativeGuardPath?: string;
   readonly shellPath?: string;
+  readonly commandTimeoutMs?: number;
 }
 
 export class WindowsGuardedWriter implements GuardedWriter {
@@ -161,9 +194,12 @@ export class WindowsGuardedWriter implements GuardedWriter {
   private readonly workerPath: string;
   private readonly nativeGuardPath: string;
   private readonly shellPath: string;
+  private readonly commandTimeoutMs: number;
 
   constructor(rootDirectory: string, options: WindowsGuardedWriterOptions = {}) {
     if (!isAbsolute(rootDirectory)) throw fail('R2_ROOT_NOT_ABSOLUTE');
+    this.commandTimeoutMs = options.commandTimeoutMs ?? 30_000;
+    if (!Number.isInteger(this.commandTimeoutMs) || this.commandTimeoutMs <= 0 || this.commandTimeoutMs > 60_000) throw fail('R2_GUARD_TIMEOUT_INVALID');
     this.rootReady = realpath(rootDirectory).then(async (path) => {
       const identity = await stat(path, { bigint: true });
       return { path, volumeSerial: identity.dev, fileIndex: identity.ino };
@@ -180,12 +216,13 @@ export class WindowsGuardedWriter implements GuardedWriter {
     const path = normalizeRelativePath(pathInput);
     const root = await this.rootReady;
     const target = await validateTarget(root.path, path);
+    if (signal.aborted) throw fail('R2_CHANGE_ABORTED');
     const child = spawn(this.shellPath, [
       '-NoLogo', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass',
       '-File', this.workerPath, '-NativeGuardPath', this.nativeGuardPath, '-Target', target,
       '-Root', root.path, '-RootVolumeSerialNumber', root.volumeSerial.toString(), '-RootFileIndex', root.fileIndex.toString()
     ], { stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
-    const worker = new GuardWorker(child);
+    const worker = new GuardWorker(child, signal, this.commandTimeoutMs);
     try {
       const response = await worker.command({ type: 'ready' });
       if (response.type !== 'ready') throw fail('R2_GUARD_PROTOCOL_INVALID');

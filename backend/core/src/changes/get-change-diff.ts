@@ -117,7 +117,7 @@ export class GetChangeDiff {
       const ownDiff = buildFileDiff(first.path, before, after, first.beforeHash, last.afterHash);
       const status = !chainValid || actualHash !== last.afterHash
         ? 'conflicted'
-        : last.kind === 'revert' || last.afterHash === first.beforeHash
+        : last.afterHash === first.beforeHash
           ? 'reverted'
           : 'changed';
       output.push(fileDiffSchema.parse({ ...ownDiff, status }));

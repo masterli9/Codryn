@@ -14,6 +14,8 @@ export interface R2ExecutionOptions {
   readonly projectId: string;
   readonly changeSetId: string | null;
   readonly openChangeSet?: (runId: Uuid) => Promise<string>;
+  /** Read durable recovery state independently of the cancelled run signal. */
+  readonly recoveryRequired: () => Promise<boolean>;
   readonly completion: () => Promise<{
     readonly changed: boolean;
     readonly verification: R2RunResult['verification'];
@@ -166,11 +168,14 @@ export class RunAgentLoop {
     } catch (error) {
       const cancelled = signal.aborted || code(error) === 'R1_CANCELLED';
       const failureCode = cancelled ? 'R1_CANCELLED' : code(error);
+      let recoveryRequired = true;
+      try { recoveryRequired = await options.recoveryRequired(); }
+      catch { /* An unavailable journal cannot establish that recovery is unnecessary. */ }
       try {
         const terminal = cancelled ? 'cancelled' : 'failed';
         await this.transition(runId, request.requestId, state, terminal, steps, cancelled ? undefined : failureCode);
       } catch { /* The stable R2 result remains explicit about its unverified state. */ }
-      const result = this.r2Failure(runId, steps, 'unverified', activeChangeSetId, cancelled ? 'The R2 run was cancelled.' : 'The R2 run did not reach a verified completion.', false, cancelled ? 'cancelled' : 'failed');
+      const result = this.r2Failure(runId, steps, 'unverified', activeChangeSetId, cancelled ? 'The R2 run was cancelled.' : 'The R2 run did not reach a verified completion.', recoveryRequired, cancelled ? 'cancelled' : 'failed');
       try { await this.persistR2Detail(runId, result, failureCode); } catch { /* The terminal projection remains the fallback when detail persistence fails. */ }
       return result;
     }

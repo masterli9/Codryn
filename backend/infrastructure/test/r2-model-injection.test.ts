@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { readFile, writeFile } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createR2Infrastructure, ScriptedModelAdapter, changeVerifyReturnScenario } from '../src/index.js';
 import { createR2Project } from '@codryn/test-support';
@@ -9,6 +10,7 @@ import { WindowsGuardedWriter } from '../src/filesystem/windows-guarded-writer.j
 import { R2CommandRunner } from '../src/process/r2-command-runner.js';
 import { ProjectGitState } from '../src/git/project-git-state.js';
 import { openR0Database } from '../src/persistence/open-database.js';
+import { SqliteMutationJournal } from '../src/persistence/sqlite-mutation-journal.js';
 
 // Lifecycle regressions use deterministic OS boundaries; separate host suites prove guards/process ownership.
 function deterministicBoundaries(root: string) {
@@ -24,6 +26,85 @@ function deterministicBoundaries(root: string) {
 afterEach(() => vi.restoreAllMocks());
 
 describe('R2 infrastructure model composition', () => {
+  it('keeps an interrupted publication recoverable after the file was replaced but acknowledgement was lost', async () => {
+    const fixture = await createR2Project('non-git');
+    const controller = new AbortController();
+    const marker = `${fixture.userData}/published-pid`;
+    const workerPath = `${fixture.userData}/interrupted-worker.ps1`;
+    const source = await readFile(fileURLToPath(new URL('../src/filesystem/windows-guarded-worker.ps1', import.meta.url)), 'utf8');
+    const publishLine = '            $guard.Publish($temporary)';
+    if (source.split(publishLine).length !== 2) throw new Error('Expected one native publication');
+    await writeFile(workerPath, source.replace(publishLine, [publishLine,
+      `            [IO.File]::WriteAllText('${marker.replaceAll("'", "''")}', [string]$PID)`,
+      '            while ($true) { Start-Sleep -Milliseconds 100 }'
+    ].join('\n')));
+    const realOpen = WindowsGuardedWriter.prototype.open;
+    const interruptedWriter = new WindowsGuardedWriter(fixture.root, { workerPath, commandTimeoutMs: 10_000 });
+    vi.spyOn(WindowsGuardedWriter.prototype, 'open').mockImplementation((path, hash, signal) => realOpen.call(interruptedWriter, path, hash, signal));
+    const infra = await createR2Infrastructure({ projectRoot: fixture.root, userDataPath: fixture.userData,
+      scenario: 'change-verify-return', permissionResponder: async () => 'allow_once' });
+    let pid: number | undefined;
+    const run = infra.agentLoop.executeR2({ requestId: randomUUID(), projectRoot: fixture.root,
+      task: 'Repair sum', contextReferences: [], maxSteps: 8 }, controller.signal);
+    try {
+      const deadline = Date.now() + 8_000;
+      while (Date.now() < deadline) {
+        const value = await readFile(marker, 'utf8').catch(() => null);
+        if (value !== null) { pid = Number(value); break; }
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+      if (pid === undefined || !Number.isSafeInteger(pid) || pid <= 0) throw new Error('No published worker identity');
+      const workerPid = pid;
+      expect(() => process.kill(workerPid, 0)).not.toThrow();
+      controller.abort();
+      const result = await run;
+      expect(result).toMatchObject({ status: 'cancelled', recoveryRequired: true });
+      expect(() => process.kill(workerPid, 0)).toThrow();
+      expect(await readFile(`${fixture.root}/sum.mjs`, 'utf8')).toContain('return a + b');
+      const db = openR0Database(`${fixture.userData}/codryn.sqlite`);
+      try {
+        expect(db.prepare("SELECT state FROM mutation_intents").get()?.state).toBe('prepared');
+        expect(db.prepare('SELECT confirmed_revision FROM mutation_intents').get()?.confirmed_revision).toBeNull();
+        await infra.recover.execute(infra.projectId, new AbortController().signal);
+        expect(db.prepare('SELECT state FROM mutation_intents').get()?.state).toBe('applied');
+        expect(db.prepare('SELECT COUNT(*) AS count FROM change_entries').get()?.count).toBe(1);
+      } finally { db.close(); }
+    } finally {
+      controller.abort();
+      await run;
+      infra.close(); await fixture.close();
+    }
+  }, 30_000);
+
+  it.each(['failed', 'cancelled', 'clean-failure', 'unavailable'] as const)('persists recovery truth on %s terminal paths', async (mode) => {
+    const fixture = await createR2Project('non-git');
+    const controller = new AbortController();
+    const original = await readFile(`${fixture.root}/sum.mjs`);
+    const scenario = changeVerifyReturnScenario({ expectedHash: createHash('sha256').update(original).digest('hex'), projectRoot: fixture.root });
+    // Only confirmation fails: real guarded publication, blobs and durable prepare remain active.
+    if (mode !== 'clean-failure') vi.spyOn(SqliteMutationJournal.prototype, 'confirm').mockRejectedValue(new Error('confirmation unavailable'));
+    const terminalStep = {
+      assertRequest: () => { if (mode === 'cancelled') controller.abort(); },
+      events: [{ type: 'failed' as const, error: { code: 'R1_MODEL_ADAPTER_FAILED' as const, message: 'Provider unavailable.' } }]
+    };
+    const infra = await createR2Infrastructure({ projectRoot: fixture.root, userDataPath: fixture.userData,
+      scenario: { id: 'terminal-recovery', steps: mode === 'clean-failure' ? [terminalStep] : [...scenario.steps.slice(0, 3), terminalStep] },
+      permissionResponder: async () => 'allow_once' });
+    if (mode === 'unavailable') vi.spyOn(SqliteMutationJournal.prototype, 'pending').mockRejectedValue(new Error('journal unavailable'));
+    try {
+      const result = await infra.agentLoop.executeR2({ requestId: randomUUID(), projectRoot: fixture.root,
+        task: 'Repair sum', contextReferences: [], maxSteps: 8 }, controller.signal);
+      expect(result).toMatchObject({ status: mode === 'cancelled' ? 'cancelled' : 'failed', recoveryRequired: mode !== 'clean-failure' });
+      const db = openR0Database(`${fixture.userData}/codryn.sqlite`);
+      try {
+        expect(db.prepare("SELECT COUNT(*) AS count FROM mutation_intents WHERE state = 'prepared'").get()?.count).toBe(mode === 'clean-failure' ? 0 : 1);
+        const detail = db.prepare('SELECT result_json FROM agent_run_details WHERE run_id = ?').get(result.runId);
+        expect(JSON.parse(String(detail?.result_json))).toEqual(result);
+      } finally { db.close(); }
+      expect(await readFile(`${fixture.root}/sum.mjs`)).toEqual(mode === 'clean-failure' ? original : Buffer.from(original.toString().replace('return a - b', 'return a + b')));
+    } finally { infra.close(); await fixture.close(); }
+  }, 30_000);
+
   it('rejects foreign revert and recovery in a shared database without changing either project', async () => {
     const a = await createR2Project('non-git');
     const b = await createR2Project('non-git');

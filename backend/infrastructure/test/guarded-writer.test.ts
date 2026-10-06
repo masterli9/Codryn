@@ -96,6 +96,61 @@ async function waitForSettled(promise: Promise<unknown>, timeoutMs: number): Pro
 }
 
 describe('WindowsGuardedWriter', () => {
+  it.runIf(process.platform === 'win32').each([
+    ['ready', 'abort'], ['publish', 'abort'], ['close', 'abort'],
+    ['ready', 'timeout'], ['publish', 'timeout'], ['close', 'timeout']
+  ])('bounds a stalled %s worker on %s and removes its process', async (phase, interruption) => {
+    const directory = await mkdtemp(join(tmpdir(), 'codryn-r2-stalled-guard-'));
+    const workerPath = join(directory, 'stalled.ps1');
+    const received = join(directory, 'received');
+    const pidFile = join(directory, 'pid');
+    const quote = (value: string) => `'${value.replaceAll("'", "''")}'`;
+    let pid: number | undefined;
+    let guard: GuardForTest | undefined;
+    let operation: Promise<unknown> | undefined;
+    try {
+      await writeFile(join(directory, 'example.ts'), 'before\n');
+      await writeFile(workerPath, [
+        'param($NativeGuardPath, $Target, $Root, $RootVolumeSerialNumber, $RootFileIndex)',
+        `[IO.File]::WriteAllText(${quote(pidFile)}, [string]$PID)`,
+        'while ($line = [Console]::ReadLine()) {',
+        '  $command = $line | ConvertFrom-Json',
+        `  if ($command.type -eq ${quote(phase)}) {`,
+        `    [IO.File]::WriteAllText(${quote(received)}, 'received')`,
+        '    while ($true) { Start-Sleep -Milliseconds 100 }',
+        '  }',
+        '  if ($command.type -eq "ready") { [Console]::WriteLine(\'{"type":"ready","bytes":"YmVmb3JlCg=="}\') }',
+        '  if ($command.type -eq "publish") { [Console]::WriteLine(\'{"type":"published"}\') }',
+        '}'
+      ].join('\n'));
+      const controller = new AbortController();
+      const writer = new WindowsGuardedWriter(directory, { workerPath, commandTimeoutMs: interruption === 'timeout' ? 1500 : 10_000 });
+      if (phase === 'ready') operation = writer.open('example.ts', digest('before\n'), controller.signal);
+      else {
+        guard = await writer.open('example.ts', digest('before\n'), controller.signal);
+        operation = phase === 'publish' ? guard.publish(Buffer.from('after\n')) : guard.close();
+      }
+      const outcome = operation.then(() => null, (error: unknown) => error);
+      await waitForFile(received);
+      pid = Number(await readFile(pidFile, 'utf8'));
+      const workerPid = pid;
+      expect(Number.isSafeInteger(workerPid) && workerPid > 0).toBe(true);
+      expect(() => process.kill(workerPid, 0)).not.toThrow();
+      if (interruption === 'abort') controller.abort();
+      expect(await waitForSettled(outcome, 4000)).toBe(true);
+      expect(await outcome).toBeInstanceOf(Error);
+      expect((await outcome as Error).message).toBe(interruption === 'abort' ? 'R2_CHANGE_ABORTED' : 'R2_GUARD_TIMEOUT');
+      expect(() => process.kill(workerPid, 0)).toThrow();
+      expect(await readFile(join(directory, 'example.ts'), 'utf8')).toBe('before\n');
+    } finally {
+      if (pid === undefined) pid = Number(await readFile(pidFile, 'utf8').catch(() => '0')) || undefined;
+      if (pid !== undefined) { try { process.kill(pid); } catch { /* Already stopped. */ } }
+      await operation?.catch(() => {});
+      await guard?.close().catch(() => {});
+      await rm(directory, { recursive: true, force: true });
+    }
+  }, 15_000);
+
   it.runIf(process.platform === 'win32')('reads and publishes through the native guard', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'codryn-r2-guarded-writer-'));
     try {

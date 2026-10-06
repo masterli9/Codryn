@@ -239,6 +239,7 @@ export async function createR2Infrastructure(options: {
         const result = await loop.executeR2(request, signal, {
           projectId,
           changeSetId: null,
+          recoveryRequired: async () => (await journal.pending(projectId)).length > 0,
           openChangeSet: async (openedRunId) => {
             const createdSetId = await changeSets.open(projectId, openedRunId);
             runSetId = createdSetId;
