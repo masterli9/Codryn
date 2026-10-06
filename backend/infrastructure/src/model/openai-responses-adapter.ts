@@ -1,7 +1,7 @@
 import { Buffer } from 'node:buffer';
 import { modelToolCallSchema, type ModelRequest, type ModelStreamEvent, type ModelDescriptor, type ModelToolDefinition } from '@codryn/shared';
 import type { IdGenerator, ModelAdapter } from '@codryn/core';
-import { ProviderTransportError, type ProviderTransport } from './provider-transport.js';
+import { ProviderHttpError, ProviderTransportError, type ProviderTransport } from './provider-transport.js';
 import { ProviderAdapterError, normalizeProviderError, providerStatus } from './provider-errors.js';
 import { externalToolMap, externalToolName } from './provider-tool-names.js';
 
@@ -126,6 +126,8 @@ export class OpenAIResponsesAdapter implements ModelAdapter {
 
   private normalize(error: unknown): ProviderAdapterError {
     if (error instanceof ProviderTransportError) return new ProviderAdapterError(error.code);
-    return new ProviderAdapterError(normalizeProviderError(providerStatus(error), false));
+    const httpStatus = error instanceof ProviderHttpError && error.status >= 100 && error.status <= 599
+      ? error.status : null;
+    return new ProviderAdapterError(normalizeProviderError(providerStatus(error), false), httpStatus);
   }
 }

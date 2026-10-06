@@ -26,6 +26,8 @@
     "verify:r2": "node scripts/verify-r2.mjs",
     "test:r1-repeatability": "node scripts/verify-r1-repeatability.mjs",
     "test:r2-provider-keys": "node --test scripts/r2-provider-key.test.mjs",
+    "test:r2-provider-eval": "node --test scripts/r2-provider-eval-selection.test.mjs",
+    "test:r2-live-report": "node --test scripts/r2-live-runner-report.test.mjs",
     "test:r2-repeatability": "node scripts/verify-r2-repeatability.mjs",
     "eval:r2-providers": "node --env-file-if-exists=.env scripts/eval-r2-providers.mjs",
     "verify:r2:live": "node --env-file-if-exists=.env scripts/verify-r2-live.mjs"

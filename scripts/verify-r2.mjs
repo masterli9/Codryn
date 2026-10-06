@@ -6,6 +6,8 @@ const checks = [
   [npm, ['run', 'lint']],
   [npm, ['run', 'check:deps']],
   [npm, ['test']],
+  [npm, ['run', 'test:r2-provider-eval']],
+  [npm, ['run', 'test:r2-live-report']],
   [npm, ['run', 'test:r1-repeatability']],
   [npm, ['run', 'test:r2-repeatability']],
   [npm, ['run', 'package']],

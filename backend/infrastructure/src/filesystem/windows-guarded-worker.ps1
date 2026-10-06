@@ -3,7 +3,13 @@ param(
   [Parameter(Mandatory = $true)]
   [string]$NativeGuardPath,
   [Parameter(Mandatory = $true)]
-  [string]$Target
+  [string]$Target,
+  [Parameter(Mandatory = $true)]
+  [string]$Root,
+  [Parameter(Mandatory = $true)]
+  [uint32]$RootVolumeSerialNumber,
+  [Parameter(Mandatory = $true)]
+  [uint64]$RootFileIndex
 )
 
 $ErrorActionPreference = 'Stop'
@@ -14,10 +20,15 @@ function Send-Response([hashtable]$Response) {
   [Console]::Out.Flush()
 }
 
-function Error-Code([string]$Message) {
-  if ($Message -match '^R2_[A-Z0-9_]+$') { return $Message }
-  if ($Message -match 'multiply-linked') { return 'R2_PATH_HARDLINK' }
-  if ($Message -match 'oplock') { return 'R2_GUARD_UNSUPPORTED' }
+function Error-Code([System.Exception]$Exception) {
+  $current = $Exception
+  while ($null -ne $current) {
+    $message = $current.Message
+    if ($message -match '^R2_[A-Z0-9_]+$') { return $message }
+    if ($message -match 'multiply-linked') { return 'R2_PATH_HARDLINK' }
+    if ($message -match 'oplock') { return 'R2_GUARD_UNSUPPORTED' }
+    $current = $current.InnerException
+  }
   return 'R2_GUARD_OPERATION_FAILED'
 }
 
@@ -41,7 +52,7 @@ function Write-Candidate([string]$Path, [byte[]]$Bytes) {
 
 $guard = $null
 try {
-  $guard = [CodrynR2NativeGuard]::Open($Target)
+  $guard = [CodrynR2NativeGuard]::Open($Target, $Root, $RootVolumeSerialNumber, $RootFileIndex)
   $bytes = $guard.ReadAllBytes()
   if ($guard.Broken) { throw 'R2_GUARD_BROKEN' }
 
@@ -53,19 +64,27 @@ try {
           Send-Response @{ type = 'ready'; bytes = [Convert]::ToBase64String($bytes) }
         }
         'publish' {
-          if ($guard.Broken) { throw 'R2_GUARD_BROKEN' }
           $candidate = [Convert]::FromBase64String([string]$command.bytes)
-          $temporary = Join-Path ([System.IO.Path]::GetDirectoryName($Target)) ('.codryn-r2-' + [Guid]::NewGuid().ToString('N') + '.tmp')
+          $temporary = $null
+          $guard.BeginPublish()
           try {
+            $temporary = Join-Path ([System.IO.Path]::GetDirectoryName($Target)) ('.codryn-r2-' + [Guid]::NewGuid().ToString('N') + '.tmp')
             Write-Candidate $temporary $candidate
-            if ($guard.Broken) { throw 'R2_GUARD_BROKEN' }
-            [CodrynR2NativeGuard]::ReplaceAbsolute($temporary, $Target)
+            $guard.Publish($temporary)
             Send-Response @{ type = 'published' }
           } finally {
-            if ([System.IO.File]::Exists($temporary)) { [System.IO.File]::Delete($temporary) }
+            try {
+              if ($null -ne $temporary -and [System.IO.File]::Exists($temporary)) { [System.IO.File]::Delete($temporary) }
+            } finally {
+              $guard.EndPublish()
+            }
           }
         }
         'close' {
+          if ($null -ne $guard) {
+            $guard.Dispose()
+            $guard = $null
+          }
           Send-Response @{ type = 'closed' }
           break
         }
@@ -73,11 +92,11 @@ try {
       }
       if ([string]$command.type -eq 'close') { break }
     } catch {
-      Send-Response @{ type = 'error'; code = (Error-Code $_.Exception.Message) }
+      Send-Response @{ type = 'error'; code = (Error-Code $_.Exception) }
     }
   }
 } catch {
-  Send-Response @{ type = 'error'; code = (Error-Code $_.Exception.Message) }
+  Send-Response @{ type = 'error'; code = (Error-Code $_.Exception) }
   exit 1
 } finally {
   if ($null -ne $guard) { $guard.Dispose() }

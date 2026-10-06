@@ -2,7 +2,7 @@ import { Buffer } from 'node:buffer';
 import { modelToolCallSchema, type ModelDescriptor, type ModelRequest, type ModelStreamEvent } from '@codryn/shared';
 import type { ModelAdapter } from '@codryn/core';
 import { ProviderAdapterError, normalizeProviderError, providerStatus } from './provider-errors.js';
-import { ProviderTransportError } from './provider-transport.js';
+import { ProviderHttpError, ProviderTransportError } from './provider-transport.js';
 import type { ProviderAdapterOptions } from './openai-responses-adapter.js';
 import { externalToolMap, externalToolName } from './provider-tool-names.js';
 import type { ModelToolDefinition } from '@codryn/shared';
@@ -100,8 +100,8 @@ export class GeminiAdapter implements ModelAdapter {
     let usage: { inputTokens: number; outputTokens: number } | undefined;
     try {
       events = this.options.transport.stream({
-        url: `${this.endpoint}/${encodeURIComponent(this.options.modelId)}:streamGenerateContent?alt=sse&key=${encodeURIComponent(key)}`,
-        headers: { 'content-type': 'application/json' },
+        url: `${this.endpoint}/${encodeURIComponent(this.options.modelId)}:streamGenerateContent?alt=sse`,
+        headers: { 'content-type': 'application/json', 'x-goog-api-key': key },
         body: {
           contents,
           tools: tools(request),
@@ -184,7 +184,9 @@ export class GeminiAdapter implements ModelAdapter {
 
   private normalize(error: unknown): ProviderAdapterError {
     if (error instanceof ProviderTransportError) return new ProviderAdapterError(error.code);
-    return new ProviderAdapterError(normalizeProviderError(providerStatus(error), false));
+    const httpStatus = error instanceof ProviderHttpError && error.status >= 100 && error.status <= 599
+      ? error.status : null;
+    return new ProviderAdapterError(normalizeProviderError(providerStatus(error), false), httpStatus);
   }
 
   private getRun(runId: string): GeminiRunState | undefined {

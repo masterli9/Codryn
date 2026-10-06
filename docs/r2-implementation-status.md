@@ -1,18 +1,20 @@
 # R2 – stav implementace
 
-Datum checkpointu: 2026-09-14
+Datum checkpointu: 2026-10-05
 
 Větev: `feat/r2-change-lifecycle`
 
-Poslední výchozí commit před checkpointem: `9140f2a`
+Výchozí commit před tímto pracovním průchodem: `3bdd57e3b8b9349494b59be26df92b4ff474aeae`
 
 ## Souhrn
 
-Lokální implementační části R2 jsou hotové v souladu s aktuálním
-`PRD_v1.0.md`, schváleným návrhem a implementačním plánem. Packaged Windows
-smoke je ověřený; k formálnímu uzavření R2 stále chybí autorský checklist a
-skutečná provider evaluace. Tento dokument není prohlášením, že je R2 plně
-akceptované.
+Lokální R2 implementace prošla čerstvým hostním ověřením. OpenAI Responses
+`gpt-6-luna` je vybrán autorem; pětipokusový live acceptance gate prošel 4/5
+a splnil AC-O1-04. OD-04 je uzavřeno autorským rozhodnutím zaznamenaným v PRD
+v1.1 a ADR 0007; head-to-head s Gemini není součástí výběru ani se netvrdí.
+
+Bezpečné reportování samotného HTTP statusu prošlo lokálním ověřením. PR se
+v tomto kroku neotevírá ani neupravuje.
 
 ## Implementováno
 
@@ -30,43 +32,36 @@ akceptované.
 
 ## Ověřený důkaz
 
-- `npm.cmd test`: 464 testů prošlo, 3 byly přeskočeny; 2 přeskočení se týkají
-  volitelného packaged režimu.
-- `npm.cmd run typecheck`: prošel.
-- `npm.cmd run lint`: prošel.
-- `npm.cmd run check:deps`: prošel bez porušení závislostních pravidel.
-- `npm.cmd run test:r2-repeatability`: 20/20 běhů pro Git i non-Git prošlo.
-- `npm.cmd test`: 65 souborů; 510 testů prošlo a 3 jsou záměrně přeskočené.
-- `backend/infrastructure/test/process-runner.test.ts`: 28/28 prošlo po opravě
-  fallbacku sirotčích Windows process trees.
-- `node scripts/verify-packaged-r0.mjs`: prošlo, všech 11 R0 kontrol má `pass`.
-- `node scripts/verify-packaged-r2.mjs`: prošlo; database, guarded write,
-  process tree i návrat baseline mají úspěšný stav.
-- Offline `npm.cmd run eval:r2-providers`: bezpečně skončil bez výběru modelu,
-  protože nebyla dodána live data.
+- `npm.cmd run verify:r2` na Windows hostu: prošel.
+- Typecheck, lint a `check:deps` prošly; dependency cruiser ověřil 217 modulů a
+  599 závislostí.
+- Vitest: 63 souborů prošlo, 2 byly přeskočeny; 531 testů prošlo a 3 byly
+  přeskočeny.
+- `npm.cmd run test:r2-provider-eval`: 7/7; ověřuje volitelný srovnávací výběr,
+  který po autorské volbě GPT-6 Luna není povinnou R2 branou.
+- `npm.cmd run test:r2-live-report`: 6/6; rate-limit failure ownership a
+  nastavení počtu retry se nyní zaznamenávají správně.
+- R1 repeatability: 1/1; R2 repeatability: 20/20 pro Git i non-Git.
+- `npm.cmd run package`, packaged R0 verifier a packaged R2 verifier prošly.
+- Cílená guarded-writer sada: 6/6 včetně přímé/hlubší junction, výměny root
+  adresáře a změny nesouvisejícího souboru vedle projektu.
+- Úplný hostní verifier dokončil i zabalený R0/R2 smoke; první omezený běh
+  selhal pouze na procesech, které sandbox nemohl ukončit.
 
 Výše uvedené packaged kontroly ověřily R0 diagnostický runner a samostatný R2
 Job Object. R0 při neúspěšném `taskkill` hlásí `treeTerminated: false`; záruku
 vlastnictví a ukončení stromu poskytuje až R2 Job Object podle ADR 0006.
 
-## Otevřené akceptační brány
+## Před otevřením PR
 
-1. Vyplnit autorský checklist vlastními slovy a ověřit neověřené kroky.
-2. Spustit skutečnou evaluaci providerů a vybrat model až z úplných dat.
-3. Spustit pět autorizovaných live trialů (3 Git, 2 non-Git) podle M4,
-   s pozitivním cost capem, cenami a jejich zdrojem. V této relaci nebyl
-   použit žádný `R2_PROVIDER_API_KEY`.
-4. Po průchodu branami provést finální requirement audit a případně rozdělit
-   checkpoint na menší tematické commity.
-
-## Doporučený start zítra
-
-```powershell
-npm.cmd run typecheck
-npm.cmd test
-npm.cmd run package
-node scripts/verify-packaged-r0.mjs
-node scripts/verify-packaged-r2.mjs
-```
-
-Teprve potom má smysl řešit live provider credentials a M4 acceptance gate.
+1. Před dalším krokem zkontrolovat finální diff: zahrnuje R2 lifecycle a
+   guarded write/process ownership, provider adaptéry a transport, testy a
+   eval/verification skripty, sanitizovaný report a rozhodovací dokumentaci.
+   Při přípravě PR zachovat ostatní již existující pracovní změny.
+2. `docs/r2-author-checklist.md` nyní ukazuje 12/12 zaškrtnutých položek, ale
+   sedm změn proti HEAD nemá ověřené autorství. Autor před PR potvrdí vlastní
+   attestaci, nebo políčka opraví; agent je nezaškrtává za autora.
+3. Před odesíláním soukromého projektového obsahu uplatnit upozornění a
+   potvrzení vyžadované FR-LLM-09/13 v PRD v1.1.
+4. PR nebylo otevřeno. Jeho otevření, následná kontrola a případné sloučení
+   zůstávají samostatným dalším krokem autora.

@@ -9,6 +9,11 @@ import {
   providerChildEnvironment,
   providerKeyEnvironmentName,
 } from './r2-provider-key.mjs';
+import {
+  calculateTrialCostUsd,
+  readProviderPricing,
+  selectProvider,
+} from './r2-provider-eval-selection.mjs';
 
 const candidates = [
   { provider: 'openai', model: 'gpt-5.6-luna', reasoningEffort: 'none' },
@@ -18,7 +23,7 @@ const args = process.argv.slice(2);
 const valueAfter = (flag) => { const index = args.indexOf(flag); return index < 0 ? undefined : args[index + 1]; };
 const outputPath = valueAfter('--output');
 const offlineReport = {
-  schemaVersion: 1,
+  schemaVersion: 2,
   protocolId: randomUUID(),
   generatedAt: new Date().toISOString(),
   mode: 'offline-contract-only',
@@ -40,22 +45,27 @@ if (!args.includes('--live')) {
 }
 
 const maxCost = Number(valueAfter('--max-cost-usd'));
-const inputPrice = Number(valueAfter('--input-usd-per-million'));
-const outputPrice = Number(valueAfter('--output-usd-per-million'));
-const pricingSource = valueAfter('--pricing-source');
+const pricingByProvider = Object.fromEntries(candidates.map((candidate) => [
+  candidate.provider,
+  readProviderPricing(candidate.provider, args),
+]));
+const missingPricingProviders = candidates
+  .filter((candidate) => pricingByProvider[candidate.provider] === undefined)
+  .map((candidate) => candidate.provider);
 const missingProviderKeys = candidates
   .filter((candidate) => {
     const key = process.env[providerKeyEnvironmentName(candidate.provider)];
     return typeof key !== 'string' || key.length === 0;
   })
   .map((candidate) => candidate.provider);
-if (!Number.isFinite(maxCost) || maxCost <= 0 || !Number.isFinite(inputPrice) || inputPrice <= 0
-  || !Number.isFinite(outputPrice) || outputPrice <= 0 || typeof pricingSource !== 'string' || !/^https:\/\//.test(pricingSource)
-  || missingProviderKeys.length > 0) {
+if (!Number.isFinite(maxCost) || maxCost <= 0 || missingPricingProviders.length > 0 || missingProviderKeys.length > 0) {
   const keyReason = missingProviderKeys.length > 0
     ? ` Missing provider-specific key(s): ${missingProviderKeys.join(', ')}.`
     : '';
-  await emit({ ...offlineReport, mode: 'live-eval', liveGate: { status: 'blocked', reason: `Live eval needs a positive cost cap, pricing profile, source URL and local provider keys.${keyReason}` } });
+  const pricingReason = missingPricingProviders.length > 0
+    ? ` Missing valid provider-specific pricing profile(s): ${missingPricingProviders.join(', ')}.`
+    : '';
+  await emit({ ...offlineReport, mode: 'live-eval', liveGate: { status: 'blocked', reason: `Live eval needs a positive cost cap, provider-specific pricing profiles and local provider keys.${pricingReason}${keyReason}` } });
   process.exit(2);
 }
 
@@ -69,12 +79,14 @@ const loader = pathToFileURL(loaderPath).href;
 const runner = 'scripts/r2-live-runner.ts';
 
 function runCandidate(candidate) {
+  const pricing = pricingByProvider[candidate.provider];
   const childArgs = [
     '--no-warnings', '--experimental-loader', loader, '--experimental-transform-types', runner,
     '--provider', candidate.provider, '--model', candidate.model, '--series', 'eval',
     '--max-cost-usd', String(maxCost / candidates.length),
-    '--input-usd-per-million', String(inputPrice), '--output-usd-per-million', String(outputPrice),
-    '--pricing-source', pricingSource
+    '--input-usd-per-million', String(pricing.inputUsdPerMillion),
+    '--output-usd-per-million', String(pricing.outputUsdPerMillion),
+    '--pricing-source', pricing.source
   ];
   const reasoning = valueAfter('--reasoning-effort') ?? candidate.reasoningEffort;
   if (reasoning !== undefined) childArgs.push('--reasoning-effort', reasoning);
@@ -91,9 +103,14 @@ function runCandidate(candidate) {
     const report = JSON.parse(line);
     return {
       ...candidate,
-      trials: Array.isArray(report.trials) ? report.trials : [],
+      pricing,
+      trials: Array.isArray(report.trials)
+        ? report.trials.map((trial) => ({
+          ...trial,
+          costUsd: calculateTrialCostUsd(trial.usage, pricing),
+        }))
+        : [],
       summary: report.summary,
-      pricing: report.pricing,
       settings: report.settings,
       status: report.status === 'complete' ? 'complete' : 'unverified'
     };
@@ -103,33 +120,16 @@ function runCandidate(candidate) {
 }
 
 const evaluated = candidates.map(runCandidate);
-const complete = evaluated.every((candidate) => candidate.status === 'complete' && candidate.trials.length === 6);
-const compare = (left, right) => {
-  const leftSuccesses = left.trials.filter((trial) => trial.successful).length;
-  const rightSuccesses = right.trials.filter((trial) => trial.successful).length;
-  if (leftSuccesses !== rightSuccesses) return rightSuccesses - leftSuccesses;
-  const leftRepairs = left.trials.filter((trial) => trial.repairedAfterError).length;
-  const rightRepairs = right.trials.filter((trial) => trial.repairedAfterError).length;
-  if (leftRepairs !== rightRepairs) return rightRepairs - leftRepairs;
-  const leftCost = left.trials.reduce((total, trial) => total + (typeof trial.costUsd === 'number' ? trial.costUsd : Number.POSITIVE_INFINITY), 0);
-  const rightCost = right.trials.reduce((total, trial) => total + (typeof trial.costUsd === 'number' ? trial.costUsd : Number.POSITIVE_INFINITY), 0);
-  if (leftCost !== rightCost) return leftCost - rightCost;
-  const leftLatency = left.trials.reduce((total, trial) => total + (typeof trial.durationMs === 'number' ? trial.durationMs : Number.POSITIVE_INFINITY), 0);
-  const rightLatency = right.trials.reduce((total, trial) => total + (typeof trial.durationMs === 'number' ? trial.durationMs : Number.POSITIVE_INFINITY), 0);
-  return leftLatency - rightLatency;
-};
-const winner = complete ? [...evaluated].sort(compare)[0] : undefined;
+const selection = selectProvider(evaluated);
 const report = {
-  schemaVersion: 1,
+  schemaVersion: 2,
   protocolId: randomUUID(),
   generatedAt: new Date().toISOString(),
   mode: 'live-eval',
-  pricing: { inputUsdPerMillion: inputPrice, outputUsdPerMillion: outputPrice, source: pricingSource },
+  pricingByProvider,
   candidates: evaluated,
-  selection: winner === undefined
-    ? { status: 'pending', reason: 'The complete six-trial sample for every candidate is unavailable.' }
-    : { status: 'selected', provider: winner.provider, model: winner.model, rationale: 'Complete equal-size sample ranked by successful completion, recovery after failure, cost and latency.' },
+  selection,
   liveGate: { status: 'not_applicable', reason: 'Candidate evaluation uses six trials per candidate; selected-model acceptance uses verify:r2:live with five trials.' }
 };
 await emit(report);
-process.exitCode = complete ? 0 : 3;
+process.exitCode = selection.status === 'selected' ? 0 : 3;

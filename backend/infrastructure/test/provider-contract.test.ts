@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { collectModelResponse } from '@codryn/core';
 import { GeminiAdapter, OpenAIResponsesAdapter, ProviderAdapterError } from '../src/index.js';
+import { ProviderHttpError } from '../src/model/provider-transport.js';
 import type { ProviderTransport } from '../src/model/provider-transport.js';
 import { externalToolMap } from '../src/model/provider-tool-names.js';
 import type { ModelRequest } from '@codryn/shared';
@@ -108,6 +109,22 @@ describe('R2 provider adapters', () => {
     await collectModelResponse(adapter.stream(nextRequest, new AbortController().signal), new AbortController().signal);
     expect(JSON.stringify(sent[1])).toContain('functionResponse');
     expect(JSON.stringify(sent)).not.toContain('TEST_SECRET_CANARY');
+  });
+
+  it('sends the Gemini API key only in the x-goog-api-key header', async () => {
+    let sent: Parameters<ProviderTransport['stream']>[0] | undefined;
+    const transport: ProviderTransport = { async *stream(input) {
+      sent = input;
+      yield { candidates: [{ content: { parts: [{ text: 'done' }] }, finishReason: 'STOP' }] };
+    } };
+    const adapter = new GeminiAdapter({ modelId: 'fixture', key: () => 'TEST_SECRET_CANARY', transport, ids });
+
+    await collectModelResponse(adapter.stream(request, new AbortController().signal), new AbortController().signal);
+
+    if (sent === undefined) throw new Error('Expected a Gemini request');
+    expect(new URL(sent.url).searchParams.has('key')).toBe(false);
+    expect(sent.url).not.toContain('TEST_SECRET_CANARY');
+    expect(sent.headers['x-goog-api-key']).toBe('TEST_SECRET_CANARY');
   });
 
   it('removes JSON Schema keywords unsupported by Gemini function declarations', async () => {
@@ -400,6 +417,32 @@ describe('R2 provider adapters', () => {
     ])).toThrow(ProviderAdapterError);
   });
 
+  it('retains only the HTTP status when normalizing an OpenAI provider error', async () => {
+    const adapter = new OpenAIResponsesAdapter({
+      modelId: 'fixture', key: () => 'key', ids,
+      transport: failingTransport(new ProviderHttpError(404))
+    });
+
+    await expect((async () => {
+      for await (const event of adapter.stream(request, new AbortController().signal)) void event;
+    })()).rejects.toMatchObject({ code: 'provider_error', httpStatus: 404, message: 'Model provider request failed.' });
+  });
+
+  it.each([
+    ['status field', Object.assign(new Error('private provider detail'), { status: 429 })],
+    ['numeric code', Object.assign(new Error('private provider detail'), { code: 429 })],
+    ['nested numeric code', Object.assign(new Error('private provider detail'), { error: { code: 429 } })]
+  ])('does not report a generic %s as an HTTP response status', async (_label, error) => {
+    const adapter = new OpenAIResponsesAdapter({
+      modelId: 'fixture', key: () => 'key', ids,
+      transport: failingTransport(error)
+    });
+
+    await expect((async () => {
+      for await (const event of adapter.stream(request, new AbortController().signal)) void event;
+    })()).rejects.toMatchObject({ code: 'rate_limit', httpStatus: null, message: 'Model provider request failed.' });
+  });
+
   it.each([
     ['OpenAI auth', new OpenAIResponsesAdapter({ modelId: 'fixture', key: () => 'key', ids, transport: failingTransport(Object.assign(new Error('unauthorized'), { status: 401 })) }), 'auth'],
     ['OpenAI rate limit', new OpenAIResponsesAdapter({ modelId: 'fixture', key: () => 'key', ids, transport: failingTransport(Object.assign(new Error('limited'), { status: 429 })) }), 'rate_limit'],
@@ -408,6 +451,6 @@ describe('R2 provider adapters', () => {
   ])('normalizes %s', async (_label, adapter, code) => {
     await expect((async () => {
       for await (const event of adapter.stream(request, new AbortController().signal)) void event;
-    })()).rejects.toMatchObject({ code });
+    })()).rejects.toMatchObject({ code, httpStatus: null });
   });
 });

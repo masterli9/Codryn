@@ -157,14 +157,17 @@ export interface WindowsGuardedWriterOptions {
 }
 
 export class WindowsGuardedWriter implements GuardedWriter {
-  private readonly rootReady: Promise<string>;
+  private readonly rootReady: Promise<{ path: string; volumeSerial: bigint; fileIndex: bigint }>;
   private readonly workerPath: string;
   private readonly nativeGuardPath: string;
   private readonly shellPath: string;
 
   constructor(rootDirectory: string, options: WindowsGuardedWriterOptions = {}) {
     if (!isAbsolute(rootDirectory)) throw fail('R2_ROOT_NOT_ABSOLUTE');
-    this.rootReady = realpath(rootDirectory);
+    this.rootReady = realpath(rootDirectory).then(async (path) => {
+      const identity = await stat(path, { bigint: true });
+      return { path, volumeSerial: identity.dev, fileIndex: identity.ino };
+    });
     this.workerPath = options.workerPath ?? externalAssetPath(fileURLToPath(new URL('./windows-guarded-worker.ps1', import.meta.url)));
     this.nativeGuardPath = options.nativeGuardPath ?? externalAssetPath(fileURLToPath(new URL('./windows-guard-native.cs', import.meta.url)));
     this.shellPath = options.shellPath ?? 'powershell.exe';
@@ -176,10 +179,11 @@ export class WindowsGuardedWriter implements GuardedWriter {
     if (signal.aborted) throw fail('R2_CHANGE_ABORTED');
     const path = normalizeRelativePath(pathInput);
     const root = await this.rootReady;
-    const target = await validateTarget(root, path);
+    const target = await validateTarget(root.path, path);
     const child = spawn(this.shellPath, [
       '-NoLogo', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass',
-      '-File', this.workerPath, '-NativeGuardPath', this.nativeGuardPath, '-Target', target
+      '-File', this.workerPath, '-NativeGuardPath', this.nativeGuardPath, '-Target', target,
+      '-Root', root.path, '-RootVolumeSerialNumber', root.volumeSerial.toString(), '-RootFileIndex', root.fileIndex.toString()
     ], { stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
     const worker = new GuardWorker(child);
     try {

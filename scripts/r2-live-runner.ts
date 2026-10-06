@@ -26,10 +26,17 @@ import {
   SessionSecret,
   UuidGenerator
 } from '@codryn/infrastructure';
+import type { ProviderTransport } from '@codryn/infrastructure';
+import {
+  classifyFailureOwner,
+  createGeminiLiveReportSettings,
+  geminiLiveMaxRateLimitRetries,
+} from './r2-live-runner-report.mjs';
 
 const execFileAsync = promisify(execFile);
 const maxRequestsPerTrial = 12;
 const maxOutputTokens = 4096;
+const geminiLiveRequestPacing = { maxRequestsPerMinute: 4, minimumSpacingMs: 15_000 } as const;
 type TrialVariant = 'simple' | 'stale-hash' | 'test-failure';
 type TrialMode = 'git' | 'non-git';
 
@@ -65,6 +72,7 @@ interface TrialReport extends Trial {
   readonly stepCount: number | null;
   readonly revertStatus: string | null;
   readonly failureCode: string | null;
+  readonly providerHttpStatus: number | null;
 }
 
 class LiveHarnessFailure extends Error {
@@ -98,6 +106,7 @@ class BudgetedModelAdapter implements ModelAdapter {
   private missingUsage = false;
   private readonly reservedValue = { value: 0 };
   private failureCodeValue: string | null = null;
+  private providerHttpStatusValue: number | null = null;
 
   constructor(
     private readonly inner: ModelAdapter,
@@ -112,6 +121,7 @@ class BudgetedModelAdapter implements ModelAdapter {
   get validCalls(): number { return this.validCallsValue; }
   get invalidCalls(): number { return this.invalidCallsValue; }
   get failureCode(): string | null { return this.failureCodeValue; }
+  get providerHttpStatus(): number | null { return this.providerHttpStatusValue; }
   get commandUsageTotals(): UsageTotals | null {
     return this.requestCountValue > 0 && !this.missingUsage ? this.commandUsage : null;
   }
@@ -142,6 +152,7 @@ class BudgetedModelAdapter implements ModelAdapter {
         }
       } catch (error) {
         this.failureCodeValue ??= providerErrorCode(error);
+        if (error instanceof ProviderAdapterError) this.providerHttpStatusValue ??= error.httpStatus;
         if (error instanceof ProviderAdapterError && error.code === 'invalid_tool_call') this.invalidCallsValue += 1;
         throw error;
       } finally {
@@ -258,11 +269,19 @@ function providerErrorCode(error: unknown): string | null {
   return null;
 }
 
-function failureOwner(error: unknown, result: { status?: string; verification?: { status?: string } } | undefined): Trial['failureOwner'] {
-  if (error instanceof ProviderAdapterError) return error.code === 'invalid_tool_call' ? 'adapter' : 'api';
-  if (error instanceof LiveHarnessFailure) return 'harness';
-  if (result?.verification?.status === 'unverified' || result?.verification?.status === 'stale') return 'harness';
-  return 'model';
+function failureOwner(
+  error: unknown,
+  result: { status?: string; verification?: { status?: string } } | undefined,
+  reportedFailureCode?: string | null,
+  harnessInjectedFailure = false
+): Trial['failureOwner'] {
+  return classifyFailureOwner({
+    failureCode: reportedFailureCode ?? providerErrorCode(error),
+    adapterError: error instanceof ProviderAdapterError,
+    harnessError: error instanceof LiveHarnessFailure,
+    harnessInjectedFailure,
+    verificationStatus: result?.verification?.status
+  });
 }
 
 function taskFor(variant: TrialVariant, projectRoot: string, runtimeExecutable: string): string {
@@ -273,7 +292,7 @@ function taskFor(variant: TrialVariant, projectRoot: string, runtimeExecutable: 
   return `Oprav pouze implementaci funkce sum v sum.mjs tak, aby vracela a + b. Pouzij text.search a file.read, potom file.patch s aktualnim hashem. ${commandInstruction} Nakonec vrat kratke shrnuti.`;
 }
 
-async function runTrial(input: LiveArguments, mode: TrialMode, variant: TrialVariant, ledger: BudgetLedger, apiKey: string): Promise<TrialReport> {
+async function runTrial(input: LiveArguments, mode: TrialMode, variant: TrialVariant, ledger: BudgetLedger, apiKey: string, transport: ProviderTransport): Promise<TrialReport> {
   const startedAt = Date.now();
   const fixture = await createFixture(mode, variant);
   let beforeAgentPatch = await readFile(fixture.sumPath);
@@ -285,11 +304,11 @@ async function runTrial(input: LiveArguments, mode: TrialMode, variant: TrialVar
   const secret = new SessionSecret(() => apiKey);
   const ids = new UuidGenerator();
   const inner = input.provider === 'openai'
-    ? new OpenAIResponsesAdapter({ modelId: input.model, key: () => secret.get(), transport: new FetchProviderTransport(), ids, ...(input.reasoningEffort === undefined ? {} : { reasoningEffort: input.reasoningEffort }) })
+    ? new OpenAIResponsesAdapter({ modelId: input.model, key: () => secret.get(), transport, ids, ...(input.reasoningEffort === undefined ? {} : { reasoningEffort: input.reasoningEffort }) })
     : new GeminiAdapter({
         modelId: input.model,
         key: () => secret.get(),
-        transport: new FetchProviderTransport(),
+        transport,
         ids,
         ...(input.thinkingLevel === undefined ? {} : { thinkingLevel: input.thinkingLevel }),
         ...(input.thinkingBudget === undefined ? {} : { thinkingBudget: input.thinkingBudget })
@@ -342,10 +361,12 @@ async function runTrial(input: LiveArguments, mode: TrialMode, variant: TrialVar
         && reverted.status === 'reverted'
         && Buffer.compare(beforeAgentPatch, restored) === 0
         && Buffer.compare(testBefore, testAfter) === 0;
+      const failureCode = successful ? null : model.failureCode ?? `result_${result.verification.status}_${revertStatus ?? 'no_revert'}`;
+      const harnessInjectedConflict = failureInjected && revertStatus === 'conflicted';
       const usage = model.commandUsageTotals;
       return {
         id: randomUUID(), provider: input.provider, model: input.model, successful,
-        failureOwner: successful ? null : failureOwner(undefined, result),
+        failureOwner: successful ? null : failureOwner(undefined, result, failureCode, harnessInjectedConflict),
         validCalls: model.validCalls, invalidCalls: model.invalidCalls,
         repairedAfterError: commandFailures > 0, durationMs: Date.now() - startedAt,
         costUsd: calculateUsageCost(usage, input.pricing), mode, variant,
@@ -353,7 +374,8 @@ async function runTrial(input: LiveArguments, mode: TrialMode, variant: TrialVar
         reservedCostUsd: model.reservedCostUsd, usage, commandFailures,
         commandOutcomes, resultStatus: result.status, verificationStatus: result.verification.status,
         verificationReason: result.verification.reason, stepCount: result.stepCount, revertStatus,
-        failureCode: successful ? null : model.failureCode ?? `result_${result.verification.status}_${revertStatus ?? 'no_revert'}`
+        failureCode,
+        providerHttpStatus: model.providerHttpStatus
       };
     }
   } catch (error) {
@@ -366,14 +388,15 @@ async function runTrial(input: LiveArguments, mode: TrialMode, variant: TrialVar
   const usage = model.commandUsageTotals;
   return {
     id: randomUUID(), provider: input.provider, model: input.model, successful: false,
-    failureOwner: failureOwner(failure, result), validCalls: model.validCalls, invalidCalls: model.invalidCalls,
+    failureOwner: failureOwner(failure, result, model.failureCode), validCalls: model.validCalls, invalidCalls: model.invalidCalls,
     repairedAfterError: commandFailures > 0, durationMs: Date.now() - startedAt,
     costUsd: calculateUsageCost(usage, input.pricing), mode, variant,
     fixtureHash: fixture.fixtureHash, requestCount: model.requestCount,
     reservedCostUsd: model.reservedCostUsd, usage, commandFailures,
     commandOutcomes, resultStatus: result?.status ?? null, verificationStatus: result?.verification.status ?? null,
     verificationReason: result?.verification.reason ?? null, stepCount: result?.stepCount ?? null, revertStatus,
-    failureCode: model.failureCode ?? providerErrorCode(failure)
+    failureCode: model.failureCode ?? providerErrorCode(failure),
+    providerHttpStatus: model.providerHttpStatus
   };
 }
 
@@ -387,6 +410,11 @@ async function main(): Promise<void> {
   }
   const protocolId = randomUUID();
   const ledger = new BudgetLedger();
+  const geminiLive = input.provider === 'gemini' && input.series === 'live';
+  const transportOptions = geminiLive
+    ? { maxRateLimitRetries: geminiLiveMaxRateLimitRetries, minRequestIntervalMs: geminiLiveRequestPacing.minimumSpacingMs }
+    : {};
+  const transport: ProviderTransport = new FetchProviderTransport(transportOptions);
   const plan: readonly { mode: TrialMode; variant: TrialVariant }[] = input.series === 'eval'
     ? [
         { mode: 'git', variant: 'simple' }, { mode: 'non-git', variant: 'simple' },
@@ -398,7 +426,7 @@ async function main(): Promise<void> {
         { mode: 'non-git', variant: 'simple' }, { mode: 'non-git', variant: 'stale-hash' }
       ];
   const trials: TrialReport[] = [];
-  for (const item of plan) trials.push(await runTrial(input, item.mode, item.variant, ledger, apiKey));
+  for (const item of plan) trials.push(await runTrial(input, item.mode, item.variant, ledger, apiKey, transport));
   const summary = summarizeTrials(trials);
   const modeCounts = trials.reduce((counts, trial) => ({ ...counts, [trial.mode]: (counts[trial.mode] ?? 0) + 1 }), { git: 0, 'non-git': 0 });
   const livePlanComplete = trials.length === 5 && modeCounts.git === 3 && modeCounts['non-git'] === 2;
@@ -411,6 +439,7 @@ async function main(): Promise<void> {
       maxRequestsPerTrial,
       maxOutputTokens,
       maxCostUsd: input.maxCostUsd,
+      ...createGeminiLiveReportSettings(input.provider, input.series, geminiLiveRequestPacing),
       ...(input.reasoningEffort === undefined ? {} : { reasoningEffort: input.reasoningEffort }),
       ...(input.thinkingLevel === undefined ? {} : { thinkingLevel: input.thinkingLevel }),
       ...(input.thinkingBudget === undefined ? {} : { thinkingBudget: input.thinkingBudget })
