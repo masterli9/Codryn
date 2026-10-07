@@ -48,13 +48,13 @@ describe('workspace boundaries', () => {
 
 describe('production dependency boundaries', () => {
   it('rejects an infrastructure persistence import from the CLI entrypoint', async () => {
-    const entrypoint = join(workspaceRoot, 'apps/cli/src/index.ts');
-    const original = await readFile(entrypoint, 'utf8');
+    const fixture = await createFixture('apps/cli/src/production');
+    const entrypoint = fixture.file;
 
     try {
       await writeFile(
         entrypoint,
-        `${original}\nimport '../../../backend/infrastructure/src/persistence/sqlite-agent-run-store.ts';\n`
+        "import '../../../../../backend/infrastructure/src/persistence/sqlite-agent-run-store.ts';\n"
       );
       const violations = await dependencyViolations(entrypoint);
 
@@ -64,7 +64,7 @@ describe('production dependency boundaries', () => {
         })
       );
     } finally {
-      await writeFile(entrypoint, original);
+      await rm(fixture.directory, { recursive: true, force: true });
     }
   });
 
@@ -111,7 +111,7 @@ describe('production dependency boundaries', () => {
   });
 
   it('rejects a production import of the R1 test fixture', async () => {
-    const fixture = await createFixture('apps/cli/src/test');
+    const fixture = await createFixture('apps/cli/src/production');
 
     try {
       await writeFile(

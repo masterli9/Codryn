@@ -37,7 +37,11 @@ describe('ToolExecutionHarness', () => {
 
     expect(result).toEqual({ ok: true, callId: call.callId, output: expect.objectContaining({ path: 'README.md' }) });
     expect(handler).toHaveBeenCalledOnce();
-    expect(handler).toHaveBeenCalledWith({ path: 'README.md', startLine: 1, maxLines: 200 }, expect.any(AbortSignal));
+    expect(handler).toHaveBeenCalledWith(
+      { path: 'README.md', startLine: 1, maxLines: 200 },
+      expect.any(AbortSignal),
+      { projectId: 'project', runId, callId: call.callId }
+    );
     expect(toolCallStore.transitions.map((entry) => entry.to)).toEqual(['schema_validated', 'permission_decided', 'queued', 'running', 'succeeded']);
     expect(toolCallStore.transitions.map((entry) => entry.event.eventType)).toEqual(['tool_call.schema_validated', 'tool_call.permission_decided', 'tool_call.queued', 'tool_call.started', 'tool_call.succeeded']);
     expect(toolCallStore.transitions[1]?.event.payload).toMatchObject({

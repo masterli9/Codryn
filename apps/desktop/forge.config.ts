@@ -8,10 +8,15 @@ import rendererConfig from './webpack.renderer.config.js';
 
 const config: ForgeConfig = {
   packagerConfig: {
-    asar: true,
+    asar: {
+      unpack: '*.{ps1,cs}'
+    },
     name: 'Codryn',
     executableName: 'Codryn',
-    extraResource: [path.resolve(__dirname, '../../tests/support/fixtures/process')]
+    extraResource: [
+      path.resolve(__dirname, '../../tests/support/fixtures/process'),
+      path.resolve(__dirname, '../../tests/support/fixtures/r2-project')
+    ]
   },
   makers: [
     new MakerSquirrel({ name: 'codryn' }),

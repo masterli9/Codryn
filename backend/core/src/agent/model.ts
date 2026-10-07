@@ -25,12 +25,13 @@ export interface AgentRunRecord {
 export interface ToolCallRecord {
   readonly callId: Uuid;
   readonly runId: Uuid;
+  readonly projectId?: Uuid;
   readonly parentCallId?: Uuid;
   readonly toolId: string;
   readonly toolVersion: number;
   readonly state: ToolCallState;
   readonly arguments: JsonValue;
-  readonly permissionResult?: 'allowed_by_rule' | 'denied';
+  readonly permissionResult?: 'allowed_by_rule' | 'allowed_once' | 'denied';
   readonly permissionRuleId?: string;
   readonly permissionReason?: string;
   readonly safeResult?: JsonValue;

@@ -8,9 +8,21 @@ import type {
   ModelStreamEvent,
   Uuid
 } from '@codryn/shared';
+import type { PermissionView } from '@codryn/shared';
 import type { AgentRunState } from '../state/agent-run.js';
 import type { ToolCallState } from '../state/tool-call.js';
 import type { AgentRunRecord, ToolCallRecord } from './model.js';
+import type { ChangeActor } from '../changes/ports.js';
+
+export type ToolExecutionContext = ChangeActor;
+
+export type PermissionResponder = (request: PermissionView) => Promise<'allow_once' | 'deny'>;
+
+export interface ToolCallBinding {
+  readonly callId: Uuid;
+  readonly runId: Uuid;
+  readonly projectId: Uuid;
+}
 
 export interface ModelAdapter {
   readonly descriptor: ModelDescriptor;
@@ -62,16 +74,21 @@ export interface AgentRunStore {
     readonly updatedAt: IsoTimestamp;
     readonly event: EventEnvelope;
   }): Promise<void>;
+  saveR2Detail?(runId: Uuid, detail: {
+    readonly failureCode?: AgentRunFailureCode;
+    readonly result: JsonValue;
+  }): Promise<void>;
   findById(runId: Uuid): Promise<AgentRunRecord | null>;
 }
 
 export interface ToolCallStore {
+  readonly findBinding?: (callId: Uuid) => Promise<ToolCallBinding | null>;
   createWithInitialEvent(call: ToolCallRecord, event: EventEnvelope): Promise<void>;
   transitionWithEvent(input: {
     readonly callId: Uuid;
     readonly from: ToolCallState;
     readonly to: ToolCallState;
-    readonly permissionResult?: 'allowed_by_rule' | 'denied';
+    readonly permissionResult?: 'allowed_by_rule' | 'allowed_once' | 'denied';
     readonly permissionRuleId?: string;
     readonly permissionReason?: string;
     readonly safeResult?: JsonValue;

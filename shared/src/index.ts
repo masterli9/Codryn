@@ -6,3 +6,8 @@ export * from './ipc.js';
 export * from './r1-agent.js';
 export * from './model-contract.js';
 export * from './tool-contract.js';
+export * from './r2-change.js';
+export * from './r2-diff.js';
+export * from './r2-permission.js';
+export * from './r2-verification.js';
+export * from './r2-agent.js';

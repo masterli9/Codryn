@@ -1,0 +1,125 @@
+import type { DatabaseSync, SQLOutputValue } from 'node:sqlite';
+import { transitionChangeSet, type ChangeSetState, type ChangeSetStore, type Clock, type IdGenerator } from '@codryn/core';
+import { isoTimestampSchema, uuidSchema } from '@codryn/shared';
+
+function requireNumber(value: SQLOutputValue | undefined, code: string): number {
+  if (typeof value !== 'number' || !Number.isSafeInteger(value)) throw new TypeError(code);
+  return value;
+}
+
+export class SqliteChangeSetStore implements ChangeSetStore {
+  constructor(
+    private readonly database: DatabaseSync,
+    private readonly clock: Clock,
+    private readonly ids: IdGenerator
+  ) {}
+
+  async projectId(setIdInput: string): Promise<string | null> {
+    const setId = uuidSchema.parse(setIdInput);
+    const row = this.database.prepare('SELECT project_id FROM change_sets WHERE id = ?').get(setId);
+    return row === undefined ? null : uuidSchema.parse(row.project_id);
+  }
+
+  async open(projectIdInput: string, runIdInput: string): Promise<string> {
+    const projectId = uuidSchema.parse(projectIdInput);
+    const runId = uuidSchema.parse(runIdInput);
+    const existing = this.database.prepare(
+      'SELECT id, project_id FROM change_sets WHERE run_id = ?'
+    ).get(runId) as { id?: SQLOutputValue; project_id?: SQLOutputValue } | undefined;
+    if (existing !== undefined) {
+      if (existing.project_id !== projectId || typeof existing.id !== 'string') {
+        throw new Error('R2_CHANGE_SET_RUN_CONFLICT');
+      }
+      return uuidSchema.parse(existing.id);
+    }
+
+    const setId = this.ids.next();
+    const createdAt = isoTimestampSchema.parse(this.clock.now());
+    let transactionStarted = false;
+    try {
+      this.database.exec('BEGIN IMMEDIATE;');
+      transactionStarted = true;
+      const workspace = this.database.prepare('SELECT revision FROM workspaces WHERE id = ?').get(projectId);
+      if (workspace === undefined) throw new Error('R2_WORKSPACE_NOT_FOUND');
+      const revision = requireNumber(workspace.revision, 'R2_WORKSPACE_ROW_INVALID');
+      this.database.prepare(`INSERT INTO change_sets (
+        id, project_id, run_id, state, base_revision, next_sequence, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?)`).run(
+        setId,
+        projectId,
+        runId,
+        'open',
+        revision,
+        1,
+        createdAt
+      );
+      this.database.exec('COMMIT;');
+      transactionStarted = false;
+      return setId;
+    } catch (error) {
+      if (transactionStarted) {
+        try {
+          if (this.database.isTransaction) this.database.exec('ROLLBACK;');
+        } catch {
+          // Preserve the original change-set persistence error.
+        }
+      }
+      throw error;
+    }
+  }
+
+  async reserveSequence(setIdInput: string): Promise<number> {
+    const setId = uuidSchema.parse(setIdInput);
+    let transactionStarted = false;
+    try {
+      this.database.exec('BEGIN IMMEDIATE;');
+      transactionStarted = true;
+      const result = this.database.prepare(`UPDATE change_sets
+        SET next_sequence = next_sequence + 1
+        WHERE id = ? AND state IN ('open', 'reverting')`).run(setId);
+      if (result.changes !== 1) throw new Error('R2_CHANGE_SET_NOT_OPEN');
+      const row = this.database.prepare(
+        'SELECT next_sequence FROM change_sets WHERE id = ?'
+      ).get(setId);
+      const nextSequence = requireNumber(row?.next_sequence, 'R2_CHANGE_SET_ROW_INVALID');
+      this.database.exec('COMMIT;');
+      transactionStarted = false;
+      return nextSequence - 1;
+    } catch (error) {
+      if (transactionStarted) {
+        try {
+          if (this.database.isTransaction) this.database.exec('ROLLBACK;');
+        } catch {
+          // Preserve the original change-set persistence error.
+        }
+      }
+      throw error;
+    }
+  }
+
+  async seal(setIdInput: string): Promise<void> {
+    await this.transition(setIdInput, 'open', 'sealed');
+  }
+
+  async transition(setIdInput: string, from: ChangeSetState, to: ChangeSetState): Promise<void> {
+    const setId = uuidSchema.parse(setIdInput);
+    if (!transitionChangeSet(from, to).ok) throw new Error('R2_CHANGE_SET_TRANSITION_INVALID');
+    let transactionStarted = false;
+    try {
+      this.database.exec('BEGIN IMMEDIATE;');
+      transactionStarted = true;
+      const update = this.database.prepare(
+        'UPDATE change_sets SET state = ? WHERE id = ? AND state = ?'
+      ).run(to, setId, from);
+      if (update.changes !== 1) throw new Error('R2_CHANGE_SET_STATE_MISMATCH');
+      this.database.exec('COMMIT;');
+      transactionStarted = false;
+    } catch (error) {
+      if (transactionStarted) {
+        try { if (this.database.isTransaction) this.database.exec('ROLLBACK;'); }
+        catch { /* preserve original change-set persistence error */ }
+      }
+      throw error;
+    }
+  }
+}

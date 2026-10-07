@@ -15,7 +15,7 @@ describe.skipIf(process.env.CODRYN_PACKAGED_EXE === undefined)('packaged R0 smok
     const executable = process.env.CODRYN_PACKAGED_EXE;
     if (executable === undefined) throw new Error('CODRYN_PACKAGED_EXE missing');
     const code = await new Promise<number | null>((resolve, reject) => {
-      const child = spawn(executable, ['--r0-smoke', `--r0-user-data-dir=${directory}`], { shell: false, windowsHide: true });
+      const child = spawn(executable, ['--disable-gpu', '--r0-smoke', `--r0-user-data-dir=${directory}`], { shell: false, windowsHide: true });
       const timer = setTimeout(() => { child.kill(); reject(new Error('Packaged smoke timed out')); }, 60_000);
       child.once('error', reject);
       child.once('exit', (exitCode) => { clearTimeout(timer); resolve(exitCode); });

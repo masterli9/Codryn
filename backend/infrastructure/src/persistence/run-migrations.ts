@@ -43,7 +43,25 @@ export function runMigrations(database: DatabaseSync, now: string): void {
   }
 
   let transactionStarted = false;
+  let foreignKeysTemporarilyDisabled = false;
   try {
+    let permissionMigrationPending = true;
+    try {
+      const row = database.prepare(
+        'SELECT version FROM schema_migrations WHERE version = 6'
+      ).get();
+      permissionMigrationPending = row === undefined;
+    } catch {
+      // A new database has no schema ledger yet; migration 6 will be part of this run.
+    }
+    if (permissionMigrationPending) {
+      // Migration 6 rebuilds tool_calls while change_entries references it. SQLite
+      // only permits this FK-preserving table swap with FK enforcement disabled
+      // outside the transaction; the final foreign_key_check and re-enable below
+      // keep the migration fail-closed.
+      database.exec('PRAGMA foreign_keys = OFF;');
+      foreignKeysTemporarilyDisabled = true;
+    }
     database.exec('BEGIN IMMEDIATE;');
     transactionStarted = true;
     const ledgerMigration = migrations[0];
@@ -86,5 +104,7 @@ export function runMigrations(database: DatabaseSync, now: string): void {
     }
     if (error instanceof R0DiagnosticFailure) throw error;
     throw new R0DiagnosticFailure('R0_DB_MIGRATION_FAILED', 'MIGRATION_APPLY_FAILED');
+  } finally {
+    if (foreignKeysTemporarilyDisabled) database.exec('PRAGMA foreign_keys = ON;');
   }
 }
