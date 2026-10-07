@@ -13,6 +13,7 @@
     "npm": ">=11 <12"
   },
   "scripts": {
+    "demo:consultation": "node --no-warnings --experimental-loader ./apps/cli/src/typescript-resolution-loader.mjs --experimental-transform-types scripts/consultation-demo.ts",
     "preinstall": "node scripts/check-runtime.mjs",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "lint": "eslint apps backend shared tests scripts --max-warnings=0",

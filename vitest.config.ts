@@ -8,6 +8,7 @@ const allTests = [
 ];
 
 const hostIntegrationTests = [
+  'apps/cli/test/consultation-demo.test.ts',
   'apps/cli/test/index.test.ts',
   'backend/infrastructure/test/composition.test.ts',
   'backend/infrastructure/test/git-probe.test.ts',
