@@ -8,9 +8,12 @@ import {
 import {
   agentRunFailureCodeSchema,
   isoTimestampSchema,
-  uuidSchema
+  uuidSchema,
+  type AgentRunFailureCode,
+  type JsonValue,
+  type Uuid
 } from '@codryn/shared';
-import { insertEvent, validateEvent } from './sqlite-event-store.js';
+import { insertEvent, validateEvent, validateJsonValue } from './sqlite-event-store.js';
 
 type AgentRunTransition = Parameters<AgentRunStore['transitionWithEvent']>[0];
 
@@ -219,6 +222,48 @@ export class SqliteAgentRunStore implements AgentRunStore {
       );
       if (sessionResult.changes !== 1) throw new TypeError('AGENT_RUN_SESSION_MISMATCH');
       insertEvent(this.database, transition.event);
+      this.database.exec('COMMIT;');
+      transactionStarted = false;
+    } catch {
+      if (transactionStarted) {
+        try {
+          if (this.database.isTransaction) this.database.exec('ROLLBACK;');
+        } catch {
+          // Keep the stable persistence error even if rollback itself fails.
+        }
+      }
+      throw new R1PersistenceFailure('AGENT_RUN_WRITE_FAILED');
+    }
+  }
+
+  async saveR2Detail(runId: Uuid, detail: {
+    readonly failureCode?: AgentRunFailureCode;
+    readonly result: JsonValue;
+  }): Promise<void> {
+    let transactionStarted = false;
+    try {
+      const validRunId = uuidSchema.parse(runId);
+      if (!isPlainRecord(detail)) throw new TypeError('R2_DETAIL_INVALID');
+      requireExactKeys(detail, ['result'], ['failureCode']);
+      validateJsonValue(detail.result);
+      const failureCode = Object.prototype.hasOwnProperty.call(detail, 'failureCode')
+        ? agentRunFailureCodeSchema.parse(detail.failureCode)
+        : null;
+      const resultJson = JSON.stringify(detail.result);
+
+      this.database.exec('BEGIN IMMEDIATE;');
+      transactionStarted = true;
+      const existing = this.database.prepare(`SELECT failure_code, result_json
+        FROM agent_run_details WHERE run_id = ?`).get(validRunId) as Record<string, SQLOutputValue> | undefined;
+      if (existing !== undefined) {
+        if (existing.failure_code !== failureCode || existing.result_json !== resultJson) {
+          throw new TypeError('R2_DETAIL_CONFLICT');
+        }
+      } else {
+        this.database.prepare(`INSERT INTO agent_run_details (
+          run_id, failure_code, result_json
+        ) VALUES (?, ?, ?)`).run(validRunId, failureCode, resultJson);
+      }
       this.database.exec('COMMIT;');
       transactionStarted = false;
     } catch {

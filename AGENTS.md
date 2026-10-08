@@ -3,12 +3,15 @@
 Tento soubor je stručný provozní návod pro AI agenty pracující v tomto
 repozitáři. Při každém novém úkolu nejdřív přečti tento soubor a
 `PROJECT_CONTEXT.md`; u produktových změn potom také aktuální
-`PRD_v1.0.md`.
+`PRD_v1.1.md`.
 
 ## Co je autorita
 
 - `PROJECT_CONTEXT.md` je živý kontext projektu a popisuje dlouhodobá pravidla.
-- `PRD_v1.0.md` je aktuální produktový rozsah a schválený produktový kontrakt.
+- `PRD_v1.1.md` je aktuální produktový rozsah a schválený produktový kontrakt;
+  `PRD_v1.0.md` je neměnný historický snapshot.
+- `REGISTR_ROZHODNUTI_v1.1.md` je aktuální produktový registr; v1.0 zůstává
+  historickým záznamem rozhodnutí.
 - `docs/product/` obsahuje doprovodné dokumenty v1.0 a historické PRD,
   roadmapy, etapizace, registry rozhodnutí a brainstorming. Samy o sobě
   nepřebíjejí aktuální PRD a PROJECT_CONTEXT.

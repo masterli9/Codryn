@@ -11,7 +11,7 @@ await mkdir(root, { recursive: true });
 const profile = await mkdtemp(join(root, 'packaged-'));
 
 const exitCode = await new Promise((resolveExit, reject) => {
-  const child = spawn(executable, ['--r0-smoke', `--r0-user-data-dir=${profile}`], {
+  const child = spawn(executable, ['--disable-gpu', '--r0-smoke', `--r0-user-data-dir=${profile}`], {
     shell: false,
     windowsHide: true,
     stdio: 'inherit'

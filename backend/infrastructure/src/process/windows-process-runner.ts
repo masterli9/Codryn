@@ -83,10 +83,9 @@ class WindowsProcessRunnerLifecycle implements ProcessRunner {
       };
     }
 
-    // Node/libuv owns the native Windows process handle through its exit callback.
-    // Node initiates handle release immediately before emitting `exit`; keeping
-    // this ChildProcess lifecycle referenced until settlement and blocking
-    // taskkill after `exit` prevents the numeric PID from being reused at launch.
+    // Do not launch taskkill after Node reports `exit`, so the runner never
+    // submits a PID it already knows is stale. This does not prove ownership
+    // across the remaining taskkill PID-reuse race; R0 is fixture-only.
     const retainedChild = child;
 
     const spawnProcess = this.spawnProcess;
@@ -100,7 +99,6 @@ class WindowsProcessRunnerLifecycle implements ProcessRunner {
       let childSignal: string | null = retainedChild.signalCode;
       let spawnFailed = false;
       let forcedTermination: ForcedTermination | null = null;
-      let fallbackAttempted = false;
       let taskkillProcess: ChildProcess | null = null;
       let taskkillClosed = false;
       let taskkillOutcome: boolean | null = null;
@@ -184,16 +182,6 @@ class WindowsProcessRunnerLifecycle implements ProcessRunner {
         retainedChild.stderr?.destroy();
       }
 
-      function bestEffortParentFallback(): void {
-        if (fallbackAttempted || processHasExited() || retainedChild.pid === undefined) return;
-        fallbackAttempted = true;
-        try {
-          retainedChild.kill();
-        } catch {
-          // The stable result records unconfirmed tree termination below.
-        }
-      }
-
       function guardLateErrors(): void {
         retainedChild.off('error', onChildError);
         if (!childClosed) {
@@ -211,6 +199,7 @@ class WindowsProcessRunnerLifecycle implements ProcessRunner {
             pendingTaskkill.off('error', ignoreLateTaskkillError);
           });
         }
+
       }
 
       function cleanup(): void {
@@ -263,7 +252,6 @@ class WindowsProcessRunnerLifecycle implements ProcessRunner {
         childCloseTimeout = setTimeout(() => {
           childCloseTimeout = null;
           releaseOutput();
-          if (forcedTermination !== null && taskkillOutcome !== true) bestEffortParentFallback();
           destroyOutput();
           if (forcedTermination !== null) {
             settle(forcedTermination, null, null, taskkillOutcome === true);
@@ -278,7 +266,13 @@ class WindowsProcessRunnerLifecycle implements ProcessRunner {
         taskkillOutcome = succeeded;
         clearTaskkillTimeout();
         releaseOutput();
-        if (!succeeded) bestEffortParentFallback();
+        if (!succeeded && !processHasExited()) {
+          try {
+            retainedChild.kill();
+          } catch {
+            // The stable result records unconfirmed tree termination below.
+          }
+        }
         completeIfReady();
         if (!settled) armChildCloseTimeout();
       }

@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { mkdtemp, mkdir, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { decideSensitivePath, ProjectFilesystem } from '../src/index.js';
+import { ContextPathPolicy, decideSensitivePath, ProjectFilesystem } from '../src/index.js';
 
 const roots: string[] = [];
 
@@ -204,5 +204,28 @@ describe('ProjectFilesystem', () => {
     const controller = new AbortController();
     controller.abort();
     await expect(filesystem.searchText({ query: 'Needle' }, controller.signal)).rejects.toMatchObject({ code: 'R1_CANCELLED' });
+  });
+
+  it('applies the same .codrynignore policy to reads and recursive searches', async () => {
+    const { root } = await fixture();
+    await mkdir(join(root, 'generated'));
+    await Promise.all([
+      writeFile(join(root, 'generated', 'hidden.txt'), 'R2_CONTEXT_CANARY'),
+      writeFile(join(root, 'visible.txt'), 'R2_CONTEXT_CANARY')
+    ]);
+    const policy = new ContextPathPolicy(['generated/**']);
+    const filesystem = new ProjectFilesystem(root, { contextPolicy: policy });
+
+    await expect(filesystem.readFile({ path: 'generated/hidden.txt' }, new AbortController().signal))
+      .rejects.toMatchObject({ code: 'R2_CONTEXT_PATH_IGNORED' });
+    await expect(filesystem.searchText({ query: 'R2_CONTEXT_CANARY' }, new AbortController().signal))
+      .resolves.toMatchObject({ matches: [{ path: 'visible.txt' }], filesSearched: 1 });
+
+    const rootPolicy = await ContextPathPolicy.fromProjectRoot(root);
+    const refreshedFilesystem = new ProjectFilesystem(root, { contextPolicy: rootPolicy });
+    await expect(refreshedFilesystem.readFile({ path: 'visible.txt' }, new AbortController().signal)).resolves.toMatchObject({ path: 'visible.txt' });
+    await writeFile(join(root, '.codrynignore'), 'visible.txt\n', 'utf8');
+    await expect(refreshedFilesystem.readFile({ path: 'visible.txt' }, new AbortController().signal))
+      .rejects.toMatchObject({ code: 'R2_CONTEXT_PATH_IGNORED' });
   });
 });

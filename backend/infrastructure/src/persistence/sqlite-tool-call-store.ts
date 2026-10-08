@@ -1,6 +1,10 @@
+import { randomUUID } from 'node:crypto';
 import type { DatabaseSync, SQLInputValue, SQLOutputValue } from 'node:sqlite';
 import {
   R1PersistenceFailure,
+  type Clock,
+  type IdGenerator,
+  type ToolCallBinding,
   type ToolCallRecord,
   type ToolCallState,
   type ToolCallStore
@@ -17,6 +21,7 @@ type ToolCallTransition = Parameters<ToolCallStore['transitionWithEvent']>[0];
 const toolCallStates = new Set<ToolCallState>([
   'received',
   'schema_validated',
+  'waiting_for_approval',
   'permission_decided',
   'queued',
   'running',
@@ -60,8 +65,8 @@ function parseToolVersion(value: unknown): number {
   return value;
 }
 
-function parsePermissionResult(value: unknown): 'allowed_by_rule' | 'denied' {
-  if (value !== 'allowed_by_rule' && value !== 'denied') {
+function parsePermissionResult(value: unknown): 'allowed_by_rule' | 'allowed_once' | 'denied' {
+  if (value !== 'allowed_by_rule' && value !== 'allowed_once' && value !== 'denied') {
     throw new TypeError('TOOL_CALL_PERMISSION_RESULT_INVALID');
   }
   return value;
@@ -85,7 +90,7 @@ function validateToolCall(input: unknown): ToolCallRecord {
       'callId', 'runId', 'toolId', 'toolVersion', 'state', 'arguments',
       'createdAt', 'updatedAt'
     ],
-    ['parentCallId', 'permissionResult', 'permissionRuleId', 'permissionReason', 'safeResult', 'errorCode']
+    ['projectId', 'parentCallId', 'permissionResult', 'permissionRuleId', 'permissionReason', 'safeResult', 'errorCode']
   );
 
   const base = {
@@ -98,6 +103,9 @@ function validateToolCall(input: unknown): ToolCallRecord {
     createdAt: isoTimestampSchema.parse(input.createdAt),
     updatedAt: isoTimestampSchema.parse(input.updatedAt)
   };
+  const projectId = Object.prototype.hasOwnProperty.call(input, 'projectId')
+    ? { projectId: uuidSchema.parse(input.projectId) }
+    : {};
   const parentCallId = Object.prototype.hasOwnProperty.call(input, 'parentCallId')
     ? { parentCallId: uuidSchema.parse(input.parentCallId) }
     : {};
@@ -116,7 +124,7 @@ function validateToolCall(input: unknown): ToolCallRecord {
   const errorCode = Object.prototype.hasOwnProperty.call(input, 'errorCode')
     ? { errorCode: parseErrorCode(input.errorCode) }
     : {};
-  return { ...base, ...parentCallId, ...permissionResult, ...permissionRuleId, ...permissionReason, ...safeResult, ...errorCode };
+  return { ...base, ...projectId, ...parentCallId, ...permissionResult, ...permissionRuleId, ...permissionReason, ...safeResult, ...errorCode };
 }
 
 function validateTransition(input: unknown): ToolCallTransition {
@@ -170,7 +178,10 @@ function toolCallRunIdFromRow(row: Record<string, SQLOutputValue>): string {
 }
 
 export class SqliteToolCallStore implements ToolCallStore {
-  constructor(private readonly database: DatabaseSync) {}
+  constructor(
+    private readonly database: DatabaseSync,
+    private readonly options: { readonly clock?: Clock; readonly ids?: IdGenerator } = {}
+  ) {}
 
   async createWithInitialEvent(callInput: ToolCallRecord, eventInput: Parameters<ToolCallStore['createWithInitialEvent']>[1]): Promise<void> {
     let transactionStarted = false;
@@ -182,11 +193,12 @@ export class SqliteToolCallStore implements ToolCallStore {
       this.database.exec('BEGIN IMMEDIATE;');
       transactionStarted = true;
       this.database.prepare(`INSERT INTO tool_calls (
-        call_id, run_id, parent_call_id, tool_id, tool_version, state, arguments_json,
+        call_id, run_id, project_id, parent_call_id, tool_id, tool_version, state, arguments_json,
         permission_result, permission_rule_id, permission_reason, safe_result_json, error_code, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
         call.callId,
         call.runId,
+        call.projectId ?? null,
         call.parentCallId ?? null,
         call.toolId,
         call.toolVersion,
@@ -213,6 +225,22 @@ export class SqliteToolCallStore implements ToolCallStore {
       }
       throw new R1PersistenceFailure('TOOL_CALL_WRITE_FAILED');
     }
+  }
+
+  async findBinding(callIdInput: string): Promise<ToolCallBinding | null> {
+    const callId = uuidSchema.parse(callIdInput);
+    const row = this.database.prepare(
+      'SELECT call_id, run_id, project_id FROM tool_calls WHERE call_id = ?'
+    ).get(callId) as { call_id?: SQLOutputValue; run_id?: SQLOutputValue; project_id?: SQLOutputValue } | undefined;
+    if (row === undefined || row.project_id === null || row.project_id === undefined) return null;
+    if (typeof row.call_id !== 'string' || typeof row.run_id !== 'string' || typeof row.project_id !== 'string') {
+      throw new TypeError('TOOL_CALL_ROW_INVALID');
+    }
+    return {
+      callId: uuidSchema.parse(row.call_id),
+      runId: uuidSchema.parse(row.run_id),
+      projectId: uuidSchema.parse(row.project_id)
+    };
   }
 
   async transitionWithEvent(input: ToolCallTransition): Promise<void> {
@@ -268,6 +296,58 @@ export class SqliteToolCallStore implements ToolCallStore {
         }
       }
       throw new R1PersistenceFailure('TOOL_CALL_WRITE_FAILED');
+    }
+  }
+
+  async recoverInFlight(projectIdInput: string): Promise<number> {
+    const projectId = uuidSchema.parse(projectIdInput);
+    let transactionStarted = false;
+    try {
+      this.database.exec('BEGIN IMMEDIATE;');
+      transactionStarted = true;
+      const rows = this.database.prepare(`SELECT call_id, run_id, state
+        FROM tool_calls
+        WHERE project_id = ? AND tool_id = 'command.run' AND (
+          state IN ('permission_decided', 'queued', 'running')
+          OR (state = 'waiting_for_approval' AND EXISTS (
+            SELECT 1 FROM permission_requests
+            WHERE permission_requests.call_id = tool_calls.call_id
+              AND permission_requests.state = 'allowed_once'
+              AND permission_requests.claimed = 1
+          ))
+        )
+        ORDER BY created_at ASC, call_id ASC`).all(projectId) as Array<Record<string, SQLOutputValue>>;
+      for (const row of rows) {
+        const callId = row.call_id;
+        const runId = row.run_id;
+        const from = row.state;
+        if (typeof callId !== 'string' || typeof runId !== 'string' || typeof from !== 'string') throw new TypeError('TOOL_CALL_ROW_INVALID');
+        const update = this.database.prepare(`UPDATE tool_calls
+          SET state = 'failed', error_code = 'R2_RECOVERY_UNKNOWN_EFFECT',
+              safe_result_json = ?
+          WHERE call_id = ? AND state = ?`).run(
+          JSON.stringify({ ok: false, code: 'R2_RECOVERY_UNKNOWN_EFFECT' }), callId, from
+        );
+        if (update.changes !== 1) throw new Error('R2_TOOL_CALL_RECOVERY_RACE');
+        insertEvent(this.database, {
+          eventId: this.options.ids?.next() ?? uuidSchema.parse(randomUUID()),
+          eventType: 'tool_call.recovered',
+          eventVersion: 1,
+          correlationId: uuidSchema.parse(callId),
+          occurredAt: isoTimestampSchema.parse(this.options.clock?.now() ?? new Date().toISOString()),
+          source: 'core',
+          sessionId: uuidSchema.parse(runId),
+          payload: { callId: uuidSchema.parse(callId), from, to: 'failed', errorCode: 'R2_RECOVERY_UNKNOWN_EFFECT' }
+        });
+      }
+      this.database.exec('COMMIT;');
+      transactionStarted = false;
+      return rows.length;
+    } catch (error) {
+      if (transactionStarted) {
+        try { if (this.database.isTransaction) this.database.exec('ROLLBACK;'); } catch { /* Preserve recovery failure. */ }
+      }
+      throw error;
     }
   }
 }

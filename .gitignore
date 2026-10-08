@@ -8,6 +8,11 @@ coverage/
 *.sqlite
 *.sqlite-shm
 *.sqlite-wal
+.env
+.env.*
+!.env.example
 .r0-artifacts/
+.r2-artifacts/
+.r2-test-artifacts/
 Dokumentace_priklady/
 Dokumentace příklady/

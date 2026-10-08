@@ -122,6 +122,7 @@ describe('canonical state machines', () => {
     ['open', 'sealed'],
     ['open', 'recovery_required'],
     ['sealed', 'reverting'],
+    ['sealed', 'conflicted'],
     ['sealed', 'recovery_required'],
     ['reverting', 'reverted'],
     ['reverting', 'conflicted'],

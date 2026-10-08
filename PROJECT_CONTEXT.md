@@ -1,15 +1,37 @@
 # Kontext projektu – maturitní práce
 
+## Aktualizace po schválení PRD v1.1 a GPT-6 Luna gate – 5. října 2026
+
+- Aktuální produktovou autoritou je `PRD_v1.1.md`; `PRD_v1.0.md` zůstává neměnným historickým snapshotem. Navazující registr je `REGISTR_ROZHODNUTI_v1.1.md`.
+- Lokální R2 průřez je implementovaný přes W1–W5, D1–D3, P1–P5 a M1–M5. Bezpečné dokončení závisí na uloženém verification recordu a aktuálním workspace fingerprintu; text modelu ani samotný patch nemohou vytvořit úspěšný výsledek.
+- Hostní `npm.cmd run verify:r2` prošel po rozlišení skutečných HTTP odpovědí od číselných kódů provideru: typecheck, lint, dependency check (217 modulů / 599 závislostí), Vitest 531 passed / 3 skipped, eval výběr 7/7, live-report testy 6/6, R1 repeatability 1/1, R2 repeatability 20/20, package a packaged R0/R2 smoke.
+- OpenAI Responses `gpt-6-luna` live acceptance z 5. října 2026 skončil 4/5 a splnil minimum AC-O1-04. Usage je známé u všech pěti pokusů; report počítá náklad `$0.0051795` podle zadaného ceníku a rezervoval `$0.0701687` z limitu `$1`. Jde o odhad, nikoli ověření fakturace.
+- Čtyři pokusy uspěly v Git i non-Git režimu; pátý `test-failure` scénář měl záměrně vloženou souběžnou změnu a bezpečný návrat ji odmítl přepsat (`result_verified_conflicted`), takže se podle gate správně nezapočítal jako úspěch. Audit opravil jeho `failureOwner` z `model` na `harness`; výsledek 4/5 se nemění. Sanitizovaný report je dohledatelný v `docs/evals/r2-live-openai-gpt6-2026-10-05.json`, SHA-256 `12294263CB45569B463E64D525B73699E4B3BA49194DB56D37131B15E573EDB7`.
+- První pokus ve výchozím sandboxu nepřistoupil k API, protože síťové spojení bylo odmítnuto (`EACCES`); až síťově povolený běh výše je platný live acceptance. Krátký Responses požadavek s limitem výstupu 4096 před ním vrátil HTTP 200.
+- Autor zvolil GPT-6 Luna přímo; head-to-head s Gemini se neprovádí a tvrzení o vzájemném vítězství se nedělá. Gemini `gemini-3.6-flash` zůstává pouze historickým během 2/5 se třemi `rate_limit`, nikoli blokátorem autorské volby. Rozhodnutí a změna rozsahu jsou v PRD v1.1, registru v1.1 a ADR 0007.
+- `docs/r2-author-checklist.md` nyní v pracovním stromě ukazuje 12/12 zaškrtnutých položek. Sedm zaškrtnutí se liší od HEAD a jejich autorství nelze z diffu ověřit; před PR autor potvrdí, že jde o jeho attestaci, nebo checklist opraví. Agent checklist nezaškrtává za autora. Před odesíláním soukromého projektového obsahu nadále platí upozornění a potvrzení podle FR-LLM-09/13.
+- PR nebylo otevřeno ani upraveno; jeho kontrola a případné sloučení zůstávají samostatným dalším krokem autora.
+
 > Tento soubor je živá pracovní paměť pro budoucí práci v tomto repozitáři.
 > Před návrhem, implementací nebo změnou architektury jej vždy přečti a po
 > významném rozhodnutí ho aktualizuj. Nezaměňuj zde označené nápady za hotová
 > rozhodnutí.
 
-## Aktualizace po vydání PRD v1.0 – 14. srpna 2026
+## Schválený směr R2 – 5. září 2026
 
-- Aktuální produktovou autoritou je `PRD_v1.0.md`. `docs/product/PRD_v0.3.md`, `docs/product/PRD_v0.2.md` a `docs/product/PRD_v0.1.md` jsou neměnné historické snapshoty.
-- Důvody schválených rozhodnutí jsou v `docs/product/REGISTR_ROZHODNUTI_v1.0.md`, řízení rozsahu v `docs/product/ETAPIZACE_v1.0.md` a pořadí implementačních přírůstků bez kalendářních dat v `docs/product/ROADMAP.md`.
-- PRD v1.0 je schválený implementačně připravený produktový kontrakt, nikoli tvrzení, že je celý produkt hotový. Významná změna rozsahu, priority, etapy, bezpečnosti, dat nebo akceptačního kritéria vyžaduje novou verzi PRD.
+- Autor schválil R2 po částech: bezpečný zápis; diff a návrat; schvalování a ověření; obnova a celý scénář.
+- Výběr poskytovatele a první skutečný modelový adaptér se přesouvají z R4 do R2. Fake adapter zůstává základem automatických testů; R2 má také samostatnou živou dokončovací bránu.
+- V době schválení šlo o změnu pořadí implementace uvnitř O1 bez změny etapy nebo akceptačních kritérií; PRD v1.0 se tehdy nepřepisoval a OD-04 se mělo uzavřít provider evalu. Tento postup nahradila schválená revize PRD v1.1 a DR-27 z 5. října 2026.
+- Návrh v `docs/superpowers/specs/2026-09-05-r2-change-lifecycle-design.md` autor schválil pro implementační plán. Schválení návrhu není důkazem implementace; Windows zápis, procesy a konkrétní poskytovatel stále vyžadují předepsané experimenty a měření.
+- R4 naváže rozšířenými scénáři a regresí již připojeného adaptéru. Historické zmínky o prvním připojení v R4/F3 čti podle tohoto rozhodnutí a ADR 0004.
+- Implementační plán je v `docs/superpowers/plans/2026-09-05-r2-implementation.md` a čtyřech navazujících dílech. Obsahuje 18 úkolů; lokální implementační kroky jsou provedené a ověřené podle acceptance dokumentu. Windows packaged důkaz a provider eval jsou stále samostatné podmínky, nikoli automaticky splněné tvrzením o existenci runneru.
+- Tento záznam zachycuje tehdejší plán; provider volbu později uzavřel DR-27 a PRD v1.1 na základě autorova výběru GPT-6 Luna a přijatého acceptance gate.
+
+## Historický kontext při vydání PRD v1.0 – 14. srpna 2026
+
+- Při vydání v1.0 byla produktovou autoritou `PRD_v1.0.md`; dne 5. října 2026 ji nahradila schválená revize `PRD_v1.1.md`. Starší PRD jsou neměnné historické snapshoty.
+- Registr rozhodnutí k v1.0 zůstává historický; aktuální rozhodnutí doplňuje `REGISTR_ROZHODNUTI_v1.1.md`. Řízení rozsahu je v `docs/product/ETAPIZACE_v1.0.md` a pořadí implementačních přírůstků bez kalendářních dat v `docs/product/ROADMAP.md`.
+- PRD v1.0 byl schválený implementačně připravený produktový kontrakt, nikoli tvrzení, že je celý produkt hotový. Významná změna rozsahu, priority, etapy, bezpečnosti, dat nebo akceptačního kritéria vyžaduje novou verzi PRD.
 - První funkční průřez nadále vzniká bez produktového UI přes interní headless/CLI driver nad stejnými aplikačními službami, které později používá Electron. Současně vzniká pouze minimální Electron spike pro včasné ověření balení, úzkého IPC, SQLite a procesního runneru.
 - Povinný O1 Git rozsah je lokální; `fetch`, `pull` a `push` jsou volitelný rozsah S/O1 a nejpozději M/ŠF. Vzdálené Git operace používají nainstalovaný Git CLI a systémovou autentizaci; Codryn hesla, tokeny ani privátní klíče nečte ani neukládá.
 - Bezpečnostní jádro Workspace Intelligence v O1 tvoří `workspaceRevision`, ochrana zápisů očekávaným hashem/revizí, invalidace zastaralých ověřovacích záznamů, serializace podle zdroje a audit původu změny. Koordinace více relací a skuteční subagenti jsou volitelný rozsah.
@@ -22,7 +44,7 @@
 - Následná migrace 3 zachovává audit rozhodnutí o oprávnění v projekci `tool_calls`; při práci s cestami se kontroluje také kanonický cíl po realpath, aby junction alias neobešel kořen ani citlivé cesty.
 - Vestavěný scénář `read-search-summary` používá deterministicý provider double pro opakovatelnou auditní stopu. Kompletní interní brána je `npm run verify:r1`; zahrnuje i balení a packaged R0 smoke.
 - R1 neprokazuje ověřenou změnu kódu ani celé AC-O1-02/03. R2 vlastní řízený zápis, shell, diff, safe return, skutečného providera a následné ověření; produktové UI zůstává pro R3.
-- Pokud se starší text níže nebo starší dokumenty rozcházejí s v1.0 sadou, platí v1.0.
+- Pokud se starší text níže nebo starší dokumenty rozcházejí s aktuálním PRD v1.1, platí v1.1.
 
 ## Aktualizace po schválení návrhu R0 – 17. srpna 2026
 
@@ -44,7 +66,7 @@
 - Běžné UX detaily se doplňují systematicky přes oblastní baseline checklisty. Detail lze přidat bez nové revize PRD jen tehdy, pokud nemění etapu, bezpečnost, data, externí účinek nebo význam akceptačního kritéria.
 - O1 zahrnuje `@` reference na soubory a složky projektu. Obecné textové/obrazové přílohy, drag-and-drop a vložení obrázku ze schránky jsou povinné nejpozději pro ŠF.
 - O1 zahrnuje kompaktní Git workspace: stav, staged/unstaged změny, diff, historii, branch, commit, AI návrh commit message, fetch, pull a push. Operace jsou explicitní, používají čerstvý preflight, systémový Git credential mechanismus, resource-key serializaci a neprovádějí automatický force push.
-- Dřívější pevná volba Gemini `gemini-2.5-flash` jako prvního adaptéru je nahrazena provider evalem. Počáteční kandidáti jsou GPT-5.6 Luna a Gemini `gemini-2.5-flash`; rozhoduje agentní kvalita, latence, cena celého úkolu, dostupnost a aktuální datové podmínky.
+- Historický záměr před PRD v1.1: nahradit pevnou volbu Gemini `gemini-2.5-flash` provider evalem mezi GPT-5.6 Luna a Gemini. Tento plán byl 5. října 2026 nahrazen DR-27 a přímou autorskou volbou OpenAI `gpt-6-luna`.
 - Workspace Intelligence, koordinace relací a přímé zápisy subagentů jsou zapracovány do O1 v0.3. Awareness nenahrazuje expected-hash/revision kontrolu každého zápisu.
 - `docs/product/NAVRH_EPIZODICKE_PAMETI_KONTEXTU_v0.1.md` zůstává kandidátní architekturou. Schválen je pouze offline experiment E0; produktová implementace, FTS5, reranking ani embeddings nejsou automaticky součástí O1.
 - Neveřejný nebo uniklý proprietární codebase se nepoužívá jako implementační podklad. Technická rešerše čerpá z veřejných dokumentací a repozitářů s ověřenou licencí a u převzatých praktik eviduje původ a vlastní odůvodnění.
@@ -117,10 +139,11 @@ Harness však potřebuje jednotné interní rozhraní a pro každý API formát 
 adapter, protože se poskytovatelé liší v tool callech, streamování, kontextu a
 dalších schopnostech.
 
-- **První reálný adapter pro MVP:** vybere provider eval mezi počátečními
-  kandidáty GPT-5.6 Luna a Gemini `gemini-2.5-flash`. Eval porovnává tool
-  calling, dokončení úkolu, opravu po chybě, latenci, cenu celého úkolu a
-  aktuální podmínky zpracování dat. Ceníková cena tokenu sama nerozhoduje.
+- **První reálný adapter pro R2/O1:** OpenAI Responses s `gpt-6-luna`,
+  vybraný autorem a přijatý po live acceptance 4/5 podle AC-O1-04. Přímé
+  srovnání s Gemini nebylo provedeno ani se pro tuto volbu nevyžaduje; výsledek
+  proto není tvrzením o vzájemném vítězství. Aktuální rozhodnutí je v PRD v1.1,
+  registru v1.1 a ADR 0007.
 - **Druhý ověřovací adapter:** používá odlišný API formát nebo srovnatelný
   OpenAI-kompatibilní endpoint a prochází stejnou kontraktní sadou. Konkrétní
   model se může změnit podle dostupnosti bez změny hranic harnessu.
