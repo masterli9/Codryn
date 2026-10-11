@@ -1,5 +1,14 @@
 # Kontext projektu – maturitní práce
 
+## Schválený funkční směr R3 – 11. října 2026
+
+- R2 je sloučené v `main`; pro návrh a implementaci R3 vznikla větev `feat/r3-electron-workspace` z `de470b6`.
+- Autor schválil reálný GPT-6 Luna i oddělený demonstrační režim, základní správu projektových chatů, jeden aktivní běh nad projektem a obnovu rendereru bez opakování akcí. Po pádu celé aplikace se nepřehrávají automaticky nástroje ani konverzace.
+- API klíč se má už v R3 trvale bezpečně ukládat. Součástí je test připojení, nahrazení a odstranění; opakované zadávání po každém spuštění autor odmítl. FR-LLM-06/07 se dodají dříve než jejich nejzazší etapa ŠF, bez ukládání tajemství do běžné SQLite nebo cloudu.
+- Vizuální směr: Instrument Sans, velké zaoblení inspirované Shopem, vyvážená hustota, aktivita v chatu a detaily změn/ověření vedle. Lucide se nepoužije. Porovnat světlou/tmavou variantu s limetkovým a lesním zeleným akcentem; konkrétní obrazovky a odstíny ještě nejsou schválené.
+- Návrh je v `docs/superpowers/specs/2026-10-11-r3-electron-workspace-design.md`; po jeho porovnání s PRD autor zadal podrobný implementační plán. Ten je v `docs/superpowers/plans/2026-10-11-r3-implementation.md` a pěti navazujících dílech (18 úkolů). Plán zatím není provedený. Electron safeStorage / Windows DPAPI je navržená technická cesta, nikoli už ověřená implementace. Globální terminál a přehled využití jsou navazující požadavky.
+- Porovnání návrhu s PRD v1.1 a roadmapou doplnilo průběžný výstup agentních příkazů, atomické/idempotentní založení zprávy a běhu, automatická rozhodnutí oprávnění, oddělení výchozích uživatelských změn a tabulku návaznosti požadavků. Referenční ověřovací profil R3 není splněním obecného TypeScript ověřování O1; to naváže v R4. Kontrola dokumentu není autorské schválení ani důkaz implementace.
+
 ## Aktualizace po schválení PRD v1.1 a GPT-6 Luna gate – 5. října 2026
 
 - Aktuální produktovou autoritou je `PRD_v1.1.md`; `PRD_v1.0.md` zůstává neměnným historickým snapshotem. Navazující registr je `REGISTR_ROZHODNUTI_v1.1.md`.
