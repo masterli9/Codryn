@@ -1,5 +1,7 @@
 export default {
   forbidden: [
+    {name:'renderer-no-node-or-electron',severity:'error',from:{path:'(^|/)apps/desktop/src/renderer/'},to:{dependencyTypes:['core']}},
+    {name:'renderer-no-electron',severity:'error',from:{path:'(^|/)apps/desktop/src/renderer/'},to:{path:'(^|/)(node_modules/)?electron(/|$)'}},
     {
       name: 'core-must-not-import-infrastructure',
       severity: 'error',

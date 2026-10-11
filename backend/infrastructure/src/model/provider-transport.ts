@@ -13,7 +13,7 @@ export class ProviderTransportError extends Error {
 }
 
 export class ProviderHttpError extends Error {
-  constructor(readonly status: number) {
+  constructor(readonly status: number, readonly retryAfterMs: number | null = null) {
     super('Provider returned an unsuccessful HTTP response.');
     this.name = 'ProviderHttpError';
   }
@@ -28,6 +28,7 @@ export interface ProviderTransport {
 }
 
 export interface FetchProviderTransportOptions {
+  readonly totalTimeoutMs?: number;
   readonly maxRateLimitRetries?: number;
   readonly minRequestIntervalMs?: number;
   readonly random?: () => number;
@@ -109,6 +110,7 @@ function rateLimitDelayMs(response: Response, retryNumber: number, random: () =>
 }
 
 export class FetchProviderTransport implements ProviderTransport {
+  private readonly timeoutMs: number;
   private readonly maxRateLimitRetries: number;
   private readonly minRequestIntervalMs: number;
   private readonly random: () => number;
@@ -116,6 +118,7 @@ export class FetchProviderTransport implements ProviderTransport {
   private pacingQueue: Promise<void> = Promise.resolve();
 
   constructor(options: FetchProviderTransportOptions = {}) {
+    this.timeoutMs=Number.isSafeInteger(options.totalTimeoutMs)&&Number(options.totalTimeoutMs)>0?Math.min(totalTimeoutMs,Number(options.totalTimeoutMs)):totalTimeoutMs;
     const configuredRetries = options.maxRateLimitRetries ?? 0;
     this.maxRateLimitRetries = Number.isInteger(configuredRetries)
       ? Math.max(0, Math.min(maxRateLimitRetries, configuredRetries)) : 0;
@@ -151,7 +154,7 @@ export class FetchProviderTransport implements ProviderTransport {
     let timedOut = false;
     let idleTimer: ReturnType<typeof setTimeout> | undefined;
     const startedAt = Date.now();
-    const totalTimer = setTimeout(() => { timedOut = true; controller.abort(); }, totalTimeoutMs);
+    const totalTimer = setTimeout(() => { timedOut = true; controller.abort(); }, this.timeoutMs);
     const abortFromCaller = () => controller.abort();
     signal.addEventListener('abort', abortFromCaller, { once: true });
     if (signal.aborted) controller.abort();
@@ -182,7 +185,7 @@ export class FetchProviderTransport implements ProviderTransport {
         if (delayMs === null) break;
         const pacingDelayMs = this.minRequestIntervalMs > 0 && this.lastRequestStartedAt !== undefined
           ? Math.max(0, this.lastRequestStartedAt + this.minRequestIntervalMs - Date.now()) : 0;
-        if (Math.max(delayMs, pacingDelayMs) >= startedAt + totalTimeoutMs - Date.now()) break;
+        if (Math.max(delayMs, pacingDelayMs) >= startedAt + this.timeoutMs - Date.now()) break;
         await response.body?.cancel().catch(() => undefined);
         await delayAbortably(delayMs, controller.signal);
         retries += 1;
@@ -190,7 +193,7 @@ export class FetchProviderTransport implements ProviderTransport {
       if (response === undefined) throw new Error('R2_PROVIDER_EMPTY_RESPONSE');
       if (!response.ok) {
         await response.body?.cancel().catch(() => undefined);
-        throw new ProviderHttpError(response.status);
+        throw new ProviderHttpError(response.status,parseRetryAfter(response.headers.get('retry-after'),Date.now())??null);
       }
       if (response.body === null) throw new Error('R2_PROVIDER_EMPTY_STREAM');
       reader = response.body.getReader();

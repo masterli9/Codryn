@@ -17,6 +17,7 @@ export interface RevertChangesDependencies extends Omit<PublishMutationDependenc
   files: FileHashReader;
   changeSets: ChangeSetStore;
   createAuditCall?: (input: { callId: string; runId: string; projectId: string; requestId: string }) => Promise<void>;
+  finishAuditCall?: (input:{callId:string;runId:string;requestId:string;status:'applied'|'rejected'|'recovery_required'})=>Promise<void>;
 }
 
 export function returnOrder(entries: readonly ChangeEntry[]): readonly ChangeEntry[] {
@@ -88,6 +89,7 @@ export class RevertChanges {
         kind: 'revert',
         reversesId: original.id
       }, { projectId: original.projectId, runId: original.runId, callId }, signal);
+      await this.dependencies.finishAuditCall?.({callId,runId:original.runId,requestId,status:result.status});
       if (result.status === 'applied') {
         revertedIds.push(original.id);
         continue;

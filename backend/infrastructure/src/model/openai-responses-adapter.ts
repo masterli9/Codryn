@@ -13,6 +13,7 @@ export interface ProviderAdapterOptions {
   readonly reasoningEffort?: 'none' | 'minimal' | 'low' | 'medium' | 'high';
   readonly thinkingLevel?: 'minimal' | 'low' | 'medium' | 'high';
   readonly thinkingBudget?: number;
+  readonly maxOutputTokens?: number;
 }
 
 interface CallState { readonly toolId: string; readonly toolVersion: number; readonly externalId: string; }
@@ -78,7 +79,7 @@ export class OpenAIResponsesAdapter implements ModelAdapter {
           input: inputItems(request, this.externalByInternal, tools),
           tools: functionTools(request),
           parallel_tool_calls: false,
-          max_output_tokens: 4096,
+          max_output_tokens: this.options.maxOutputTokens ?? 4096,
           ...(this.options.reasoningEffort === undefined ? {} : { reasoning: { effort: this.options.reasoningEffort } })
         }
       }, signal);
@@ -128,6 +129,6 @@ export class OpenAIResponsesAdapter implements ModelAdapter {
     if (error instanceof ProviderTransportError) return new ProviderAdapterError(error.code);
     const httpStatus = error instanceof ProviderHttpError && error.status >= 100 && error.status <= 599
       ? error.status : null;
-    return new ProviderAdapterError(normalizeProviderError(providerStatus(error), false), httpStatus);
+    return new ProviderAdapterError(normalizeProviderError(providerStatus(error), false), httpStatus,error instanceof ProviderHttpError ? error.retryAfterMs : null);
   }
 }

@@ -14,5 +14,7 @@ coverage/
 .r0-artifacts/
 .r2-artifacts/
 .r2-test-artifacts/
+.r3-artifacts/
+.playwright-mcp/
 Dokumentace_priklady/
 Dokumentace příklady/

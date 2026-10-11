@@ -5,6 +5,9 @@ import { r2PermissionSql } from './r2-permission-migration.js';
 import { r2LeaseSql } from './r2-lease-migration.js';
 import { r2VerificationSql } from './r2-verification-migration.js';
 import { r2AgentDetailsSql } from './r2-agent-details-migration.js';
+import { r3ChatSql } from './r3-chat-migration.js';
+import { r3ProjectionSql } from './r3-projection-migration.js';
+import { r3ProviderSettingsSql } from './r3-provider-settings-migration.js';
 
 export interface Migration {
   readonly version: number;
@@ -213,5 +216,8 @@ export const migrations: readonly Migration[] = [
     name: 'r2_agent_run_details',
     sql: r2AgentDetailsSql,
     checksum: sha256(r2AgentDetailsSql)
-  }
+  },
+  { version: 10, name: 'r3_desktop_chats', sql: r3ChatSql, checksum: sha256(r3ChatSql) },
+  { version: 11, name: 'r3_desktop_projections', sql: r3ProjectionSql, checksum: sha256(r3ProjectionSql) },
+  { version: 12, name: 'r3_provider_settings', sql: r3ProviderSettingsSql, checksum: sha256(r3ProviderSettingsSql) }
 ];

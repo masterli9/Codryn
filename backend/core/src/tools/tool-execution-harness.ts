@@ -18,6 +18,7 @@ export interface ToolExecutionHarnessDependencies {
   readonly ids: IdGenerator;
   readonly permissionService?: PermissionService;
   readonly permissionResponder?: PermissionResponder;
+  readonly safeToolInput?: (input: unknown) => boolean;
 }
 
 const messages = Object.freeze({
@@ -40,6 +41,10 @@ function failed(callId: Uuid, code: HarnessCode): ToolResult {
 }
 
 function safeResult(result: ToolResult): JsonValue {
+  if(result.ok&&typeof result.output==='object'&&result.output!==null&&!Array.isArray(result.output)&&result.output.status==='rejected') {
+    const code=result.output.code;
+    return {ok:false,code:typeof code==='string'&&/^R2_[A-Z0-9_]+$/.test(code)?code:'R1_TOOL_EXECUTION_FAILED'};
+  }
   return result.ok
     ? { ok: true, outputType: Array.isArray(result.output) ? 'array' : typeof result.output }
     : { ok: false, code: result.error.code };
@@ -57,7 +62,7 @@ function pathEvidence(input: unknown): { readonly path: string; readonly withinP
 export class ToolExecutionHarness {
   constructor(private readonly dependencies: ToolExecutionHarnessDependencies) {}
 
-  async execute(call: ModelToolCall, runId: Uuid, signal: AbortSignal, context?: ToolExecutionContext): Promise<ToolResult> {
+  async execute(call: ModelToolCall, runId: Uuid, signal: AbortSignal, context?: ToolExecutionContext, onPhase?: (phase: 'waiting_for_approval' | 'executing_tool' | 'verifying') => Promise<void>): Promise<ToolResult> {
     let state: ToolCallState = 'received';
     try {
       await this.dependencies.toolCallStore.createWithInitialEvent({
@@ -65,6 +70,12 @@ export class ToolExecutionHarness {
         toolId: call.toolId, toolVersion: call.toolVersion, state, arguments: safeToolAudit(call.toolId, call.arguments),
         createdAt: this.timestamp(), updatedAt: this.timestamp()
       }, this.event(runId, 'tool_call.received', { callId: call.callId, toolId: call.toolId, toolVersion: call.toolVersion }));
+      const serialized = JSON.stringify(call.arguments);
+      if (new TextEncoder().encode(serialized).length > 64 * 1024
+        || /(?:API[_-]?KEY|TOKEN|SECRET|PASSWORD)\s*[=:]\s*\S+/i.test(serialized)
+        || this.dependencies.safeToolInput?.(call.arguments) === false) {
+        return await this.reject(call, runId, state, 'failed', 'R1_TOOL_INPUT_INVALID');
+      }
       if (signal.aborted) return await this.reject(call, runId, state, 'cancelled', 'R1_CANCELLED');
 
       let definition: ToolDefinition;
@@ -96,6 +107,7 @@ export class ToolExecutionHarness {
           impact: commandInput.impact as string
         });
         state = await this.transition(call.callId, runId, state, 'waiting_for_approval');
+        await onPhase?.('waiting_for_approval');
         if (this.dependencies.permissionResponder === undefined) {
           return await this.reject(call, runId, state, 'failed', 'R2_PERMISSION_PENDING');
         }
@@ -104,8 +116,13 @@ export class ToolExecutionHarness {
           return await this.reject(call, runId, state, 'cancelled', 'R1_CANCELLED');
         }
         let answer: 'allow_once' | 'deny';
-        try { answer = await this.dependencies.permissionResponder(permission); }
-        catch { return await this.reject(call, runId, state, 'failed', 'R2_PERMISSION_PENDING'); }
+        let abortListener: (()=>void) | undefined;
+        try {
+          answer = await Promise.race([this.dependencies.permissionResponder(permission),new Promise<never>((_resolve,reject)=>{abortListener=()=>reject(new Error('R1_CANCELLED'));signal.addEventListener('abort',abortListener,{once:true});if(signal.aborted)abortListener();})]);
+        } catch {
+          if (signal.aborted) { await this.dependencies.permissionService.closePending(permission.id,'cancelled');return await this.reject(call,runId,state,'cancelled','R1_CANCELLED'); }
+          return await this.reject(call, runId, state, 'failed', 'R2_PERMISSION_PENDING');
+        } finally { if(abortListener)signal.removeEventListener('abort',abortListener); }
         if (signal.aborted) {
           await this.dependencies.permissionService.closePending(permission.id, 'cancelled');
           return await this.reject(call, runId, state, 'cancelled', 'R1_CANCELLED');
@@ -120,6 +137,7 @@ export class ToolExecutionHarness {
           permissionRuleId: 'R2_EXPLICIT_COMMAND_APPROVAL',
           permissionReason: 'Command was explicitly approved for this call.'
         });
+        await onPhase?.('executing_tool');
       } else {
         const evidence = pathEvidence(parsed.data);
         const decision = this.dependencies.permissionPolicy.decide({ risk: definition.risk, pathEvidence: evidence ?? {}, canonicalGuard: definition.requiresCanonicalGuard === true });
@@ -134,6 +152,7 @@ export class ToolExecutionHarness {
 
       state = await this.transition(call.callId, runId, state, 'queued');
       state = await this.transition(call.callId, runId, state, 'running');
+      if (definition.risk === 'command_project') await onPhase?.('verifying');
       let output: unknown;
       try { output = await definition.handler(parsed.data, signal, toolContext); }
       catch { return await this.reject(call, runId, state, signal.aborted ? 'cancelled' : 'failed', signal.aborted ? 'R1_CANCELLED' : 'R1_TOOL_EXECUTION_FAILED'); }

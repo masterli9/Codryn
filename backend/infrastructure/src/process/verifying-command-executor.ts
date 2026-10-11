@@ -1,5 +1,5 @@
 import type { CommandSpec } from '@codryn/shared';
-import { VerifyCommand, type ChangeActor, type CommandExecutor, type CommandResult, type VerificationStore, type WorkspaceObserver, type WorkspaceSnapshot, type WorkspaceStore, type Clock, type IdGenerator } from '@codryn/core';
+import { VerifyCommand, type VerifyCommandDependencies, type ChangeActor, type CommandExecutor, type CommandResult, type VerificationStore, type WorkspaceObserver, type WorkspaceSnapshot, type WorkspaceStore, type Clock, type IdGenerator } from '@codryn/core';
 
 export interface VerifyingCommandExecutorDependencies {
   readonly runner: { run(spec: CommandSpec, signal: AbortSignal): Promise<CommandResult> };
@@ -10,6 +10,9 @@ export interface VerifyingCommandExecutorDependencies {
   readonly clock: Clock;
   readonly isRelevant?: (command: CommandSpec, snapshot: WorkspaceSnapshot) => boolean | Promise<boolean>;
   readonly onResult?: (result: CommandResult) => Promise<void>;
+  readonly runnerForActor?: NonNullable<VerifyCommandDependencies['runnerForActor']>;
+  readonly onOutput?: NonNullable<VerifyCommandDependencies['onOutput']>;
+  readonly coverageFor?: NonNullable<VerifyCommandDependencies['coverageFor']>;
 }
 
 export class VerifyingCommandExecutor implements CommandExecutor {

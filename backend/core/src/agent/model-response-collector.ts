@@ -148,7 +148,7 @@ async function closeIteratorWithoutMaskingFailure(iterator: AsyncIteratorHandle)
 export async function collectModelResponse(
   events: AsyncIterable<unknown>,
   signal: AbortSignal,
-  options: { readonly allowCommentaryWithToolCalls?: boolean } = {}
+  options: { readonly allowCommentaryWithToolCalls?: boolean; readonly onValidatedEvent?: (event:ModelStreamEvent)=>Promise<void> } = {}
 ): Promise<CollectedModelResponse> {
   checkAbort(signal);
   const iterator = openIterator(events);
@@ -207,6 +207,7 @@ export async function collectModelResponse(
           terminal = event;
           break;
       }
+      await options.onValidatedEvent?.(event);
     }
   } finally {
     if (!iteratorFinished) {

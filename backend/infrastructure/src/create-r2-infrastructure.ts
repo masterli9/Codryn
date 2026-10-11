@@ -1,12 +1,14 @@
 import { createHash } from 'node:crypto';
+import type { DatabaseSync } from 'node:sqlite';
+import type { WorkspaceObserver,WorkspaceStore,R2ExecutionOptions } from '@codryn/core';
 import { mkdir, readFile, realpath } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import {
   ApplyPatch, ContextAssembler, ControlledPermissionPolicy, GetChangeDiff, PermissionService,
   RecoverMutations, RecoverR2Run, RevertChanges, RunAgentLoop,
-  ToolExecutionHarness, ToolRegistry, commandRunTool, filePatchTool,
+  ToolExecutionHarness, ToolRegistry, commandRunTool, filePatchTool, ReferenceVerificationPolicy,
   fileReadTool, textSearchTool, type ChangeSetStore, type Clock,
-  type EventStore, type IdGenerator, type ModelAdapter, type PermissionResponder, type ToolCallRecord, type CommandResult
+  type EventStore, type IdGenerator, type ModelAdapter, type PermissionResponder, type ToolCallRecord, type CommandResult, type CommandRunner, type CommandOutput, type CommandOwnership, type ChangeActor
 } from '@codryn/core';
 import type { R2RunResult, RunAgentRequest } from '@codryn/shared';
 import type { FakeScenario } from './model/scripted-model-adapter.js';
@@ -34,6 +36,7 @@ import { SqliteVerificationStore } from './persistence/sqlite-verification-store
 import { SqliteWorkspaceStore } from './persistence/sqlite-workspace-store.js';
 import { SystemClock } from './system/system-clock.js';
 import { UuidGenerator } from './system/uuid-generator.js';
+import { StreamRedactor } from './logging/stream-redactor.js';
 
 export interface R2Infrastructure {
   readonly projectId: string;
@@ -68,6 +71,17 @@ function auditEvent(ids: IdGenerator, clock: Clock, runId: string, requestId: st
 }
 
 export async function createR2Infrastructure(options: {
+  readonly workspaceObserver?: WorkspaceObserver;
+  readonly workspaceStore?: WorkspaceStore;
+  readonly filesystemEffect?: <T>(effect:()=>Promise<T>)=>Promise<T>;
+  readonly database?: DatabaseSync;
+  readonly onRunCreated?: (runId: string) => Promise<void>;
+  readonly allowReadOnlyCompletion?: boolean;
+  readonly onModelEvent?: R2ExecutionOptions['onModelEvent'];
+  readonly onModelTurnCompleted?: R2ExecutionOptions['onModelTurnCompleted'];
+  readonly safeToolInput?: (input:unknown)=>boolean;
+  readonly commandHooks?: { owned(actor:ChangeActor,evidence:CommandOwnership):Promise<void>;output(actor:ChangeActor,output:CommandOutput):void;result(actor:ChangeActor,result:CommandResult):Promise<CommandResult> };
+  readonly safeModelText?: (text:string)=>string;
     readonly userDataPath: string;
     readonly projectRoot: string;
   readonly scenario?: FakeScenario | 'change-verify-return';
@@ -83,7 +97,7 @@ export async function createR2Infrastructure(options: {
   const userDataPath = resolve(options.userDataPath);
   const projectRoot = resolve(options.projectRoot);
   await mkdir(userDataPath, { recursive: true });
-  const database = openR0Database(join(userDataPath, 'codryn.sqlite'));
+  const database = options.database ?? openR0Database(join(userDataPath, 'codryn.sqlite'));
   let closed = false;
   try {
     const clock = options.clock ?? new SystemClock();
@@ -95,15 +109,15 @@ export async function createR2Infrastructure(options: {
       })()
       : options.scenario;
     if (options.model === undefined && scenario === undefined) throw new Error('R2_MODEL_NOT_CONFIGURED');
-    runMigrations(database, clock.now());
-    const workspaces = new SqliteWorkspaceStore(database);
+    if (options.database === undefined) runMigrations(database, clock.now());
+    const workspaces = options.workspaceStore ?? new SqliteWorkspaceStore(database);
     const canonicalRoot = await realpath(projectRoot);
-    const projectId = workspaces.open(process.platform === 'win32' ? canonicalRoot.toLowerCase() : canonicalRoot, ids.next());
+    const projectId = new SqliteWorkspaceStore(database).open(process.platform === 'win32' ? canonicalRoot.toLowerCase() : canonicalRoot, ids.next());
     const contextPolicy = await ContextPathPolicy.fromProjectRoot(projectRoot);
     const filesystem = new ProjectFilesystem(projectRoot, { contextPolicy });
     let readCalls = 0;
     const git = new ProjectGitState(projectRoot);
-    const observer = new FileWorkspaceObserver(projectRoot, { git, contextPolicy });
+    const observer = options.workspaceObserver ?? new FileWorkspaceObserver(projectRoot, { git, contextPolicy });
     await workspaces.observe(projectId, await observer.inspect(new AbortController().signal));
     const eventStore = new SqliteEventStore(database);
     const toolCalls = new SqliteToolCallStore(database, { clock, ids });
@@ -133,6 +147,7 @@ export async function createR2Infrastructure(options: {
       }
     };
     const commandRunner = new R2CommandRunner(projectRoot);
+    const commandHooks = options.commandHooks;
     const verifications = new SqliteVerificationStore(database);
     const verifyingCommand = new VerifyingCommandExecutor({
       runner: commandRunner,
@@ -141,6 +156,15 @@ export async function createR2Infrastructure(options: {
       verifications,
       ids,
       clock,
+      ...(commandHooks === undefined ? {} : {
+        runnerForActor: (actor:ChangeActor):CommandRunner => ({run:async(spec,signal,onOutput)=>{
+          const runner=new R2CommandRunner(projectRoot,{onOwned:evidence=>commandHooks.owned(actor,evidence)});
+          const result=await runner.run(spec,signal,onOutput);
+          return await commandHooks.result(actor,result);
+        }}),
+        onOutput:commandHooks.output
+      }),
+      coverageFor: (_command,relevant) => relevant ? {profileId:'r2-sum-v1',coveredPaths:['sum.mjs']} : undefined,
       isRelevant: async (command, snapshot) => {
         if (command.executable !== (options.trustedVerificationExecutable ?? process.execPath) || resolve(command.cwd) !== projectRoot
           || command.args.length !== 2 || command.args[0] !== '--test' || command.args[1] !== 'sum.test.mjs') return false;
@@ -165,11 +189,12 @@ export async function createR2Infrastructure(options: {
       textSearchTool(async (input, signal) => { readCalls += 1; return filesystem.searchText(input, signal); }),
       filePatchTool({ execute: async (input, actor, signal) => {
         const setId = await changeSets.open(actor.projectId, actor.runId);
-        const result = await new ApplyPatch({
+        const apply = () => new ApplyPatch({
           writer: guardedWriter, blobs, journal, ids, setId,
           nextSequence: () => changeSets.reserveSequence(setId),
           hash: (bytes) => createHash('sha256').update(bytes).digest('hex')
         }).execute(input, actor, signal);
+        const result = options.filesystemEffect ? await options.filesystemEffect(apply) : await apply();
         if (result.status === 'applied' && options.onPatch !== undefined) await options.onPatch(result.entry.path);
         return result;
       } }),
@@ -184,6 +209,7 @@ export async function createR2Infrastructure(options: {
       clock,
       ids,
       permissionService: permissions,
+      ...(options.safeToolInput === undefined ? {} : { safeToolInput: options.safeToolInput }),
       ...(options.permissionResponder === undefined ? {} : { permissionResponder: options.permissionResponder })
     });
     const logger = new JsonlDiagnosticLogger({ directory: join(userDataPath, 'logs'), redactionPolicy: { sensitiveRoots: [userDataPath, projectRoot] } });
@@ -196,7 +222,8 @@ export async function createR2Infrastructure(options: {
       eventStore,
       clock,
       ids,
-      logger
+      logger,
+      safeModelText:options.safeModelText??(text=>{const redactor=new StreamRedactor({secrets:[]});return redactor.push('model',text)+redactor.finish('model');})
     });
     const changes = {
       diff: new GetChangeDiff({ journal, blobs, files: fileHashes }),
@@ -222,7 +249,8 @@ export async function createR2Infrastructure(options: {
             updatedAt: clock.now()
           };
           await toolCalls.createWithInitialEvent(call, auditEvent(ids, clock, runId, requestId, callId));
-        }
+        },
+        finishAuditCall:async({callId,runId,requestId,status})=>{const now=clock.now(),to=status==='applied'?'succeeded':'failed';await toolCalls.transitionWithEvent({callId,from:'running',to,updatedAt:now,safeResult:{status},event:{...auditEvent(ids,clock,runId,requestId,callId),eventType:`tool_call.${to}`,payload:{callId,toolId:'change.revert',status}}});}
       }),
       changeSets
     };
@@ -237,6 +265,10 @@ export async function createR2Infrastructure(options: {
         let runSetId: string | null = null;
         let runId: string | null = null;
         const result = await loop.executeR2(request, signal, {
+          ...(options.onRunCreated === undefined ? {} : { onRunCreated: options.onRunCreated }),
+          ...(options.allowReadOnlyCompletion === undefined ? {} : { allowReadOnlyCompletion: options.allowReadOnlyCompletion }),
+          ...(options.onModelEvent === undefined ? {} : { onModelEvent: options.onModelEvent }),
+          ...(options.onModelTurnCompleted === undefined ? {} : { onModelTurnCompleted: options.onModelTurnCompleted }),
           projectId,
           changeSetId: null,
           recoveryRequired: async () => (await journal.pending(projectId)).length > 0,
@@ -253,9 +285,17 @@ export async function createR2Infrastructure(options: {
             const pending = await journal.pending(projectId);
             const snapshot = await workspaces.observe(projectId, await observer.inspect(signal));
             const record = runId === null ? null : await verifications.current(runId, snapshot);
-            const verification = record === null
+            let verification = record === null
               ? { status: 'unverified' as const, recordId: null, reason: 'No persisted verification record exists.' }
               : { status: record.stale ? 'stale' as const : record.result === 'passed' ? 'verified' as const : 'unverified' as const, recordId: record.id, reason: record.reason };
+            if(record!==null&&verification.status==='verified') {
+              const currentDiff=setId===null?[]:await changes.diff.execute(setId,signal);
+              const changedPaths=currentDiff.filter(file=>file.status!=='reverted').map(file=>file.path);
+              const coverage=database.prepare('SELECT covered_paths_json FROM desktop_verification_coverage WHERE record_id=?').get(record.id);
+              const persisted:unknown=coverage?JSON.parse(String(coverage.covered_paths_json)):[];
+              const assessment=new ReferenceVerificationPolicy().assess({changedPaths,observedPaths:snapshot.observedPaths??[],complete:snapshot.complete,manifestValid:Array.isArray(persisted)&&persisted.includes('sum.mjs'),commandTrusted:true});
+              if(assessment.uncoveredPaths.length||changedPaths.length===0)verification={status:'unverified',recordId:record.id,reason:'Referenční kontrola nepokrývá všechny aktuální změny.'};
+            }
             return { changed: entries.some((entry) => entry.kind === 'patch'), verification, recoveryRequired: pending.length > 0, pending: pending.length > 0 };
           }
         });
@@ -273,10 +313,10 @@ export async function createR2Infrastructure(options: {
       permissions,
       recover,
       eventStore,
-      close() { if (!closed) { closed = true; observer.close(); database.close(); } }
+      close() { if (!closed) { closed = true; if(options.workspaceObserver===undefined&&observer instanceof FileWorkspaceObserver)observer.close(); if (options.database === undefined) database.close(); } }
     };
   } catch (error) {
-    database.close();
+    if (options.database === undefined) database.close();
     throw error;
   }
 }

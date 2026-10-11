@@ -16,6 +16,7 @@ const config: ForgeConfig = {
     extraResource: [
       path.resolve(__dirname, '../../tests/support/fixtures/process'),
       path.resolve(__dirname, '../../tests/support/fixtures/r2-project')
+      ,path.resolve(__dirname,'src/renderer/assets/instrument-sans-license.txt')
     ]
   },
   makers: [

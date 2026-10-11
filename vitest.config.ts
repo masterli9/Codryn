@@ -4,10 +4,14 @@ const allTests = [
   'shared/test/**/*.test.ts',
   'backend/**/test/**/*.test.ts',
   'tests/**/*.test.ts',
-  'apps/**/test/**/*.test.ts'
+  'apps/**/test/**/*.test.ts', 'apps/**/test/**/*.test.tsx'
 ];
 
 const hostIntegrationTests = [
+  'backend/infrastructure/test/r3-runtime-flow.test.ts',
+  'backend/infrastructure/test/r3-command-stream.test.ts',
+  'apps/desktop/test/r3-secret-probe.test.ts',
+  'backend/infrastructure/test/r3-run-manager.test.ts',
   'apps/cli/test/index.test.ts',
   'backend/infrastructure/test/composition.test.ts',
   'backend/infrastructure/test/git-probe.test.ts',
@@ -46,6 +50,7 @@ const hostIntegrationTestOptions = {
 export default defineConfig({
   test: {
     projects: [
+      {test:{name:'desktop-e2e',...hostIntegrationTestOptions,maxWorkers:1,include:process.env.CODRYN_DESKTOP_E2E==='1'?['tests/desktop/**/*.test.ts']:[],fileParallelism:false}},
       {
         test: {
           name: 'write-probe',
@@ -82,7 +87,7 @@ export default defineConfig({
           ...commonTestOptions,
           sequence: { groupOrder: 4 },
           include: allTests,
-          exclude: [...hostIntegrationTests, ...writeProbeTests, ...guardedWriterTests]
+          exclude: [...hostIntegrationTests, ...writeProbeTests, ...guardedWriterTests,'tests/desktop/**/*.test.ts']
         }
       }
     ]
