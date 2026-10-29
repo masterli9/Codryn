@@ -2,7 +2,7 @@ import type { DatabaseSync, SQLOutputValue } from 'node:sqlite';
 import type { Clock, DesktopProjectionStore, IdGenerator } from '@codryn/core';
 import { permissionViewSchema, r3ActivityViewSchema, r3CommandViewSchema, r3MessageSchema, r3OutputPageSchema, r3ProviderErrorSchema, r3RunDetailSchema, r3RunViewSchema, r3SnapshotSchema, r3UpdateSchema, verificationRecordSchema, uuidSchema } from '@codryn/shared';
 import type { R3ActivityView, R3Message, R3OutputPage, R3RunDetail, R3RunView, R3Snapshot, R3Update, R3VerificationView, Uuid } from '@codryn/shared';
-import { integer, nullableText, parseJson, text, transaction } from './r3-sqlite-helpers.js';
+import { desktopPhase, integer, nullableText, parseJson, text, transaction } from './r3-sqlite-helpers.js';
 import { SqliteDesktopProjectStore } from './sqlite-desktop-project-store.js';
 
 type Row = Record<string, SQLOutputValue>;
@@ -11,7 +11,8 @@ function message(row: Row): R3Message { return r3MessageSchema.parse({id:row.id,
 export function desktopRunView(database: DatabaseSync, jobId: Uuid): R3RunView|null {
   const row=database.prepare('SELECT j.*,a.state AS phase,a.step_count FROM desktop_jobs j LEFT JOIN agent_runs a ON a.run_id=j.run_id WHERE j.id=?').get(jobId); if(!row) return null;
   const input=object(parseJson(row.input_json));
-  return r3RunViewSchema.parse({jobId:row.id,requestId:row.request_id,runId:row.run_id,state:row.state,phase:row.phase??null,mode:input.mode,model:parseJson(row.descriptor_json),maxSteps:input.maxSteps,result:row.result_json===null?null:parseJson(row.result_json),failure:row.failure_json===null?null:parseJson(row.failure_json),stepCount:row.step_count??0,startedAt:row.started_at,endedAt:row.ended_at,usage:row.usage_json===null?null:parseJson(row.usage_json),providerError:row.provider_error_json===null?null:parseJson(row.provider_error_json)});
+  const failure=r3RunViewSchema.shape.failure.parse(row.failure_json===null?null:parseJson(row.failure_json));
+  return r3RunViewSchema.parse({jobId:row.id,requestId:row.request_id,runId:row.run_id,state:row.state,phase:desktopPhase(row.phase,failure),mode:input.mode,model:parseJson(row.descriptor_json),maxSteps:input.maxSteps,result:row.result_json===null?null:parseJson(row.result_json),failure,stepCount:row.step_count??0,startedAt:row.started_at,endedAt:row.ended_at,usage:row.usage_json===null?null:parseJson(row.usage_json),providerError:row.provider_error_json===null?null:parseJson(row.provider_error_json)});
 }
 const summaries: Record<string,string>={'agent_run.created':'Běh založen','agent_run.state_changed':'Změna fáze běhu','tool_call.received':'Přijat nástroj','tool_call.state_changed':'Změna stavu nástroje','permission.requested':'Čeká na schválení příkazu','permission.decided':'Rozhodnutí o oprávnění','permission.claimed':'Jednorázové oprávnění použito','permission.closed':'Žádost uzavřena','verification.recorded':'Uložen výsledek kontroly','change.mutation_prepared':'Změna připravena','change.mutation_applied':'Změna zapsána','change.mutation_not_applied':'Změna neprovedena','change.mutation_conflicted':'Konflikt při změně'};
 function activityView(row: Row): R3ActivityView {

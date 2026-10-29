@@ -17,7 +17,7 @@ export interface DesktopRequestStore {
   get(jobId: Uuid): Promise<R3RunView | null>;
   accept(input: R3SubmitInput, projectId: Uuid, model: ModelDescriptor): Promise<R3Accepted>;
   attachRun(requestId: Uuid, runId: Uuid): Promise<void>;
-  setState(jobId: Uuid, state: R3JobState): Promise<void>;
+  setState(jobId: Uuid, state: R3JobState, failure?: NonNullable<R3RunView['failure']>): Promise<void>;
   finish(jobId: Uuid, result: R2RunResult): Promise<void>;
   interruptUnfinished(projectId: Uuid): Promise<void>;
 }

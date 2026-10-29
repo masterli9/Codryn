@@ -3,6 +3,7 @@ import { writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { app, BrowserWindow, ipcMain,dialog } from 'electron';
 import started from 'electron-squirrel-startup';
+import { assertR3ProfileRoot } from '@codryn/infrastructure';
 import { createApplicationServices,createDesktopApplicationServices, type ApplicationServices } from './composition-root.js';
 import { registerR3Handlers } from './ipc/register-r3-handlers.js';
 import { CloseController } from './lifecycle/close-controller.js';
@@ -63,7 +64,7 @@ function createWindow(): BrowserWindow {
     }
   });
   window.once('ready-to-show', () => { window.show(); });
-  if(desktopServices){disposeR3?.();disposeR3=registerR3Handlers(window,desktopServices,MAIN_WINDOW_WEBPACK_ENTRY);}
+  disposeR3?.();disposeR3=registerR3Handlers(window,desktopServices,MAIN_WINDOW_WEBPACK_ENTRY);
   window.on('close',event=>{if(!closing&&closeController){event.preventDefault();void closeController.requestClose().then(status=>{if(status==='failed')void dialog.showMessageBox(window,{type:'error',message:'Zastavení se nepodařilo potvrdit. Aplikace a databáze zůstávají otevřené. Zkuste zavření znovu.'});});}});
   window.on('closed', () => {
     if (mainWindow === window) {
@@ -84,7 +85,7 @@ const testProfileArgument=process.argv.find(value=>value.startsWith('--r3-test-p
 const testProfile=testProfileArgument?.slice('--r3-test-profile='.length);
 const testScenario=process.argv.find(value=>value.startsWith('--r3-test-scenario='))?.slice('--r3-test-scenario='.length);
 if(testScenario&&(!testProfile||!['stream','two-patches','interrupted-model'].includes(testScenario)))throw new Error('R3_TEST_SCENARIO_INVALID');
-if(testProfile){const relative=path.relative(path.resolve(process.cwd(),'.r3-artifacts'),path.resolve(testProfile));if(!path.isAbsolute(testProfile)||relative===''||path.isAbsolute(relative)||relative==='..'||relative.startsWith('..'+path.sep))throw new Error('R3_TEST_PROFILE_INVALID');app.setPath('userData',testProfile);}
+if(testProfileArgument){try{app.setPath('userData',assertR3ProfileRoot(path.resolve(process.cwd(),'.r3-artifacts'),testProfile??''));}catch{throw new Error('R3_TEST_PROFILE_INVALID');}}
 if (smokeMode) {
   app.disableHardwareAcceleration();
   app.commandLine.appendSwitch('disable-gpu');
@@ -99,9 +100,10 @@ const anyUserDataArgument = process.argv.find((argument) => argument.startsWith(
 const r2NodeExecutableArgument = process.argv.find((argument) => argument.startsWith('--r2-node-executable='));
 const r2NodeExecutable = r2NodeExecutableArgument?.slice('--r2-node-executable='.length);
 const smokeUserDataPath = userDataArgument?.slice(userDataPrefix.length);
+const r3SmokeProfileValid = !r3SmokeMode || (()=>{try{assertR3ProfileRoot(path.resolve(process.cwd(),'.r3-artifacts'),smokeUserDataPath??'');return true;}catch{return false;}})();
 const smokeArgumentsValid = !smokeMode || (
-  smokeUserDataPath !== undefined && path.isAbsolute(smokeUserDataPath) && [r0SmokeMode,r2SmokeMode,r3SmokeMode].filter(Boolean).length===1 && (!r3SmokeMode||(r3Phase!==undefined&&r3SmokePhases.includes(r3Phase as R3SmokePhase)&&path.relative(path.resolve(process.cwd(),'.r3-artifacts'),smokeUserDataPath)!==''&&!path.relative(path.resolve(process.cwd(),'.r3-artifacts'),smokeUserDataPath).startsWith('..')&&!path.isAbsolute(path.relative(path.resolve(process.cwd(),'.r3-artifacts'),smokeUserDataPath)))) &&
-  (r2NodeExecutable === undefined || path.isAbsolute(r2NodeExecutable))
+  smokeUserDataPath !== undefined && path.isAbsolute(smokeUserDataPath) && [r0SmokeMode,r2SmokeMode,r3SmokeMode].filter(Boolean).length===1 && (!r3SmokeMode||(r3Phase!==undefined&&r3SmokePhases.includes(r3Phase as R3SmokePhase))) &&
+  r3SmokeProfileValid && (r2NodeExecutable === undefined || path.isAbsolute(r2NodeExecutable))
 );
 
 if (anyUserDataArgument !== undefined && !smokeMode) {
@@ -157,7 +159,7 @@ if (anyUserDataArgument !== undefined && !smokeMode) {
     } catch(error) {
       if(r3SmokeMode&&smokeUserDataPath){const code=error instanceof Error&&/^R3_[A-Z_]+$/.test(error.message)?error.message:error instanceof Error&&/^E[A-Z]+$/.test(String(Reflect.get(error,'code')))?String(Reflect.get(error,'code')):'R3_SMOKE_INTERNAL';await writeFile(path.join(smokeUserDataPath,'r3-failure.json'),JSON.stringify({schemaVersion:1,phase:r3Phase,code,passed:false})).catch(()=>undefined);process.stderr.write(`${code}\n`);}
       if(smokeMode){process.stderr.write('Smoke startup failed.\n');app.exit(1);}
-      else {ipcMain.handle('r3:invoke',()=>({ok:false,error:{code:'R3_RECOVERY_REQUIRED',message:'Databázi se nepodařilo bezpečně otevřít nebo obnovit. Data zůstávají zachována.'}}));mainWindow=createWindow();}
+      else {mainWindow=createWindow();}
     }
   });
 

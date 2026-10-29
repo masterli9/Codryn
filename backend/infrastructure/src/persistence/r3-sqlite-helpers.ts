@@ -1,4 +1,8 @@
 import type { DatabaseSync, SQLOutputValue } from 'node:sqlite';
+import type { R3RunView } from '@codryn/shared';
+export function desktopPhase(phase: SQLOutputValue | undefined, failure: R3RunView['failure']): unknown {
+  return phase ?? (failure === null ? null : failure.code === 'R1_CANCELLED' ? 'cancelled' : 'failed');
+}
 export function transaction<T>(database: DatabaseSync, effect: () => T): T {
   database.exec('BEGIN IMMEDIATE');
   try { const result = effect(); database.exec('COMMIT'); return result; }

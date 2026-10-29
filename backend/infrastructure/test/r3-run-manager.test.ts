@@ -31,3 +31,42 @@ it('deduplicates active requests, isolates projects on one DB and completes read
     expect(shared?.prepare('SELECT count(*) AS n FROM agent_runs').get()?.n).toBe(2);
   }finally{release();await host.manager.shutdown(new AbortController().signal);host.close();await rm(root,{recursive:true,force:true,maxRetries:3,retryDelay:100});}
 });
+for (const code of ['R3_SECRET_UNAVAILABLE', 'synthetic-factory-secret']) it(`persists a safe factory failure for ${code} and releases the project`, async () => {
+  const root = await mkdtemp(join(tmpdir(), 'codryn-r3-factory-')), profile = join(root, 'profile'), project = join(root, 'project');
+  const { mkdir } = await import('node:fs/promises'); await mkdir(project);
+  const runtimeFactory = () => async () => { throw new Error(code); };
+  let host = await createR3Infrastructure({ userDataPath: profile, runtimeFactory });
+  try {
+    const p = await host.projects.open(project, AbortSignal.timeout(10000)), chat = await host.chats.create(p.id, 'Factory failure');
+    const input: R3SubmitInput = { requestId: randomUUID(), chatId: chat.id, task: 'Explain', maxSteps: 16, mode: 'demo' };
+    const accepted = await host.manager.submit(input), expected = code === 'R3_SECRET_UNAVAILABLE' ? code : 'R3_INTERNAL';
+    const result = await host.manager.wait(accepted.jobId);
+    expect(result).toMatchObject({ state: 'interrupted', phase: 'failed', result: null, failure: { code: expected } });
+    expect(result.failure?.message).toBeTruthy();
+    expect(JSON.stringify(await host.snapshot(chat.id))).not.toContain('synthetic-factory-secret');
+    expect(host.manager.active(p.id)).toBeNull();
+    const second = await host.manager.submit({ ...input, requestId: randomUUID() });
+    expect((await host.manager.wait(second.jobId)).failure?.code).toBe(expected);
+    await host.shutdown(AbortSignal.timeout(10000)); host.close();
+    host = await createR3Infrastructure({ userDataPath: profile, runtimeFactory });
+    expect((await host.snapshot(chat.id)).run).toMatchObject({ phase: 'failed', failure: { code: expected } });
+    expect(host.resources.database.prepare('SELECT count(*) AS n FROM agent_runs').get()?.n).toBe(0);
+  } finally { await host.shutdown(AbortSignal.timeout(10000)); host.close(); await rm(root, { recursive: true, force: true }); }
+});
+
+it('distinguishes cancellation during factory startup from failure', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'codryn-r3-factory-stop-')), project = join(root, 'project');
+  const { mkdir } = await import('node:fs/promises'); await mkdir(project);
+  let ready: () => void = () => undefined;
+  const started = new Promise<void>(resolve => { ready = resolve; });
+  const host = await createR3Infrastructure({ userDataPath: join(root, 'profile'), runtimeFactory: () => async input => {
+    ready();
+    return new Promise((_resolve, reject) => input.signal.addEventListener('abort', () => reject(new Error('synthetic-cancel-secret')), { once: true }));
+  } });
+  try {
+    const p = await host.projects.open(project, AbortSignal.timeout(10000)), chat = await host.chats.create(p.id, 'Stop startup');
+    const accepted = await host.manager.submit({ requestId: randomUUID(), chatId: chat.id, task: 'Explain', maxSteps: 16, mode: 'demo' });
+    await started; await host.manager.stop(p.id, accepted.jobId);
+    expect(await host.manager.wait(accepted.jobId)).toMatchObject({ state: 'interrupted', phase: 'cancelled', failure: { code: 'R1_CANCELLED' } });
+  } finally { await host.shutdown(AbortSignal.timeout(10000)); host.close(); await rm(root, { recursive: true, force: true }); }
+});

@@ -75,3 +75,4 @@ export { createDesktopRuntimeFactory } from './model/r3-runtime-factory.js';
 export { testProviderConnection } from './model/provider-connection-test.js';
 export type { R3Infrastructure,R3InfrastructureResources } from './create-r3-infrastructure.js';
 export { SqliteOwnedCommandStore } from './persistence/sqlite-owned-command-store.js';
+export { assertR3ProfileRoot } from './filesystem/r3-profile-boundary.js';

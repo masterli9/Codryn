@@ -11,10 +11,10 @@ const messages:Record<R3ErrorCode,string>={R3_INPUT_INVALID:'Požadavek je nepla
 export function r3SafeError(error:unknown):R3IpcResponse {
   const parsed=r3ErrorCodeSchema.safeParse(error instanceof Error?error.message:undefined),code=parsed.success?parsed.data:'R3_INTERNAL';return {ok:false,error:{code,message:messages[code]}};
 }
-export function createR3Handler(dependencies:{services:R3Services;assertSender:(event:R3SenderEvent)=>void;chooseDirectory:()=>Promise<string|null>;subscriptions:{attach(event:R3SenderEvent,chatId:string,afterCursor:number):Promise<unknown>;detach(event:R3SenderEvent,id:string):void}}) {
+export function createR3Handler(dependencies:{services:R3Services|undefined;assertSender:(event:R3SenderEvent)=>void;chooseDirectory:()=>Promise<string|null>;subscriptions:{attach(event:R3SenderEvent,chatId:string,afterCursor:number):Promise<unknown>;detach(event:R3SenderEvent,id:string):void}}) {
   return async(event:R3SenderEvent,raw:unknown):Promise<R3IpcResponse>=>{
     try{
-      dependencies.assertSender(event);const parsed=r3IpcRequestSchema.safeParse(raw);if(!parsed.success)throw new Error('R3_INPUT_INVALID');const request=parsed.data,services=dependencies.services,signal=AbortSignal.timeout(10000);let value:unknown;
+      dependencies.assertSender(event);const parsed=r3IpcRequestSchema.safeParse(raw);if(!parsed.success)throw new Error('R3_INPUT_INVALID');const request=parsed.data,services=dependencies.services;if(!services)throw new Error('R3_RECOVERY_REQUIRED');const signal=AbortSignal.timeout(10000);let value:unknown;
       switch(request.operation){
         case 'project.open':{const root=await dependencies.chooseDirectory();value=root===null?{cancelled:true}:await services.projects.open(root,AbortSignal.timeout(10000));break;}
         case 'project.list':value=await services.projects.list();break;

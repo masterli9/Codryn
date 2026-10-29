@@ -5,7 +5,11 @@ import { uuidSchema } from '@codryn/shared';
 import type { R3Infrastructure } from '@codryn/infrastructure';
 import { assertR3Sender,createR3Handler } from './r3-handler.js';
 import { R3Subscriptions } from './r3-subscriptions.js';
-export function registerR3Handlers(window:BrowserWindow,services:R3Infrastructure,entry:string):()=>void {
+export function registerR3Handlers(window:BrowserWindow,services:R3Infrastructure|undefined,entry:string):()=>void {
+  if(!services){
+    ipcMain.handle('r3:invoke',createR3Handler({services:undefined,assertSender:event=>assertR3Sender(event,window.webContents,entry),chooseDirectory:async()=>null,subscriptions:{attach:async()=>{throw new Error('R3_RECOVERY_REQUIRED');},detach:()=>undefined}}));
+    return ()=>ipcMain.removeHandler('r3:invoke');
+  }
   const subscriptions=new R3Subscriptions(services.subscriptions),assertSender=(event:Parameters<typeof assertR3Sender>[0])=>assertR3Sender(event,window.webContents,entry);
   ipcMain.handle('r3:invoke',createR3Handler({services,assertSender,subscriptions,chooseDirectory:async()=>{const chosen=await dialog.showOpenDialog(window,{title:'Otevřít projekt',properties:['openDirectory']});return chosen.canceled?null:chosen.filePaths[0]??null;}}));
   const ackSchema=z.object({chatId:uuidSchema,cursor:z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER)}).strict();

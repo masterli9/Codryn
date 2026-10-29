@@ -3,7 +3,7 @@ import type { DatabaseSync } from 'node:sqlite';
 import type { Clock, DesktopRequestStore, IdGenerator } from '@codryn/core';
 import { modelDescriptorSchema, r2RunResultSchema, r3AcceptedSchema, r3JobStateSchema, r3RunViewSchema, r3SubmitInputSchema, uuidSchema } from '@codryn/shared';
 import type { ModelDescriptor, R2RunResult, R3Accepted, R3JobState, R3RunView, R3SubmitInput, Uuid } from '@codryn/shared';
-import { parseJson, text, transaction } from './r3-sqlite-helpers.js';
+import { desktopPhase, parseJson, text, transaction } from './r3-sqlite-helpers.js';
 export function desktopRequestDigest(input: R3SubmitInput, projectId: Uuid): string {
   return createHash('sha256').update(JSON.stringify({ projectId, chatId: input.chatId, task: input.task, mode: input.mode, maxSteps: input.maxSteps, retryOfRequestId: input.retryOfRequestId ?? null })).digest('hex');
 }
@@ -19,7 +19,8 @@ export class SqliteDesktopRequestStore implements DesktopRequestStore {
     const row = this.database.prepare('SELECT j.*, a.state AS phase, a.step_count FROM desktop_jobs j LEFT JOIN agent_runs a ON a.run_id=j.run_id WHERE j.id=?').get(uuidSchema.parse(jobId));
     if (!row) return null;
     const input = r3SubmitInputSchema.parse(parseJson(row.input_json));
-    return r3RunViewSchema.parse({ jobId: row.id, requestId: row.request_id, runId: row.run_id, state: row.state, phase: row.phase ?? null, mode: input.mode, model: parseJson(row.descriptor_json), maxSteps: input.maxSteps, result: row.result_json === null ? null : parseJson(row.result_json), failure: row.failure_json === null ? null : parseJson(row.failure_json), stepCount: row.step_count ?? 0, startedAt: row.started_at, endedAt: row.ended_at, usage: row.usage_json === null ? null : parseJson(row.usage_json), providerError: row.provider_error_json === null ? null : parseJson(row.provider_error_json) });
+    const failure = r3RunViewSchema.shape.failure.parse(row.failure_json === null ? null : parseJson(row.failure_json));
+    return r3RunViewSchema.parse({ jobId: row.id, requestId: row.request_id, runId: row.run_id, state: row.state, phase: desktopPhase(row.phase, failure), mode: input.mode, model: parseJson(row.descriptor_json), maxSteps: input.maxSteps, result: row.result_json === null ? null : parseJson(row.result_json), failure, stepCount: row.step_count ?? 0, startedAt: row.started_at, endedAt: row.ended_at, usage: row.usage_json === null ? null : parseJson(row.usage_json), providerError: row.provider_error_json === null ? null : parseJson(row.provider_error_json) });
   }
   async accept(raw: R3SubmitInput, projectId: Uuid, model: ModelDescriptor): Promise<R3Accepted> {
     const input = r3SubmitInputSchema.parse(raw); uuidSchema.parse(projectId); modelDescriptorSchema.parse(model);
@@ -54,12 +55,14 @@ export class SqliteDesktopRequestStore implements DesktopRequestStore {
       this.database.prepare('UPDATE chat_messages SET run_id=? WHERE request_id=?').run(runId, requestId);
     });
   }
-  async setState(jobId: Uuid, state: R3JobState): Promise<void> {
+  async setState(jobId: Uuid, state: R3JobState, failure?: NonNullable<R3RunView['failure']>): Promise<void> {
     const current = await this.get(jobId); if (!current) throw new Error('R3_NOT_FOUND');
     r3JobStateSchema.parse(state);
+    const safeFailure = failure === undefined ? undefined : r3RunViewSchema.shape.failure.parse(failure);
     const allowed = current.state === state || (current.state === 'queued' && ['running', 'stopping', 'interrupted'].includes(state)) || (current.state === 'running' && ['stopping', 'finished', 'interrupted'].includes(state)) || (current.state === 'stopping' && ['finished', 'interrupted'].includes(state));
     if (!allowed) throw new Error('R3_STALE_VIEW');
     transaction(this.database,()=>{
+      if (safeFailure !== undefined) this.database.prepare('UPDATE desktop_jobs SET failure_json=? WHERE id=?').run(JSON.stringify(safeFailure), jobId);
       this.database.prepare('UPDATE desktop_jobs SET state=?,ended_at=CASE WHEN ? IN (\'finished\',\'interrupted\') THEN ? ELSE ended_at END WHERE id=?').run(state,state,this.clock.now(),jobId);
       if(state==='interrupted')this.database.prepare("UPDATE chat_messages SET state='interrupted' WHERE request_id=? AND state='streaming'").run(current.requestId);
     });

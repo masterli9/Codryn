@@ -1,4 +1,4 @@
-import { r3SubmitInputSchema } from '@codryn/shared';
+import { r3ErrorCodeSchema, r3SubmitInputSchema } from '@codryn/shared';
 import type { R3Accepted,R3RunView,R3SubmitInput,Uuid } from '@codryn/shared';
 import type { ChatStore,DesktopProjectionStore,DesktopRequestStore,DesktopRuntimeFactory } from './ports.js';
 import type { R3ProjectService } from './project-service.js';
@@ -24,7 +24,12 @@ export class DesktopRunManager {
         if(controller.signal.aborted){await this.dependencies.requests.setState(accepted.jobId,'interrupted');return;}
         runtime=await this.dependencies.createRun({projectId:chat.projectId,request:input,signal:controller.signal,onRunCreated:async runId=>{await this.dependencies.requests.attachRun(input.requestId,runId);const linked=await this.dependencies.requests.get(accepted.jobId);if(linked)active.view=linked;}});
         const result=await runtime.execute();await this.dependencies.requests.finish(accepted.jobId,result);
-      }catch{await this.dependencies.requests.setState(accepted.jobId,'interrupted');}
+      }catch(error){
+        const parsed=r3ErrorCodeSchema.safeParse(error instanceof Error?error.message:undefined);
+        await this.dependencies.requests.setState(accepted.jobId,'interrupted',controller.signal.aborted
+          ? {code:'R1_CANCELLED',message:'Běh byl zastaven.'}
+          : {code:parsed.success?parsed.data:'R3_INTERNAL',message:'Běh se nepodařilo spustit nebo dokončit.'});
+      }
       finally{runtime?.close();release();this.running.delete(chat.projectId);this.jobs.delete(accepted.jobId);}
     });
     this.jobs.set(accepted.jobId,active.done);return accepted;}finally{releaseOperation();}
