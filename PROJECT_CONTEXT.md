@@ -1,6 +1,15 @@
 # Kontext projektu – maturitní práce
 
-## Schválený funkční směr R3 – 11. října 2026
+## Aktuální stav R3 — 29. října 2026
+
+- R2 je sloučené v `main`; R3 je rozpracované na `feat/r3-electron-workspace`, implementační checkpoint `ed9092c` z 11. října. R3 už obsahuje produkční služby, desktopovou integraci a React pracovní plochu; nejde pouze o plán.
+- Autor schválil lesní zelenou, panely a zaoblení v obou motivech; viz `docs/design/r3/baseline.md`. Toto rozhodnutí neznamená finální design ani přijetí celé aplikace.
+- První bod pokračování byl 29. října ověřen beze změny produkčního kódu či testů: typecheck, lint a check:deps prošly (297 modulů / 895 vazeb), úplná testovací sada 601 passed / 3 skipped. První cílený hostní běh měl timeout Git varianty R3; izolované opakování i následná úplná sada bez souběžných kontrol prošly. Příčina timeoutu není potvrzena.
+- Důkaz a přesná omezení jsou v `docs/superpowers/plans/2026-10-29-r3-step1-verification.md`; seznam zbývající práce v `docs/superpowers/plans/2026-10-11-r3-progress.md`. Další je bod 2: bezpečnost startup failure IPC fallbacku, hranice testovacího profilu a kategorie chyby factory.
+- Nový package, Electron UI E2E, packaged Windows důkaz ochrany klíče, celá brána `verify:r3`, čerstvý live GUI protokol i osobní přijetí autora zůstávají nedokončené. R3 ani celý O1 nejsou přijaté. Ověřovací profil zůstává referenční; obecnější TypeScript práce patří do R4.
+- Starší záznamy níže zachycují stav v době svého vzniku. Tvrzení o neprovedeném plánu nebo neschváleném vzhledu již nepopisují aktuální implementační checkpoint.
+
+## Schválený funkční směr R3 – 11. října 2026 (historický plánovací záznam)
 
 - R2 je sloučené v `main`; pro návrh a implementaci R3 vznikla větev `feat/r3-electron-workspace` z `de470b6`.
 - Autor schválil reálný GPT-6 Luna i oddělený demonstrační režim, základní správu projektových chatů, jeden aktivní běh nad projektem a obnovu rendereru bez opakování akcí. Po pádu celé aplikace se nepřehrávají automaticky nástroje ani konverzace.
