@@ -2,6 +2,14 @@ import { randomUUID } from 'node:crypto';
 import { expect,it,vi } from 'vitest';
 import { createR3Handler,assertR3Sender } from '../src/ipc/r3-handler.js';
 import type { R3Services,R3SenderEvent } from '../src/ipc/r3-handler.js';
+it('returns only the backend active run identity without reading project snapshots',async()=>{
+  const target={projectId:randomUUID(),chatId:randomUUID(),jobId:randomUUID()},activeTarget=vi.fn().mockReturnValue(target),snapshot=vi.fn();const services={manager:{activeTarget},snapshot} as unknown as R3Services;
+  const handler=createR3Handler({services,assertSender:()=>undefined,chooseDirectory:async()=>null,subscriptions:{attach:vi.fn(),detach:vi.fn()}});
+  expect(await handler({} as R3SenderEvent,{operation:'run.active',requestId:randomUUID()})).toEqual({ok:true,value:target});expect(snapshot).not.toHaveBeenCalled();
+  expect(await handler({} as R3SenderEvent,{operation:'run.active',requestId:randomUUID(),root:'E:/escape'})).toMatchObject({ok:false,error:{code:'R3_INPUT_INVALID'}});expect(activeTarget).toHaveBeenCalledTimes(1);
+  activeTarget.mockReturnValue(null);expect(await handler({} as R3SenderEvent,{operation:'run.active',requestId:randomUUID()})).toEqual({ok:true,value:null});
+  activeTarget.mockReturnValue({...target,secret:'hidden'});expect(await handler({} as R3SenderEvent,{operation:'run.active',requestId:randomUUID()})).toMatchObject({ok:false,error:{code:'R3_INTERNAL'}});
+});
 it('rejects foreign window, iframe, URL and destroyed senders before any service',()=>{
   const main={url:'file:///app/index.html'},window={id:10,mainFrame:main,isDestroyed:()=>false},event={sender:window,senderFrame:main};
   expect(()=>assertR3Sender(event,window,'file:///app/index.html')).not.toThrow();

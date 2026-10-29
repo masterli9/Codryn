@@ -24,6 +24,7 @@ export function createR3Handler(dependencies:{services:R3Services|undefined;asse
         case 'chat.archive':await services.chats.archive(request.projectId,request.chatId);value={archived:true};break;
         case 'chat.snapshot':value=await services.snapshot(request.chatId,signal);break;
         case 'chat.history':value=await services.history(request.chatId,request.beforeSequence);break;
+        case 'run.active':value=services.manager.activeTarget();break;
         case 'run.submit':{const {operation,...input}=request;void operation;value=await services.manager.submit(input);break;}
         case 'run.stop':value={status:await services.stop(request.chatId,request.projectId,request.jobId)};break;
         case 'run.inspect':value=await services.inspectRun(request.chatId,request.targetRequestId,signal);break;

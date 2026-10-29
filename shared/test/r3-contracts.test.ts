@@ -19,7 +19,7 @@ describe('R3 boundary contracts', () => {
     expect(r3IpcRequestSchema.safeParse({ operation: 'permission.answer', requestId: id, projectId: id, chatId: id, decision: { id, digest: 'a'.repeat(64), decision: 'allow_once' }, extra: '😀'.repeat(40000) }).success).toBe(false);
   });
   it('has explicit response schemas for every operation and excludes secrets', () => {
-    expect(Object.keys(r3ResponseSchemas).sort()).toEqual(['project.open', 'project.list', 'chat.create', 'chat.list', 'chat.rename', 'chat.archive', 'chat.snapshot', 'chat.history', 'run.submit', 'run.stop', 'run.inspect', 'run.activity', 'permission.answer', 'changes.diff', 'changes.revert', 'command.output', 'settings.get', 'settings.saveKey', 'settings.removeKey', 'settings.testKey', 'settings.select', 'settings.consent', 'stream.attach', 'stream.detach'].sort());
+    expect(Object.keys(r3ResponseSchemas).sort()).toEqual(['project.open', 'project.list', 'chat.create', 'chat.list', 'chat.rename', 'chat.archive', 'chat.snapshot', 'chat.history', 'run.active', 'run.submit', 'run.stop', 'run.inspect', 'run.activity', 'permission.answer', 'changes.diff', 'changes.revert', 'command.output', 'settings.get', 'settings.saveKey', 'settings.removeKey', 'settings.testKey', 'settings.select', 'settings.consent', 'stream.attach', 'stream.detach'].sort());
     expect(r3ResponseSchemas['chat.archive'].safeParse({ ok: true, value: { archived: true, key: 'secret' } }).success).toBe(false);
     expect(r3ResponseSchemas['settings.get'].safeParse({ ok: true, value: { key: 'secret' } }).success).toBe(false);
   });

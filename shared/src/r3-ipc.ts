@@ -15,7 +15,7 @@ export const r3IpcRequestSchema = z.discriminatedUnion('operation', [
   operation('project.open', {}), operation('project.list', {}),
   operation('chat.create', { projectId: uuidSchema, title: r3TitleSchema }), operation('chat.list', { projectId: uuidSchema, archived: z.boolean() }),
   operation('chat.rename', { ...owned, title: r3TitleSchema }), operation('chat.archive', owned), operation('chat.snapshot', chat), operation('chat.history', { ...chat, beforeSequence: before }),
-  operation('run.submit', r3SubmitInputSchema.shape), operation('run.stop', { ...owned, jobId: uuidSchema }), operation('run.inspect', { ...chat, targetRequestId: uuidSchema }), operation('run.activity', { ...chat, targetRequestId: uuidSchema, beforeSequence: before }),
+  operation('run.active', {}), operation('run.submit', r3SubmitInputSchema.shape), operation('run.stop', { ...owned, jobId: uuidSchema }), operation('run.inspect', { ...chat, targetRequestId: uuidSchema }), operation('run.activity', { ...chat, targetRequestId: uuidSchema, beforeSequence: before }),
   operation('permission.answer', { ...owned, decision: permissionDecisionInputSchema }), operation('changes.diff', { ...chat, setId: uuidSchema }), operation('changes.revert', r3RevertInputSchema.shape), operation('command.output', { ...chat, callId: uuidSchema, afterSequence: before }),
   operation('settings.get', {}), operation('settings.saveKey', { key: z.string().trim().min(1).max(4096).refine(value => !value.includes('\0')) }), operation('settings.removeKey', {}), operation('settings.testKey', {}), operation('settings.select', { mode: r3ModeSchema, maxSteps: z.number().int().min(1).max(32) }), operation('settings.consent', { version: z.string().min(1).max(120) }),
   operation('stream.attach', { ...chat, afterCursor: z.number().int().nonnegative() }), operation('stream.detach', { subscriptionId: uuidSchema })
@@ -24,6 +24,7 @@ const error = z.object({ ok: z.literal(false), error: z.object({ code: r3ErrorCo
 const response = <T extends z.ZodType>(value: T) => z.union([z.object({ ok: z.literal(true), value }).strict(), error]);
 const pageLimit = (value: object) => new TextEncoder().encode(JSON.stringify(value)).length <= 1024 * 1024;
 export const r3ResponseSchemas = {
+  'run.active': response(z.object({projectId:uuidSchema,chatId:uuidSchema,jobId:uuidSchema}).strict().nullable()),
   'project.open': response(z.union([z.object({ cancelled: z.literal(true) }).strict(), r3ProjectSchema])), 'project.list': response(z.array(r3ProjectSchema)),
   'chat.create': response(r3ChatSchema), 'chat.list': response(z.array(r3ChatSchema)), 'chat.rename': response(r3ChatSchema), 'chat.archive': response(z.object({ archived: z.literal(true) }).strict()), 'chat.snapshot': response(r3SnapshotSchema), 'chat.history': response(z.object({ messages: z.array(r3MessageSchema).max(100), beforeMessageSequence: before }).strict().refine(pageLimit)),
   'run.submit': response(r3AcceptedSchema), 'run.stop': response(z.object({ status: z.enum(['requested', 'already_terminal']) }).strict()), 'run.inspect': response(r3RunDetailSchema), 'run.activity': response(z.object({ items: z.array(r3ActivityViewSchema).max(100), beforeSequence: before }).strict().refine(pageLimit)),

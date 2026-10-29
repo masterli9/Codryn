@@ -22,12 +22,12 @@ it('deduplicates active requests, isolates projects on one DB and completes read
   try{
     const p=await host.projects.open(project,new AbortController().signal),alias=await host.projects.open(await realpath(project),new AbortController().signal);expect(alias.id).toBe(p.id);
     const chat=await host.chats.create(p.id,'Chat');const input:R3SubmitInput={requestId:randomUUID(),chatId:chat.id,task:'Explain',maxSteps:16,mode:'demo'};
-    const accepted=await host.manager.submit(input);expect(await host.manager.submit(input)).toEqual({...accepted,duplicate:true});
+    expect(host.manager.activeTarget()).toBeNull();const accepted=await host.manager.submit(input);expect(host.manager.activeTarget()).toEqual({projectId:p.id,chatId:chat.id,jobId:accepted.jobId});expect(await host.manager.submit(input)).toEqual({...accepted,duplicate:true});
     await expect(host.manager.submit({...input,requestId:randomUUID()})).rejects.toThrow('R3_PROJECT_BUSY');
     await expect(host.manager.submit({...input,task:'Changed'})).rejects.toThrow('R3_REQUEST_MISMATCH');
     const p2=await host.projects.open(other,new AbortController().signal),chat2=await host.chats.create(p2.id,'Chat');const second=await host.manager.submit({...input,requestId:randomUUID(),chatId:chat2.id});
     release();expect((await host.manager.wait(accepted.jobId)).result).toMatchObject({status:'completed',verification:{status:'unverified',reason:'R3_READ_ONLY_RESULT'}});
-    expect((await host.manager.wait(second.jobId)).result?.status).toBe('completed');expect(shared?.isOpen).toBe(true);expect(modelCalls).toBe(2);
+    expect((await host.manager.wait(second.jobId)).result?.status).toBe('completed');expect(host.manager.activeTarget()).toBeNull();expect(shared?.isOpen).toBe(true);expect(modelCalls).toBe(2);
     expect(shared?.prepare('SELECT count(*) AS n FROM agent_runs').get()?.n).toBe(2);
   }finally{release();await host.manager.shutdown(new AbortController().signal);host.close();await rm(root,{recursive:true,force:true,maxRetries:3,retryDelay:100});}
 });
