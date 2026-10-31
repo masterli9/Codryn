@@ -1,11 +1,11 @@
 import { createHash,randomUUID } from 'node:crypto';
-import { readFile } from 'node:fs/promises';
+import { appendFile,readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { r3ModelDescriptor } from '@codryn/core';
 import { ScriptedModelAdapter,changeVerifyReturnScenario } from '@codryn/infrastructure';
 import type { createR3Provider } from '@codryn/infrastructure';
 import type { ModelStreamEvent } from '@codryn/shared';
-export type DesktopTestScenario='stream'|'two-patches'|'interrupted-model';
+export type DesktopTestScenario='stream'|'truncated-stream'|'long-activity'|'two-patches'|'interrupted-model';
 // Main-only, fixed fixtures. No renderer hook, arbitrary code or paid provider is accepted.
 export function desktopTestProvider(scenario:DesktopTestScenario):typeof createR3Provider {
   return async options=>{
@@ -17,9 +17,15 @@ export function desktopTestProvider(scenario:DesktopTestScenario):typeof createR
     }
     const marker=await options.secrets.state('openai')==='stored'?await options.secrets.read('openai'):'synthetic-no-key';let turn=0;
     return {model:{descriptor,async *stream(_request,signal){
-      if(turn++===0){yield {type:'text_delta',text:'Potvrzený průběžný text. '+marker.slice(0,8)};yield {type:'text_delta',text:marker.slice(8)+' Konec zprávy. '};
+      await appendFile(join(options.projectRoot,'test-provider-invocations.ndjson'),JSON.stringify({turn})+'\n');
+      if(scenario==='long-activity'){
+        if(turn++<14)yield {type:'tool_call',call:{callId:randomUUID(),toolId:'file.read',toolVersion:1,arguments:{path:'sum.mjs'}}};
+        else yield {type:'text_delta',text:'<script>window.codrynInjected=1</script><img src=x onerror="window.codrynInjected=2"><a href="javascript:alert(1)">odkaz</a>'};
+        yield {type:'completed'};return;
+      }
+      if(turn++===0){yield {type:'text_delta',text:'Potvrzený průběžný text. '+marker.slice(0,8)};yield {type:'text_delta',text:marker.slice(8)+' Konec zprávy. '+'.'.repeat(512)};
         if(scenario==='interrupted-model'){await new Promise<void>(resolve=>{if(signal.aborted)resolve();else signal.addEventListener('abort',()=>resolve(),{once:true});});return;}
-        yield {type:'tool_call',call:{callId:randomUUID(),toolId:'command.run',toolVersion:1,arguments:{command:{executable:options.nodeExecutable??'',args:['stream-child.mjs'],cwd:options.projectRoot,timeoutMs:10000,maxOutputBytes:256*1024},reason:'Test skutečného proudu a zastavení fixture.',impact:'Spustí pouze testem vlastněný proces ve fixture.'}}};
+        yield {type:'tool_call',call:{callId:randomUUID(),toolId:'command.run',toolVersion:1,arguments:{command:{executable:options.nodeExecutable??'',args:['stream-child.mjs'],cwd:options.projectRoot,timeoutMs:30000,maxOutputBytes:scenario==='truncated-stream'?1024:256*1024},reason:'Test skutečného proudu a zastavení fixture.',impact:'Spustí pouze testem vlastněný proces ve fixture.'}}};
       }else yield {type:'text_delta',text:'Výsledek '+marker};yield {type:'completed'};
     }},dispose(){}};
   };

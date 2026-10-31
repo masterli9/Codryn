@@ -1,9 +1,10 @@
 import { randomUUID } from 'node:crypto';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm,writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, expect, it } from 'vitest';
-import { openR0Database, runMigrations, SqliteWorkspaceStore, SqliteChatStore, SqliteDesktopProjectStore, SqliteDesktopRequestStore, SqliteAgentRunStore, SqliteToolCallStore, SqlitePermissionStore, SqliteVerificationStore } from '../src/index.js';
+import { openR0Database, runMigrations, SqliteWorkspaceStore, SqliteChatStore, SqliteDesktopProjectStore, SqliteDesktopRequestStore, SqliteAgentRunStore, SqliteToolCallStore, SqlitePermissionStore, SqliteVerificationStore,ProjectFilesystem } from '../src/index.js';
+import { ControlledPermissionPolicy,fileReadTool,ToolExecutionHarness,ToolRegistry } from '@codryn/core';
 import { SqliteDesktopProjectionStore } from '../src/persistence/sqlite-desktop-projection-store.js';
 import { SqliteDesktopActionStore } from '../src/persistence/sqlite-desktop-action-store.js';
 import { SqliteOwnedCommandStore } from '../src/persistence/sqlite-owned-command-store.js';
@@ -39,6 +40,15 @@ it('projects real permission and verification store events once with their actua
   expect(snapshot.activity.map(a => a.type)).toContain('permission.decided');
   expect(snapshot.verification?.status).toBe('unverified'); // Missing coverage must never become complete.
   expect(JSON.stringify(snapshot)).not.toContain('payload_json');
+});
+it('shows the automatic permission decision and reason produced by a real file read harness',async()=>{
+  const f=await fixture(),callId=randomUUID(),filesystem=new ProjectFilesystem(f.root);await writeFile(join(f.root,'ordinary.txt'),'Private fixture content');
+  const harness=new ToolExecutionHarness({registry:new ToolRegistry([fileReadTool((input,signal)=>filesystem.readFile(input,signal))]),permissionPolicy:new ControlledPermissionPolicy(),toolCallStore:new SqliteToolCallStore(f.db,{clock,ids}),clock,ids});
+  expect(await harness.execute({callId,toolId:'file.read',toolVersion:1,arguments:{path:'ordinary.txt'}},f.runId,new AbortController().signal,{projectId:f.projectId,runId:f.runId,callId})).toMatchObject({ok:true});
+  const activity=(await f.projection.snapshot(f.chat.id)).activity.find(item=>item.callId===callId&&item.type==='tool_call.permission_decided');
+  expect(activity).toMatchObject({summary:'Rozhodnutí o oprávnění',detailsTruncated:false});
+  expect(activity?.details).toEqual(expect.arrayContaining([{label:'permissionResult',value:'allowed_by_rule'},{label:'permissionRuleId',value:'R1_SAFE_READ_WITHIN_PROJECT'},{label:'permissionReason',value:'Validated read-only path is within the open project.'}]));
+  expect(JSON.stringify(activity)).not.toContain('Private fixture content');expect(Buffer.byteLength(JSON.stringify(activity?.details))).toBeLessThanOrEqual(4096);
 });
 it('rolls back a source event and its cursor together and isolates chat cursors', async () => {
   const f = await fixture(); const second = await f.chats.create(f.projectId, 'Other');
@@ -80,6 +90,14 @@ it('records idempotent revert intents and refuses a changed digest', async () =>
   await expect(store.begin(input, 'b'.repeat(64))).rejects.toThrow('R3_REQUEST_MISMATCH');
   await store.finish(input.requestId, { status: 'conflicted', revertedIds: [], blockedIds: [] });
   expect((await store.get(input.requestId))?.state).toBe('finished');
+});
+it('keeps truncation visible when the marked chunk precedes the command tail or requested page',async()=>{
+  const f=await fixture();
+  await f.projection.appendOutput(f.input.requestId,f.callId,'stdout','kept prefix',true);
+  for(let index=0;index<20;index++)await f.projection.appendOutput(f.input.requestId,f.callId,'stdout',`suffix ${index}`,false);
+  expect((await f.projection.snapshot(f.chat.id)).commands[0]?.truncated).toBe(true);
+  expect((await f.projection.output(f.chat.id,f.callId,1)).truncated).toBe(true);
+  expect((await f.projection.output(f.chat.id,f.callId,21)).truncated).toBe(true);
 });
 it('persists exact command ownership before start and only clears a confirmed stopped tree',async()=>{
   const f=await fixture(),store=new SqliteOwnedCommandStore(f.db),actor={projectId:f.projectId,runId:f.runId,callId:f.callId};

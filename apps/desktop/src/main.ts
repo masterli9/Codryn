@@ -84,7 +84,7 @@ const smokeMode = r0SmokeMode || r2SmokeMode||r3SmokeMode;
 const testProfileArgument=process.argv.find(value=>value.startsWith('--r3-test-profile='));
 const testProfile=testProfileArgument?.slice('--r3-test-profile='.length);
 const testScenario=process.argv.find(value=>value.startsWith('--r3-test-scenario='))?.slice('--r3-test-scenario='.length);
-if(testScenario&&(!testProfile||!['stream','two-patches','interrupted-model'].includes(testScenario)))throw new Error('R3_TEST_SCENARIO_INVALID');
+if(testScenario&&(!testProfile||!['stream','truncated-stream','long-activity','two-patches','interrupted-model'].includes(testScenario)))throw new Error('R3_TEST_SCENARIO_INVALID');
 if(testProfileArgument){try{app.setPath('userData',assertR3ProfileRoot(path.resolve(process.cwd(),'.r3-artifacts'),testProfile??''));}catch{throw new Error('R3_TEST_PROFILE_INVALID');}}
 if (smokeMode) {
   app.disableHardwareAcceleration();
@@ -147,7 +147,7 @@ if (anyUserDataArgument !== undefined && !smokeMode) {
         return;
       }
 
-      desktopServices=await createDesktopApplicationServices(app.getPath('userData'),testScenario as 'stream'|'two-patches'|'interrupted-model'|undefined);
+      desktopServices=await createDesktopApplicationServices(app.getPath('userData'),testScenario as 'stream'|'truncated-stream'|'long-activity'|'two-patches'|'interrupted-model'|undefined);
       const desktop=desktopServices;
       closeController=new CloseController({confirm:async()=>{const active=desktop.resources.database.prepare("SELECT 1 FROM desktop_jobs WHERE state IN ('queued','running','stopping') LIMIT 1").get();if(!active&&!diagnostics)return 'stop';const answer=await dialog.showMessageBox({type:'question',message:'Probíhá běh. Zastavit jej a zavřít Codryn?',buttons:['Zůstat','Zastavit a zavřít'],defaultId:0,cancelId:0});return answer.response===1?'stop':'stay';},shutdown:async signal=>{const result=await desktop.shutdown(signal);while(diagnostics&&!signal.aborted)await new Promise(resolve=>setTimeout(resolve,25));return {stopped:result.stopped&&!diagnostics&&!signal.aborted};},close:()=>{disposeR3?.();desktop.close();desktopServices=undefined;applicationServices?.close();applicationServices=undefined;},finish:()=>{closing=true;app.quit();}});
       mainWindow = createWindow();
