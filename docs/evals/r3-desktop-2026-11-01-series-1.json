@@ -1,0 +1,210 @@
+{
+  "$schema": "../evidence/r3-live-report.schema.json",
+  "schemaVersion": 1,
+  "status": "failed",
+  "build": {
+    "sourceHash": "82eebf763379e3d9d094e7f97359968dddc095d308f5c16e563319836238b388",
+    "asarHash": "630361f2b1bb19b6757094eb5f2dfde2a2c1b70af56700fcdf7e48c6dc445773",
+    "exeHash": "6aae3c142a09d1bf0d71307aec50121d9bca412a3c717a3e5513d6b3cf4e1224"
+  },
+  "recordedAt": "2026-11-01T14:50:06.178Z",
+  "provider": "openai-responses",
+  "model": "gpt-6-luna",
+  "host": "Windows_NT 10.0.26300 x64; Node 24.19.0; packaged Electron 43.4.0",
+  "consentVersion": "openai-api-2026-10-11",
+  "budgetUsd": 0.25,
+  "budgetEnforcement": "First actual series: explicit original overall cap USD0.25, split USD0.05 per attempt, max12 HTTP calls including retries; conservative before-request main fetch reservation. Later protocols subtract its full reserved estimate USD0.0575658. No billing verification.",
+  "timeoutEnforcement": "Main fetch abort deadline 180000 ms per attempt, production transport total timeout120000 ms per request and bounded command runner. Cleanup closes the owned app; no separate connection-test request.",
+  "attempts": [
+    {
+      "id": 1,
+      "startedAt": "2026-11-01T14:33:38.026Z",
+      "fixtureId": "sum-reference-c0b17c121a133ff2d186c199164dc2769eb7a808bd6edad595c6a3966cb87248",
+      "mode": "git",
+      "scenario": "First actual independent synthetic GUI series; stale approval observer triggered cleanup and cancelled command.",
+      "timeoutMs": 180000,
+      "maxSteps": 12,
+      "budgetUsd": 0.05,
+      "durationMs": 33051,
+      "success": false,
+      "failureOwner": "harness",
+      "safeReason": "Observer reprocessed stale approval UI after sole durable permission had been claimed; cleanup cancelled command. startedAt is actual durable desktop_jobs.started_at because initial driver did not store attempt-start timestamp. Diff/verification/return were not reached; streaming was not measured. permissionReload=false means not exercised on attempts2-5.",
+      "usage": {
+        "known": true,
+        "inputTokens": 3671,
+        "outputTokens": 342
+      },
+      "estimatedCostUsd": 0.0005381,
+      "pricingReference": "https://developers.openai.com/api/docs/models/gpt-6-luna",
+      "evidencePaths": [
+        ".r3-artifacts/2026-11-01-e3-live/protocol-T66rKU/report.json",
+        ".r3-artifacts/2026-11-01-e3-live/protocol-T66rKU/harness-diagnosis.json",
+        ".r3-artifacts/2026-11-01-e3-live/protocol-T66rKU/attempt-1/profile/codryn.sqlite",
+        "docs/evals/r3-desktop-2026-11-01.md"
+      ],
+      "assertions": {
+        "readSearch": true,
+        "patch": true,
+        "approval": true,
+        "verification": false,
+        "diff": false,
+        "safeReturn": false,
+        "permissionReload": true,
+        "streamBeforeCompletion": false,
+        "noSecretLeak": true
+      }
+    },
+    {
+      "id": 2,
+      "startedAt": "2026-11-01T14:34:12.292Z",
+      "fixtureId": "sum-reference-c0b17c121a133ff2d186c199164dc2769eb7a808bd6edad595c6a3966cb87248",
+      "mode": "git",
+      "scenario": "First actual independent synthetic GUI series; stale approval observer triggered cleanup and cancelled command.",
+      "timeoutMs": 180000,
+      "maxSteps": 12,
+      "budgetUsd": 0.05,
+      "durationMs": 23232,
+      "success": false,
+      "failureOwner": "harness",
+      "safeReason": "Observer reprocessed stale approval UI after sole durable permission had been claimed; cleanup cancelled command. startedAt is actual durable desktop_jobs.started_at because initial driver did not store attempt-start timestamp. Diff/verification/return were not reached; streaming was not measured. permissionReload=false means not exercised on attempts2-5.",
+      "usage": {
+        "known": true,
+        "inputTokens": 4076,
+        "outputTokens": 322
+      },
+      "estimatedCostUsd": 0.0005686,
+      "pricingReference": "https://developers.openai.com/api/docs/models/gpt-6-luna",
+      "evidencePaths": [
+        ".r3-artifacts/2026-11-01-e3-live/protocol-T66rKU/report.json",
+        ".r3-artifacts/2026-11-01-e3-live/protocol-T66rKU/harness-diagnosis.json",
+        ".r3-artifacts/2026-11-01-e3-live/protocol-T66rKU/attempt-2/profile/codryn.sqlite",
+        "docs/evals/r3-desktop-2026-11-01.md"
+      ],
+      "assertions": {
+        "readSearch": true,
+        "patch": true,
+        "approval": true,
+        "verification": false,
+        "diff": false,
+        "safeReturn": false,
+        "permissionReload": false,
+        "streamBeforeCompletion": false,
+        "noSecretLeak": true
+      }
+    },
+    {
+      "id": 3,
+      "startedAt": "2026-11-01T14:34:36.949Z",
+      "fixtureId": "sum-reference-c0b17c121a133ff2d186c199164dc2769eb7a808bd6edad595c6a3966cb87248",
+      "mode": "git",
+      "scenario": "First actual independent synthetic GUI series; stale approval observer triggered cleanup and cancelled command.",
+      "timeoutMs": 180000,
+      "maxSteps": 12,
+      "budgetUsd": 0.05,
+      "durationMs": 24190,
+      "success": false,
+      "failureOwner": "harness",
+      "safeReason": "Observer reprocessed stale approval UI after sole durable permission had been claimed; cleanup cancelled command. startedAt is actual durable desktop_jobs.started_at because initial driver did not store attempt-start timestamp. Diff/verification/return were not reached; streaming was not measured. permissionReload=false means not exercised on attempts2-5.",
+      "usage": {
+        "known": true,
+        "inputTokens": 4069,
+        "outputTokens": 347
+      },
+      "estimatedCostUsd": 0.0005804000000000001,
+      "pricingReference": "https://developers.openai.com/api/docs/models/gpt-6-luna",
+      "evidencePaths": [
+        ".r3-artifacts/2026-11-01-e3-live/protocol-T66rKU/report.json",
+        ".r3-artifacts/2026-11-01-e3-live/protocol-T66rKU/harness-diagnosis.json",
+        ".r3-artifacts/2026-11-01-e3-live/protocol-T66rKU/attempt-3/profile/codryn.sqlite",
+        "docs/evals/r3-desktop-2026-11-01.md"
+      ],
+      "assertions": {
+        "readSearch": true,
+        "patch": true,
+        "approval": true,
+        "verification": false,
+        "diff": false,
+        "safeReturn": false,
+        "permissionReload": false,
+        "streamBeforeCompletion": false,
+        "noSecretLeak": true
+      }
+    },
+    {
+      "id": 4,
+      "startedAt": "2026-11-01T14:34:55.835Z",
+      "fixtureId": "sum-reference-c0b17c121a133ff2d186c199164dc2769eb7a808bd6edad595c6a3966cb87248",
+      "mode": "non-git",
+      "scenario": "First actual independent synthetic GUI series; stale approval observer triggered cleanup and cancelled command.",
+      "timeoutMs": 180000,
+      "maxSteps": 12,
+      "budgetUsd": 0.05,
+      "durationMs": 13950,
+      "success": false,
+      "failureOwner": "harness",
+      "safeReason": "Observer reprocessed stale approval UI after sole durable permission had been claimed; cleanup cancelled command. startedAt is actual durable desktop_jobs.started_at because initial driver did not store attempt-start timestamp. Diff/verification/return were not reached; streaming was not measured. permissionReload=false means not exercised on attempts2-5.",
+      "usage": {
+        "known": true,
+        "inputTokens": 3664,
+        "outputTokens": 336
+      },
+      "estimatedCostUsd": 0.0005344000000000001,
+      "pricingReference": "https://developers.openai.com/api/docs/models/gpt-6-luna",
+      "evidencePaths": [
+        ".r3-artifacts/2026-11-01-e3-live/protocol-T66rKU/report.json",
+        ".r3-artifacts/2026-11-01-e3-live/protocol-T66rKU/harness-diagnosis.json",
+        ".r3-artifacts/2026-11-01-e3-live/protocol-T66rKU/attempt-4/profile/codryn.sqlite",
+        "docs/evals/r3-desktop-2026-11-01.md"
+      ],
+      "assertions": {
+        "readSearch": true,
+        "patch": true,
+        "approval": true,
+        "verification": false,
+        "diff": false,
+        "safeReturn": false,
+        "permissionReload": false,
+        "streamBeforeCompletion": false,
+        "noSecretLeak": true
+      }
+    },
+    {
+      "id": 5,
+      "startedAt": "2026-11-01T14:35:10.624Z",
+      "fixtureId": "sum-reference-c0b17c121a133ff2d186c199164dc2769eb7a808bd6edad595c6a3966cb87248",
+      "mode": "non-git",
+      "scenario": "First actual independent synthetic GUI series; stale approval observer triggered cleanup and cancelled command.",
+      "timeoutMs": 180000,
+      "maxSteps": 12,
+      "budgetUsd": 0.05,
+      "durationMs": 14470,
+      "success": false,
+      "failureOwner": "harness",
+      "safeReason": "Observer reprocessed stale approval UI after sole durable permission had been claimed; cleanup cancelled command. startedAt is actual durable desktop_jobs.started_at because initial driver did not store attempt-start timestamp. Diff/verification/return were not reached; streaming was not measured. permissionReload=false means not exercised on attempts2-5.",
+      "usage": {
+        "known": true,
+        "inputTokens": 3680,
+        "outputTokens": 344
+      },
+      "estimatedCostUsd": 0.00054,
+      "pricingReference": "https://developers.openai.com/api/docs/models/gpt-6-luna",
+      "evidencePaths": [
+        ".r3-artifacts/2026-11-01-e3-live/protocol-T66rKU/report.json",
+        ".r3-artifacts/2026-11-01-e3-live/protocol-T66rKU/harness-diagnosis.json",
+        ".r3-artifacts/2026-11-01-e3-live/protocol-T66rKU/attempt-5/profile/codryn.sqlite",
+        "docs/evals/r3-desktop-2026-11-01.md"
+      ],
+      "assertions": {
+        "readSearch": true,
+        "patch": true,
+        "approval": true,
+        "verification": false,
+        "diff": false,
+        "safeReturn": false,
+        "permissionReload": false,
+        "streamBeforeCompletion": false,
+        "noSecretLeak": true
+      }
+    }
+  ]
+}

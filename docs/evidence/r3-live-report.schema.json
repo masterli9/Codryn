@@ -1,0 +1,352 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "R3 desktop live acceptance record (manual protocol, not a runner)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "$schema",
+    "schemaVersion",
+    "status",
+    "attempts"
+  ],
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "schemaVersion": {
+      "const": 1
+    },
+    "status": {
+      "enum": [
+        "not_run",
+        "passed",
+        "failed"
+      ]
+    },
+    "build": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sourceHash",
+        "asarHash",
+        "exeHash"
+      ],
+      "properties": {
+        "sourceHash": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "asarHash": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "exeHash": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "recordedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "provider": {
+      "const": "openai-responses"
+    },
+    "model": {
+      "const": "gpt-6-luna"
+    },
+    "host": {
+      "type": "string",
+      "minLength": 1
+    },
+    "consentVersion": {
+      "type": "string",
+      "minLength": 1
+    },
+    "budgetUsd": {
+      "type": "number",
+      "exclusiveMinimum": 0
+    },
+    "budgetEnforcement": {
+      "type": "string",
+      "minLength": 1
+    },
+    "timeoutEnforcement": {
+      "type": "string",
+      "minLength": 1
+    },
+    "attempts": {
+      "type": "array",
+      "maxItems": 5,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "startedAt",
+          "fixtureId",
+          "mode",
+          "scenario",
+          "timeoutMs",
+          "maxSteps",
+          "budgetUsd",
+          "durationMs",
+          "success",
+          "failureOwner",
+          "safeReason",
+          "usage",
+          "estimatedCostUsd",
+          "pricingReference",
+          "evidencePaths",
+          "assertions"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 5
+          },
+          "startedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "fixtureId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "mode": {
+            "enum": [
+              "git",
+              "non-git"
+            ]
+          },
+          "scenario": {
+            "type": "string",
+            "minLength": 1
+          },
+          "timeoutMs": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "maxSteps": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 32
+          },
+          "budgetUsd": {
+            "type": "number",
+            "exclusiveMinimum": 0
+          },
+          "durationMs": {
+            "type": "number",
+            "minimum": 0
+          },
+          "success": {
+            "type": "boolean"
+          },
+          "failureOwner": {
+            "enum": [
+              null,
+              "model",
+              "harness",
+              "provider",
+              "environment",
+              "unknown"
+            ]
+          },
+          "safeReason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "usage": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "known",
+              "inputTokens",
+              "outputTokens"
+            ],
+            "properties": {
+              "known": {
+                "type": "boolean"
+              },
+              "inputTokens": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 0
+              },
+              "outputTokens": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 0
+              }
+            },
+            "allOf": [
+              {
+                "if": {
+                  "properties": {
+                    "known": {
+                      "const": false
+                    }
+                  }
+                },
+                "then": {
+                  "properties": {
+                    "inputTokens": {
+                      "type": "null"
+                    },
+                    "outputTokens": {
+                      "type": "null"
+                    }
+                  }
+                },
+                "else": {
+                  "properties": {
+                    "inputTokens": {
+                      "type": "integer"
+                    },
+                    "outputTokens": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              }
+            ]
+          },
+          "estimatedCostUsd": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "pricingReference": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "evidencePaths": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "assertions": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "readSearch",
+              "patch",
+              "approval",
+              "verification",
+              "diff",
+              "safeReturn",
+              "permissionReload",
+              "streamBeforeCompletion",
+              "noSecretLeak"
+            ],
+            "properties": {
+              "readSearch": {
+                "type": "boolean"
+              },
+              "patch": {
+                "type": "boolean"
+              },
+              "approval": {
+                "type": "boolean"
+              },
+              "verification": {
+                "type": "boolean"
+              },
+              "diff": {
+                "type": "boolean"
+              },
+              "safeReturn": {
+                "type": "boolean"
+              },
+              "permissionReload": {
+                "type": "boolean"
+              },
+              "streamBeforeCompletion": {
+                "type": "boolean"
+              },
+              "noSecretLeak": {
+                "type": "boolean"
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "const": "not_run"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "attempts": {
+            "maxItems": 0
+          }
+        }
+      },
+      "else": {
+        "required": [
+          "build",
+          "recordedAt",
+          "provider",
+          "model",
+          "host",
+          "consentVersion",
+          "budgetUsd",
+          "budgetEnforcement",
+          "timeoutEnforcement"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "const": "passed"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "attempts": {
+            "minItems": 5,
+            "maxItems": 5,
+            "contains": {
+              "type": "object",
+              "required": [
+                "success"
+              ],
+              "properties": {
+                "success": {
+                  "const": true
+                }
+              }
+            },
+            "minContains": 4
+          }
+        }
+      }
+    }
+  ]
+}

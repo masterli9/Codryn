@@ -1,0 +1,220 @@
+{
+  "$schema": "../evidence/r3-live-report.schema.json",
+  "schemaVersion": 1,
+  "status": "passed",
+  "build": {
+    "sourceHash": "82eebf763379e3d9d094e7f97359968dddc095d308f5c16e563319836238b388",
+    "asarHash": "630361f2b1bb19b6757094eb5f2dfde2a2c1b70af56700fcdf7e48c6dc445773",
+    "exeHash": "6aae3c142a09d1bf0d71307aec50121d9bca412a3c717a3e5513d6b3cf4e1224"
+  },
+  "recordedAt": "2026-11-01T14:54:20.483Z",
+  "provider": "openai-responses",
+  "model": "gpt-6-luna",
+  "host": "Windows_NT 10.0.26300 x64; Node 24.19.0; packaged Electron 43.4.0",
+  "consentVersion": "openai-api-2026-10-11",
+  "budgetUsd": 0.11924679,
+  "budgetEnforcement": "Main-process test-driver fetch gate; original global cap USD0.25, both failed prior series conservative reservation USD0.130753201, this final series cap USD0.11924679 split5ways. Exact Responses URL, redirects denied, fixed model/store:false/output<=4096, reserve each HTTP retry before forwarding from entire UTF8 request bytes+4096 framing tokens and max output. Conservative Standard-price estimate, not provider billing verification. Final exclusive execution ledger prohibits further series.",
+  "timeoutEnforcement": "Attempt-level main fetch abort deadline180000ms; per-request production transport total timeout120000ms; bounded command runner and owned app close. No separate paid connection test.",
+  "attempts": [
+    {
+      "id": 1,
+      "startedAt": "2026-11-01T14:47:30.547Z",
+      "fixtureId": "sum-reference-c0b17c121a133ff2d186c199164dc2769eb7a808bd6edad595c6a3966cb87248",
+      "mode": "git",
+      "scenario": "Independent synthetic sum repair through actual packaged GUI; search/read/patch, one-time command approval, verification, diff and safe return; first attempt reloads pending permission.",
+      "timeoutMs": 180000,
+      "maxSteps": 12,
+      "budgetUsd": 0.023849358,
+      "durationMs": 43088,
+      "success": true,
+      "failureOwner": null,
+      "safeReason": "streamBeforeCompletion=false means polling did not establish streaming text before terminal state; no absent-stream claim.",
+      "usage": {
+        "known": true,
+        "inputTokens": 5227,
+        "outputTokens": 387
+      },
+      "estimatedCostUsd": 0.0007162000000000001,
+      "pricingReference": "https://developers.openai.com/api/docs/models/gpt-6-luna",
+      "evidencePaths": [
+        ".r3-artifacts/2026-11-01-e3-live/protocol-ktbWgE/report.json",
+        ".r3-artifacts/2026-11-01-e3-live/protocol-ktbWgE/portable-facts.json",
+        ".r3-artifacts/2026-11-01-e3-live/protocol-ktbWgE/attempt-1/profile/codryn.sqlite",
+        ".r3-artifacts/2026-11-01-e3-live/protocol-ktbWgE/attempt-1/approval.png",
+        ".r3-artifacts/2026-11-01-e3-live/protocol-ktbWgE/attempt-1/verified.png",
+        "docs/evals/r3-desktop-2026-11-01.md"
+      ],
+      "assertions": {
+        "readSearch": true,
+        "patch": true,
+        "approval": true,
+        "verification": true,
+        "diff": true,
+        "safeReturn": true,
+        "permissionReload": true,
+        "streamBeforeCompletion": false,
+        "noSecretLeak": true
+      }
+    },
+    {
+      "id": 2,
+      "startedAt": "2026-11-01T14:48:14.170Z",
+      "fixtureId": "sum-reference-c0b17c121a133ff2d186c199164dc2769eb7a808bd6edad595c6a3966cb87248",
+      "mode": "git",
+      "scenario": "Independent synthetic sum repair through actual packaged GUI; search/read/patch, one-time command approval, verification, diff and safe return; first attempt reloads pending permission.",
+      "timeoutMs": 180000,
+      "maxSteps": 12,
+      "budgetUsd": 0.023849358,
+      "durationMs": 36568,
+      "success": true,
+      "failureOwner": null,
+      "safeReason": "permissionReload=false means not exercised on this attempt. streamBeforeCompletion=false means polling did not establish streaming text before terminal state; no absent-stream claim.",
+      "usage": {
+        "known": true,
+        "inputTokens": 5246,
+        "outputTokens": 396
+      },
+      "estimatedCostUsd": 0.0007226,
+      "pricingReference": "https://developers.openai.com/api/docs/models/gpt-6-luna",
+      "evidencePaths": [
+        ".r3-artifacts/2026-11-01-e3-live/protocol-ktbWgE/report.json",
+        ".r3-artifacts/2026-11-01-e3-live/protocol-ktbWgE/portable-facts.json",
+        ".r3-artifacts/2026-11-01-e3-live/protocol-ktbWgE/attempt-2/profile/codryn.sqlite",
+        ".r3-artifacts/2026-11-01-e3-live/protocol-ktbWgE/attempt-2/approval.png",
+        ".r3-artifacts/2026-11-01-e3-live/protocol-ktbWgE/attempt-2/verified.png",
+        "docs/evals/r3-desktop-2026-11-01.md"
+      ],
+      "assertions": {
+        "readSearch": true,
+        "patch": true,
+        "approval": true,
+        "verification": true,
+        "diff": true,
+        "safeReturn": true,
+        "permissionReload": false,
+        "streamBeforeCompletion": false,
+        "noSecretLeak": true
+      }
+    },
+    {
+      "id": 3,
+      "startedAt": "2026-11-01T14:48:51.412Z",
+      "fixtureId": "sum-reference-c0b17c121a133ff2d186c199164dc2769eb7a808bd6edad595c6a3966cb87248",
+      "mode": "git",
+      "scenario": "Independent synthetic sum repair through actual packaged GUI; search/read/patch, one-time command approval, verification, diff and safe return; first attempt reloads pending permission.",
+      "timeoutMs": 180000,
+      "maxSteps": 12,
+      "budgetUsd": 0.023849358,
+      "durationMs": 39470,
+      "success": true,
+      "failureOwner": null,
+      "safeReason": "permissionReload=false means not exercised on this attempt. streamBeforeCompletion=false means polling did not establish streaming text before terminal state; no absent-stream claim.",
+      "usage": {
+        "known": true,
+        "inputTokens": 5768,
+        "outputTokens": 382
+      },
+      "estimatedCostUsd": 0.0007678,
+      "pricingReference": "https://developers.openai.com/api/docs/models/gpt-6-luna",
+      "evidencePaths": [
+        ".r3-artifacts/2026-11-01-e3-live/protocol-ktbWgE/report.json",
+        ".r3-artifacts/2026-11-01-e3-live/protocol-ktbWgE/portable-facts.json",
+        ".r3-artifacts/2026-11-01-e3-live/protocol-ktbWgE/attempt-3/profile/codryn.sqlite",
+        ".r3-artifacts/2026-11-01-e3-live/protocol-ktbWgE/attempt-3/approval.png",
+        ".r3-artifacts/2026-11-01-e3-live/protocol-ktbWgE/attempt-3/verified.png",
+        "docs/evals/r3-desktop-2026-11-01.md"
+      ],
+      "assertions": {
+        "readSearch": true,
+        "patch": true,
+        "approval": true,
+        "verification": true,
+        "diff": true,
+        "safeReturn": true,
+        "permissionReload": false,
+        "streamBeforeCompletion": false,
+        "noSecretLeak": true
+      }
+    },
+    {
+      "id": 4,
+      "startedAt": "2026-11-01T14:49:30.953Z",
+      "fixtureId": "sum-reference-c0b17c121a133ff2d186c199164dc2769eb7a808bd6edad595c6a3966cb87248",
+      "mode": "non-git",
+      "scenario": "Independent synthetic sum repair through actual packaged GUI; search/read/patch, one-time command approval, verification, diff and safe return; first attempt reloads pending permission.",
+      "timeoutMs": 180000,
+      "maxSteps": 12,
+      "budgetUsd": 0.023849358,
+      "durationMs": 26557,
+      "success": false,
+      "failureOwner": "harness",
+      "safeReason": "Harness action race: screenshot still shows active model wait and disabled return control after durable backend completion; focus+Enter sent no revert request. No change.revert call or revert event exists and repaired file remained unchanged after close. Actual safe return was not performed. permissionReload=false means not exercised on this attempt. streamBeforeCompletion=false means polling did not establish streaming text before terminal state; no absent-stream claim.",
+      "usage": {
+        "known": true,
+        "inputTokens": 5772,
+        "outputTokens": 375
+      },
+      "estimatedCostUsd": 0.0007647,
+      "pricingReference": "https://developers.openai.com/api/docs/models/gpt-6-luna",
+      "evidencePaths": [
+        ".r3-artifacts/2026-11-01-e3-live/protocol-ktbWgE/report.json",
+        ".r3-artifacts/2026-11-01-e3-live/protocol-ktbWgE/portable-facts.json",
+        ".r3-artifacts/2026-11-01-e3-live/protocol-ktbWgE/attempt-4/profile/codryn.sqlite",
+        ".r3-artifacts/2026-11-01-e3-live/protocol-ktbWgE/attempt-4/approval.png",
+        ".r3-artifacts/2026-11-01-e3-live/protocol-ktbWgE/attempt-4/verified.png",
+        "docs/evals/r3-desktop-2026-11-01.md"
+      ],
+      "assertions": {
+        "readSearch": true,
+        "patch": true,
+        "approval": true,
+        "verification": true,
+        "diff": true,
+        "safeReturn": false,
+        "permissionReload": false,
+        "streamBeforeCompletion": false,
+        "noSecretLeak": true
+      }
+    },
+    {
+      "id": 5,
+      "startedAt": "2026-11-01T14:49:57.792Z",
+      "fixtureId": "sum-reference-c0b17c121a133ff2d186c199164dc2769eb7a808bd6edad595c6a3966cb87248",
+      "mode": "non-git",
+      "scenario": "Independent synthetic sum repair through actual packaged GUI; search/read/patch, one-time command approval, verification, diff and safe return; first attempt reloads pending permission.",
+      "timeoutMs": 180000,
+      "maxSteps": 12,
+      "budgetUsd": 0.023849358,
+      "durationMs": 20228,
+      "success": true,
+      "failureOwner": null,
+      "safeReason": "permissionReload=false means not exercised on this attempt. streamBeforeCompletion=false means polling did not establish streaming text before terminal state; no absent-stream claim.",
+      "usage": {
+        "known": true,
+        "inputTokens": 5771,
+        "outputTokens": 418
+      },
+      "estimatedCostUsd": 0.0007861,
+      "pricingReference": "https://developers.openai.com/api/docs/models/gpt-6-luna",
+      "evidencePaths": [
+        ".r3-artifacts/2026-11-01-e3-live/protocol-ktbWgE/report.json",
+        ".r3-artifacts/2026-11-01-e3-live/protocol-ktbWgE/portable-facts.json",
+        ".r3-artifacts/2026-11-01-e3-live/protocol-ktbWgE/attempt-5/profile/codryn.sqlite",
+        ".r3-artifacts/2026-11-01-e3-live/protocol-ktbWgE/attempt-5/approval.png",
+        ".r3-artifacts/2026-11-01-e3-live/protocol-ktbWgE/attempt-5/verified.png",
+        "docs/evals/r3-desktop-2026-11-01.md"
+      ],
+      "assertions": {
+        "readSearch": true,
+        "patch": true,
+        "approval": true,
+        "verification": true,
+        "diff": true,
+        "safeReturn": true,
+        "permissionReload": false,
+        "streamBeforeCompletion": false,
+        "noSecretLeak": true
+      }
+    }
+  ]
+}

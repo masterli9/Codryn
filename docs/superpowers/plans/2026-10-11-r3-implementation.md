@@ -1,5 +1,8 @@
 # R3 – minimální Electron pracovní plocha Implementation Plan
 
+> **Aktuální stav — 1. listopadu 2026:** Historický plán níže zachovává původní zadání a checkboxy. Implementace A1–E2 již má skutečné důkazy bodů 1–5; závěrečné ověření je agregát fází po opravách, nikoli jeden zelený příkaz `verify:r3`. E3 dokumentace a předání jsou připravené v [akceptaci](../../r3-acceptance.md) a [handoff záznamu](2026-11-01-r3-step6-handoff.md). Čerstvý [live GUI protokol](../../evals/r3-desktop-2026-11-01.md) poslední série dosáhl 4/5 při zachování dvou předchozích 0/5; osobní přijetí a vypsané vizuální/streamové mezery zůstávají otevřené; R3 ani celé O1 tím nejsou uzavřené. Pozdější schválené pokračování a skutečné výsledky sledujte v [progress](2026-10-11-r3-progress.md); historická formulace níže o neuděleném souhlasu nepřebíjí následné zadání autora.
+
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans or superpowers:subagent-driven-development to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. Způsob provedení zvolí autor; tento dokument sám nespouští implementaci ani delegaci.
 
 **Goal:** Dodat použitelnou Windows pracovní plochu nad stejným R2 jádrem, s trvalými chaty, chráněným API klíčem, průběžnou aktivitou, oprávněními, diffem a obnovou rozhraní.
