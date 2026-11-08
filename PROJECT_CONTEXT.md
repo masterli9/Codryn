@@ -1,5 +1,12 @@
 # Kontext projektu – maturitní práce
 
+## Doplnění R3 — 8. listopadu 2026
+
+- Autor dočasně odložil osobní průchod. Checklist zůstává nezaškrtnutý. Další fáze a plánování dodatečných funkcí mají navázat po sloučení PR.
+- Vizuální doplněk přidal 42 snímků sedmi stavů na B5. Oprava panelu změn ukončuje indikaci načítání po chybě a vysvětluje prázdnou sadu. Oba opravené stavy mají 12 snímků na novém balíčku. Prošly typy, lint, hranice závislostí a 7 cílených testů panelu.
+- V novém balíčku byl před dokončením příkazu vidět stdout i stderr. Tab a Enter zastavily původní strom procesů, stav potvrdil backend i kontrola identit procesů. Text skutečného modelu se objevil 4,691 s před koncovou událostí poskytovatele. Jeden požadavek měl odhad nákladu 0,0004403 USD. Přechodné „Zastavování…“ nebylo při průchodu vykreslené.
+- Evidence je v `docs/superpowers/plans/2026-11-08-r3-e3-visual-followup.md` a `docs/superpowers/plans/2026-11-08-r3-e3-stream-followup.md`. Důkazy dřívějších bran zůstávají vázané na svůj balíček.
+
 ## Aktuální stav R3 — 1. listopadu 2026
 
 - R2 je sloučené v `main`; R3 je rozpracované na `feat/r3-electron-workspace`, implementační checkpoint `ed9092c` z 11. října. R3 už obsahuje produkční služby, desktopovou integraci a React pracovní plochu; nejde pouze o plán.

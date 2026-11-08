@@ -1,5 +1,12 @@
 # R3 — akceptační záznam
 
+Doplnění z 8. listopadu 2026 dokládá nové vizuální stavy, opravu panelu změn,
+viditelný stdout/stderr během příkazu, jeho zastavení klávesnicí a částečný
+text živého modelu před dokončením. Platí pro balíčky uvedené v samostatných
+protokolech. Osobní průchod autor dočasně odložil.
+[Vizuální doplněk](superpowers/plans/2026-11-08-r3-e3-visual-followup.md) ·
+[Streamový doplněk](superpowers/plans/2026-11-08-r3-e3-stream-followup.md)
+
 Datum dokumentace: **1. listopadu 2026**. Produktová autorita: [PRD v1.1](../PRD_v1.1.md). Dokument popisuje existující implementaci a skutečné důkazy; **R3, celé O1 ani ŠF nejsou tímto přijaty**. Osobní zkušenost autora a aktuální live GUI protokol nejsou automatickými testy nahrazené. Autorské položky jsou v [nezaškrtnutém checklistu](r3-author-checklist.md).
 
 ## Výsledek a identita měření
@@ -118,7 +125,7 @@ Následující rozdělení z auditu zůstává platné; dílčí desktopová fun
 
 ## Otevřené podmínky E3
 
-- Čerstvý [živý protokol](evals/r3-desktop-2026-11-01.md) poslední série dosáhl 4/5, tedy početního minima AC-O1-04. Dřívější neúspěšné série jsou zachované; nelze tvrdit 5/5 ani přijetí R3. Pozorování živého streamu před koncem a všechny chybové varianty tím nejsou doložené. Prázdná [šablona](evals/r3-desktop-template.json) nadále zůstává `not_run`; nejde o výsledek.
-- Skutečné systémové dialogy a osobní autorský průchod nejsou potvrzené. Všechny nově vytvořené checklist položky zůstávají prázdné.
-- Aktuální [packaged vizuální kontrola](superpowers/plans/2026-11-01-r3-e3-visual.md) doložila 67 unikátních snímků a 19 klávesnicových záznamů. Její nepokryté stavy a dodatečný neúspěšný command-stream pozorovatel zůstávají otevřené; starší renderer QA tento důkaz nenahrazuje.
+- Pětipokusový protokol dosáhl 4/5. Dřívější série a jejich chyby zůstávají v evidenci. Průběžný živý text doložil samostatný průchod z 8. listopadu. [Pětipokusový protokol](evals/r3-desktop-2026-11-01.md) · [Streamový doplněk](superpowers/plans/2026-11-08-r3-e3-stream-followup.md)
+- Autor dočasně odložil osobní průchod včetně systémových dialogů. Checklist zůstává nezaškrtnutý.
+- Vizuální doplněk pokryl sedm stavů. Samostatný snímek přechodného zastavování a dokončený změnový běh s nepodporovaným ověřovacím profilem zůstávají bez samostatného vizuálního důkazu. [Vizuální doplněk](superpowers/plans/2026-11-08-r3-e3-visual-followup.md)
 - R5 čistá instalace/2 minuty, R4 profil/context/Git/workflows a zbývající ŠF zůstávají otevřené. Není udělené autorské přijetí ani oprávnění push/PR.

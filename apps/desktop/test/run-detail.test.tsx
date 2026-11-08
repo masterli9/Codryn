@@ -1,13 +1,35 @@
 // @vitest-environment jsdom
 import { cleanup,fireEvent,render,screen,act } from '@testing-library/react';
 import { afterEach,beforeAll,expect,it,vi } from 'vitest';
-import type { R3Snapshot } from '@codryn/shared';
+import type { R3ChangeView,R3Snapshot } from '@codryn/shared';
 import { R3Client } from '../src/renderer/r3-client.js';
 import { RunDetail } from '../src/renderer/components/run-detail.js';
-import { activity,snapshot } from './ui-fixtures.js';
+import { activity,id,snapshot } from './ui-fixtures.js';
 afterEach(cleanup);
 beforeAll(()=>{HTMLDialogElement.prototype.showModal=function(){this.open=true;};HTMLDialogElement.prototype.close=function(){this.open=false;};});
 function setup(read:()=>Promise<unknown>){const client=new R3Client({invoke:vi.fn(),onUpdate:()=>()=>undefined});vi.spyOn(client,'call').mockImplementation(read as typeof client.call);const show=(value:R3Snapshot)=> <RunDetail client={client} snapshot={value} detail={null} busy={false} refresh={async()=>undefined} close={()=>undefined}/>;return {show,client};}
+it('distinguishes a rejected diff from loading and reports a recovered empty diff',async()=>{
+  const changes={setId:id(42),entryCount:0,recoveryRequired:false};
+  const empty:R3ChangeView={summary:changes,observedSetSequence:0,workspaceRevision:1,entries:[],diffs:[],baseline:{mode:'non-git',reason:'not_repository'}};
+  const failure='R3_PROJECT_UNAVAILABLE: Složka projektu není dostupná.';
+  const read=vi.fn<()=>Promise<unknown>>()
+    .mockRejectedValueOnce(new Error(failure))
+    .mockRejectedValueOnce(new Error('activity unavailable'))
+    .mockResolvedValueOnce(empty);
+  const {show}=setup(read),value={...snapshot(),changes};
+  const rendered=render(show(value));
+  expect(screen.getByText('Načítání změn…')).toBeTruthy();
+  await screen.findByText(failure);
+  expect(screen.queryByText('Načítání změn…')).toBeNull();
+  fireEvent.click(screen.getByRole('button',{name:'Starší aktivita'}));
+  const activityError='Starší aktivitu nelze načíst. Zkuste to znovu.';
+  await screen.findByText(activityError);
+  expect(screen.getByText(failure)).toBeTruthy();
+  rendered.rerender(show({...value,cursor:3}));
+  await screen.findByText('Sada neobsahuje žádné změny k zobrazení.');
+  expect(screen.queryByText(failure)).toBeNull();
+  expect(screen.getByText(activityError)).toBeTruthy();
+});
 it('retains older activity through refresh, deduplicates overlap and keeps the oldest cursor',async()=>{
   const read=vi.fn(async()=>({items:[activity(1),activity(2)],beforeSequence:null})),{show}=setup(read),value=snapshot();const view=render(show(value));
   fireEvent.click(screen.getByRole('button',{name:'Starší aktivita'}));await screen.findByText('Aktivita 1');
