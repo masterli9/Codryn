@@ -1,0 +1,17 @@
+import { z } from 'zod';
+import { uuidSchema, isoTimestampSchema } from './ids.js';
+import { fileDiffSchema } from './r2-diff.js';
+export const r3ChangeSummarySchema = z.object({ setId: uuidSchema, entryCount: z.number().int().nonnegative(), recoveryRequired: z.boolean() }).strict();
+export const r3RevertInputSchema = z.object({ requestId: uuidSchema, chatId: uuidSchema, setId: uuidSchema, entryId: uuidSchema.optional(), expectedSetSequence: z.number().int().nonnegative(), expectedWorkspaceRevision: z.number().int().nonnegative() }).strict();
+export const r3RevertResultSchema = z.object({ status: z.enum(['reverted', 'conflicted', 'recovery_required']), revertedIds: z.array(uuidSchema), blockedIds: z.array(uuidSchema) }).strict();
+export const r3ChangeViewSchema = z.object({ summary: r3ChangeSummarySchema, observedSetSequence: z.number().int().nonnegative(), workspaceRevision: z.number().int().nonnegative(), entries: z.array(z.object({ id: uuidSchema, path: z.string(), sequence: z.number().int().positive(), kind: z.enum(['patch', 'revert']), reversesId: uuidSchema.nullable() }).strict()), diffs: z.array(fileDiffSchema), baseline: z.discriminatedUnion('mode', [z.object({ mode: z.literal('non-git'), reason: z.enum(['not_repository', 'git_unavailable']) }).strict(), z.object({ mode: z.literal('git'), head: z.string().nullable(), branch: z.string().nullable(), status: z.array(z.object({ path: z.string(), xy: z.string() }).strict()), conflicts: z.array(z.string()) }).strict()]) }).strict();
+export const r3CommandViewSchema = z.object({ callId: uuidSchema, executable: z.string(), args: z.array(z.string()), cwd: z.string(), status: z.enum(['running', 'succeeded', 'failed', 'timed_out', 'cancelled', 'termination_failed']), exitCode: z.number().int().nullable(), durationMs: z.number().nonnegative().nullable(), treeStopped: z.boolean().nullable(), stdoutTail: z.string(), stderrTail: z.string(), truncated: z.boolean(), outputAvailable: z.boolean() }).strict();
+export const r3OutputPageSchema = z.object({ callId: uuidSchema, afterSequence: z.number().int().nonnegative().nullable(), chunks: z.array(z.object({ sequence: z.number().int().positive(), stream: z.enum(['stdout', 'stderr']), text: z.string() }).strict()), truncated: z.boolean() }).strict().refine(value => new TextEncoder().encode(JSON.stringify(value)).length <= 64 * 1024);
+export const r3ActivityViewSchema = z.object({ eventId: uuidSchema, sequence: z.number().int().positive(), runId: uuidSchema, type: z.string(), occurredAt: isoTimestampSchema, callId: uuidSchema.nullable(), summary: z.string().max(4096), details: z.array(z.object({ label: z.string().max(4096), value: z.string().max(4096) }).strict()), detailsTruncated: z.boolean() }).strict().refine(value => new TextEncoder().encode(JSON.stringify(value.details)).length <= 4096);
+export type R3ChangeSummary = z.infer<typeof r3ChangeSummarySchema>;
+export type R3RevertInput = z.infer<typeof r3RevertInputSchema>;
+export type R3RevertResult = z.infer<typeof r3RevertResultSchema>;
+export type R3ChangeView = z.infer<typeof r3ChangeViewSchema>;
+export type R3CommandView = z.infer<typeof r3CommandViewSchema>;
+export type R3OutputPage = z.infer<typeof r3OutputPageSchema>;
+export type R3ActivityView = z.infer<typeof r3ActivityViewSchema>;

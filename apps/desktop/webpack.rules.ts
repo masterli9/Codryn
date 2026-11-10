@@ -2,7 +2,7 @@ import type { RuleSetRule } from 'webpack';
 
 const rules: RuleSetRule[] = [
   {
-    test: /\.ts$/,
+    test: /\.tsx?$/,
     exclude: /node_modules/,
     use: {
       loader: 'ts-loader',

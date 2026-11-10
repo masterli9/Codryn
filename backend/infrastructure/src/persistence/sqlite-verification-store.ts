@@ -16,7 +16,7 @@ function rowRecord(row: VerificationRow): VerificationRecord {
 export class SqliteVerificationStore implements VerificationStore {
   constructor(private readonly database: DatabaseSync) {}
 
-  async append(recordInput: VerificationRecord): Promise<void> {
+  async append(recordInput: VerificationRecord, coverage?: { readonly profileId: string; readonly coveredPaths: readonly string[] }): Promise<void> {
     const record = verificationRecordSchema.parse(recordInput);
     let started = false;
     try {
@@ -28,6 +28,10 @@ export class SqliteVerificationStore implements VerificationStore {
         record.id, record.runId, record.callId, record.projectId, record.revision,
         JSON.stringify(record), record.occurredAt
       );
+      if(coverage) {
+        if(coverage.profileId!=='r2-sum-v1'||coverage.coveredPaths.some(path=>path!=='sum.mjs'))throw new TypeError('R3_COVERAGE_INVALID');
+        this.database.prepare('INSERT INTO desktop_verification_coverage VALUES(?,?,?)').run(record.id,coverage.profileId,JSON.stringify(coverage.coveredPaths));
+      }
       insertEvent(this.database, {
         eventId: record.id,
         eventType: 'verification.recorded',

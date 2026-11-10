@@ -6,5 +6,5 @@
   "types": "./src/index.ts",
   "exports": { ".": "./src/index.ts" },
   "scripts": { "typecheck": "tsc --noEmit -p tsconfig.json" },
-  "dependencies": { "@codryn/shared": "0.0.0" }
+  "dependencies": { "@codryn/shared": "0.0.0", "@codryn/infrastructure": "0.0.0" }
 }

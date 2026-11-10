@@ -1031,7 +1031,7 @@ describeWindows('WindowsProcessRunner', () => {
 });
 
 describeWindows('R2CommandRunner cancellation integration', () => {
-  it('cancels the fixture parent and child without claiming tree termination', async () => {
+  it('cancels the fixture parent and child with confirmed Job accounting termination', async () => {
     const ownedFixture = await createOwnedFixture();
     const childPidFile = join(ownedFixture.directory, 'child.pid');
     const parentIdentityFile = join(ownedFixture.directory, 'parent-process-identity.json');
@@ -1073,7 +1073,7 @@ describeWindows('R2CommandRunner cancellation integration', () => {
 
       controller.abort();
       const result = await run;
-      expect(result).toMatchObject({ status: 'cancelled', treeStopped: false });
+      expect(result).toMatchObject({ status: 'cancelled', treeStopped: true });
 
       const parent = await readFixtureProcessIdentity(parentIdentityFile);
       const child = await readRecordedProcessIdentityFile(childIdentityFile);

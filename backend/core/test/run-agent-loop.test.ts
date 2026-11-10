@@ -31,6 +31,18 @@ function loopFor(overrides: Partial<RunAgentLoopDependencies> = {}) {
   return { loop: new RunAgentLoop(dependencies), events, transitions, logs };
 }
 
+it('links desktop run before context and allows explicitly read-only completion without verification', async () => {
+  let linked=false;
+  const {loop}=loopFor({contextAssembler:{async assemble(){expect(linked).toBe(true);return {modelContent:[],sources:[],totalBytes:0};}}});
+  const result=await loop.executeR2(validRequest,new AbortController().signal,{projectId:requestId,changeSetId:null,onRunCreated:async()=>{linked=true;},allowReadOnlyCompletion:true,recoveryRequired:async()=>false,completion:async()=>({changed:false,verification:{status:'unverified',recordId:null,reason:'No check'},pending:false,recoveryRequired:false})});
+  expect(result.status).toBe('completed');expect(result.verification).toEqual({status:'unverified',recordId:null,reason:'R3_READ_ONLY_RESULT'});
+});
+it('fails closed before context if the desktop link fails',async()=>{
+  let contextCalls=0;const {loop}=loopFor({contextAssembler:{async assemble(){contextCalls++;return {modelContent:[],sources:[],totalBytes:0};}}});
+  const result=await loop.executeR2(validRequest,new AbortController().signal,{projectId:requestId,changeSetId:null,onRunCreated:async()=>{throw new Error('link failed');},allowReadOnlyCompletion:true,recoveryRequired:async()=>false,completion:async()=>({changed:false,verification:{status:'unverified',recordId:null,reason:'No check'},pending:false,recoveryRequired:false})});
+  expect(result.status).toBe('failed');expect(contextCalls).toBe(0);
+});
+
 describe('RunAgentLoop', () => {
   it('orchestrates one completed adapter response per sequential step and persists only safe event metadata', async () => {
     const requests: ModelRequest[] = [];

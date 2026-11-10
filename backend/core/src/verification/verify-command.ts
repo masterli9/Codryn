@@ -1,6 +1,6 @@
 import { verificationRecordSchema, type VerificationRecord, type CommandSpec } from '@codryn/shared';
 import type { ChangeActor } from '../changes/ports.js';
-import type { CommandResult, CommandRunner } from '../process/ports.js';
+import type { CommandResult, CommandRunner, CommandOutput } from '../process/ports.js';
 import type { Clock, IdGenerator } from '../diagnostics/ports.js';
 import type { WorkspaceObserver, WorkspaceSnapshot, WorkspaceStore } from '../workspace/ports.js';
 import type { VerificationStore } from './verification-store.js';
@@ -47,6 +47,9 @@ export interface VerifyCommandDependencies {
   readonly clock: Clock;
   readonly isRelevant?: (command: CommandSpec, snapshot: WorkspaceSnapshot) => boolean | Promise<boolean>;
   readonly onResult?: (result: CommandResult) => Promise<void>;
+  readonly runnerForActor?: (actor: ChangeActor) => CommandRunner;
+  readonly onOutput?: (actor: ChangeActor, output: CommandOutput) => void;
+  readonly coverageFor?: (command: CommandSpec, relevant: boolean) => { readonly profileId: string; readonly coveredPaths: readonly string[] } | undefined;
 }
 
 export class VerifyCommand {
@@ -59,7 +62,8 @@ export class VerifyCommand {
   async executeWithResult(command: CommandSpec, actor: ChangeActor, signal: AbortSignal): Promise<{ record: VerificationRecord; process: CommandResult }> {
     const before = await this.snapshot(actor.projectId, signal);
     const relevant = await this.dependencies.isRelevant?.(command, before) ?? false;
-    const process = await this.dependencies.runner.run(command, signal);
+    const runner = this.dependencies.runnerForActor?.(actor) ?? this.dependencies.runner;
+    const process = await runner.run(command, signal, output => this.dependencies.onOutput?.(actor,output));
     await this.dependencies.onResult?.(process);
     const after = await this.snapshot(actor.projectId, signal);
     const result = assessVerification({
@@ -88,7 +92,7 @@ export class VerifyCommand {
       reason: relevant ? reasonFor(result, process, before, after) : 'Command is not a trusted project verification check.',
       exitCode: process.exitCode
     });
-    await this.dependencies.store.append(record);
+    await this.dependencies.store.append(record,this.dependencies.coverageFor?.(command,relevant));
     return { record, process };
   }
 

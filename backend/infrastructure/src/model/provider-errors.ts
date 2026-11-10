@@ -19,7 +19,7 @@ export function normalizeProviderError(status: number | null, timedOut: boolean)
 }
 
 export class ProviderAdapterError extends Error {
-  constructor(readonly code: ProviderErrorCode, readonly httpStatus: number | null = null) {
+  constructor(readonly code: ProviderErrorCode, readonly httpStatus: number | null = null,readonly retryAfterMs:number|null=null) {
     super('Model provider request failed.');
     this.name = 'ProviderAdapterError';
   }

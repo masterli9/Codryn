@@ -1,4 +1,4 @@
-import { runAgentRequestSchema, r2RunResultSchema, uuidSchema, type AgentRunFailureCode, type EventEnvelope, type ModelRequest, type ModelTurn, type R2RunResult, type RunAgentRequest, type RunAgentResult, type ToolResult, type Uuid } from '@codryn/shared';
+import { runAgentRequestSchema, r2RunResultSchema, uuidSchema, type AgentRunFailureCode, type EventEnvelope, type ModelRequest, type ModelStreamEvent, type ModelTurn, type R2RunResult, type RunAgentRequest, type RunAgentResult, type ToolResult, type Uuid } from '@codryn/shared';
 import type { Clock, DiagnosticLogger, EventStore, IdGenerator } from '../diagnostics/ports.js';
 import { collectModelResponse, ModelResponseFailure } from './model-response-collector.js';
 import type { ContextAssembler } from './context-assembler.js';
@@ -11,6 +11,10 @@ import { appendAssistantTurn, appendToolTurn, toolResultsFromHistory } from './m
 import { canComplete } from './r2-completion.js';
 
 export interface R2ExecutionOptions {
+  readonly onRunCreated?: (runId: Uuid) => Promise<void>;
+  readonly allowReadOnlyCompletion?: boolean;
+  readonly onModelEvent?: (input:{runId:Uuid;step:number;event:ModelStreamEvent})=>Promise<void>;
+  readonly onModelTurnCompleted?: (input:{runId:Uuid;step:number})=>Promise<void>;
   readonly projectId: string;
   readonly changeSetId: string | null;
   readonly openChangeSet?: (runId: Uuid) => Promise<string>;
@@ -34,6 +38,7 @@ export interface RunAgentLoopDependencies {
   readonly clock: Clock;
   readonly ids: IdGenerator;
   readonly logger: DiagnosticLogger;
+  readonly safeModelText?: (text:string)=>string;
 }
 
 const messages: Readonly<Record<AgentRunFailureCode, string>> = Object.freeze({
@@ -122,9 +127,11 @@ export class RunAgentLoop {
     let activeChangeSetId = options.changeSetId;
     let history: ModelTurn[] = [];
     const observedCallIds = new Set<Uuid>();
+    let failedTool = false;
     try {
       const timestamp = this.timestamp();
       await this.dependencies.agentRunStore.createWithInitialEvent({ runId, requestId: request.requestId, state, task: request.task, maxSteps: request.maxSteps, stepCount: 0, adapterId: this.dependencies.model.descriptor.adapterId, modelId: this.dependencies.model.descriptor.modelId, createdAt: timestamp, updatedAt: timestamp }, this.event(runId, request.requestId, 'agent_run.created', { runId, maxSteps: request.maxSteps, profile: 'change' }));
+      await options.onRunCreated?.(runId);
       if (activeChangeSetId === null && options.openChangeSet !== undefined) activeChangeSetId = await options.openChangeSet(runId);
       state = await this.transition(runId, request.requestId, state, 'preparing_context', steps);
       this.abort(signal);
@@ -142,14 +149,17 @@ export class RunAgentLoop {
           tools: [...this.dependencies.registry.descriptors], previousToolResults, history: [...history]
         };
         await this.append(runId, request.requestId, 'model.requested', { step: steps + 1, profile: 'change', toolCount: modelRequest.tools.length, contextSourceCount: modelRequest.context.length, previousToolResultCount: previousToolResults.length });
-        const response = await collectModelResponse(this.dependencies.model.stream(modelRequest, signal), signal, { allowCommentaryWithToolCalls: true });
+        const onModelEvent = options.onModelEvent;
+        const response = await collectModelResponse(this.dependencies.model.stream(modelRequest, signal), signal, { allowCommentaryWithToolCalls: true, ...(onModelEvent === undefined ? {} : { onValidatedEvent: (event:ModelStreamEvent)=>onModelEvent({runId,step:steps+1,event}) }) });
+        await options.onModelTurnCompleted?.({runId,step:steps+1});
         await this.append(runId, request.requestId, 'model.response_received', { step: steps + 1, kind: response.kind, ...(response.kind === 'final' ? { textLength: response.text.length } : { toolCallCount: response.calls.length, commentaryLength: response.text?.length ?? 0 }) });
         steps += 1;
         this.abort(signal);
         if (response.kind === 'final') {
           const completion = await options.completion();
-          const allowed = canComplete({ ...completion, verification: completion.verification.status });
-          const result = r2RunResultSchema.parse({ schemaVersion: 2, runId, stepCount: steps, status: allowed ? 'completed' : 'failed', finalText: response.text, changeSetId: activeChangeSetId, verification: completion.verification, recoveryRequired: completion.recoveryRequired });
+          const readOnly = options.allowReadOnlyCompletion === true && !completion.changed && !completion.pending && !completion.recoveryRequired && !failedTool;
+          const allowed = readOnly || canComplete({ ...completion, verification: completion.verification.status });
+          const result = r2RunResultSchema.parse({ schemaVersion: 2, runId, stepCount: steps, status: allowed ? 'completed' : 'failed', finalText: this.dependencies.safeModelText?.(response.text) ?? response.text, changeSetId: activeChangeSetId, verification: readOnly ? { status: 'unverified', recordId: null, reason: 'R3_READ_ONLY_RESULT' } : completion.verification, recoveryRequired: completion.recoveryRequired });
           await this.persistR2Detail(runId, result, allowed ? undefined : 'R1_TOOL_EXECUTION_FAILED');
           state = await this.transition(runId, request.requestId, state, allowed ? 'completed' : 'failed', steps, allowed ? undefined : 'R1_TOOL_EXECUTION_FAILED');
           return result;
@@ -160,7 +170,8 @@ export class RunAgentLoop {
           if (observedCallIds.has(toolCall.callId)) throw { code: 'R1_MODEL_RESPONSE_UNSUPPORTED' };
           observedCallIds.add(toolCall.callId);
           this.abort(signal);
-          const result = await this.dependencies.toolExecutionHarness.execute(toolCall, runId, signal, { projectId, runId, callId: toolCall.callId });
+          const result = await this.dependencies.toolExecutionHarness.execute(toolCall, runId, signal, { projectId, runId, callId: toolCall.callId }, async phase => { if(state!==phase)state=await this.transition(runId,request.requestId,state,phase,steps); });
+          failedTool ||= !result.ok || (result.ok&&typeof result.output==='object'&&result.output!==null&&!Array.isArray(result.output)&&'status' in result.output&&['rejected','failed','timed_out','cancelled','termination_failed','conflicted','recovery_required'].includes(String(result.output.status)));
           history = appendToolTurn(history, result);
           if (!result.ok && result.error.code === 'R2_PERMISSION_PENDING') throw { code: 'R1_TOOL_PERMISSION_DENIED' };
         }

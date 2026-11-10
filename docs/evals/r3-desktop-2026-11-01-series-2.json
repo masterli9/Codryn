@@ -1,0 +1,215 @@
+{
+  "$schema": "../evidence/r3-live-report.schema.json",
+  "schemaVersion": 1,
+  "status": "failed",
+  "build": {
+    "sourceHash": "82eebf763379e3d9d094e7f97359968dddc095d308f5c16e563319836238b388",
+    "asarHash": "630361f2b1bb19b6757094eb5f2dfde2a2c1b70af56700fcdf7e48c6dc445773",
+    "exeHash": "6aae3c142a09d1bf0d71307aec50121d9bca412a3c717a3e5513d6b3cf4e1224"
+  },
+  "recordedAt": "2026-11-01T14:42:51.823Z",
+  "provider": "openai-responses",
+  "model": "gpt-6-luna",
+  "host": "Windows_NT 10.0.26300 x64; Node 24.19.0; packaged Electron 43.4.0",
+  "consentVersion": "openai-api-2026-10-11",
+  "budgetUsd": 0.19243419,
+  "budgetEnforcement": "Test-driver main fetch gate. Original global cap USD 0.25; prior reserved USD 0.057565801; this series cap USD 0.19243419, split equally among five. Counts every HTTP retry, max12/attempt, exact Responses endpoint, redirects denied, before-request reservation of request UTF-8 bytes+4096 framing tokens and max_output_tokens4096. This is a conservative Standard-price estimate, not provider billing enforcement. Exclusive execution ledger prohibits a third series.",
+  "timeoutEnforcement": "Main fetch abort deadline 180000 ms per attempt, production transport total timeout120000 ms per request and bounded command runner. Cleanup closes the owned app; no separate connection-test request.",
+  "attempts": [
+    {
+      "id": 1,
+      "startedAt": "2026-11-01T14:39:00.678Z",
+      "fixtureId": "sum-reference-c0b17c121a133ff2d186c199164dc2769eb7a808bd6edad595c6a3966cb87248",
+      "mode": "git",
+      "scenario": "Independent synthetic sum repair through packaged GUI, permission and intended verification/return; first attempt reloads pending permission.",
+      "timeoutMs": 180000,
+      "maxSteps": 12,
+      "budgetUsd": 0.038486838,
+      "durationMs": 33041,
+      "success": false,
+      "failureOwner": "harness",
+      "safeReason": "Driver supplied nvm alias executable instead of backend canonical trusted Node path. Command succeeded but persisted verification remained unverified: Command is not a trusted project verification check. Diff and safe return were not reached. streamBeforeCompletion=false means not observed by polling, not proof of absent streaming. permissionReload=false on attempts 2-5 means not exercised.",
+      "usage": {
+        "known": true,
+        "inputTokens": 5727,
+        "outputTokens": 397
+      },
+      "estimatedCostUsd": 0.0007712000000000001,
+      "pricingReference": "https://developers.openai.com/api/docs/models/gpt-6-luna",
+      "evidencePaths": [
+        ".r3-artifacts/2026-11-01-e3-live/protocol-XsK5j7/report.json",
+        ".r3-artifacts/2026-11-01-e3-live/protocol-XsK5j7/attempt-1/profile/codryn.sqlite",
+        ".r3-artifacts/2026-11-01-e3-live/protocol-XsK5j7/attempt-1/approval.png",
+        ".r3-artifacts/2026-11-01-e3-live/protocol-T66rKU/report.json",
+        "docs/evals/r3-desktop-2026-11-01.md"
+      ],
+      "assertions": {
+        "readSearch": true,
+        "patch": true,
+        "approval": true,
+        "verification": false,
+        "diff": false,
+        "safeReturn": false,
+        "permissionReload": true,
+        "streamBeforeCompletion": false,
+        "noSecretLeak": true
+      }
+    },
+    {
+      "id": 2,
+      "startedAt": "2026-11-01T14:39:34.378Z",
+      "fixtureId": "sum-reference-c0b17c121a133ff2d186c199164dc2769eb7a808bd6edad595c6a3966cb87248",
+      "mode": "git",
+      "scenario": "Independent synthetic sum repair through packaged GUI, permission and intended verification/return; first attempt reloads pending permission.",
+      "timeoutMs": 180000,
+      "maxSteps": 12,
+      "budgetUsd": 0.038486838,
+      "durationMs": 35709,
+      "success": false,
+      "failureOwner": "harness",
+      "safeReason": "Driver supplied nvm alias executable instead of backend canonical trusted Node path. Command succeeded but persisted verification remained unverified: Command is not a trusted project verification check. Diff and safe return were not reached. streamBeforeCompletion=false means not observed by polling, not proof of absent streaming. permissionReload=false on attempts 2-5 means not exercised.",
+      "usage": {
+        "known": true,
+        "inputTokens": 5222,
+        "outputTokens": 398
+      },
+      "estimatedCostUsd": 0.0007212000000000001,
+      "pricingReference": "https://developers.openai.com/api/docs/models/gpt-6-luna",
+      "evidencePaths": [
+        ".r3-artifacts/2026-11-01-e3-live/protocol-XsK5j7/report.json",
+        ".r3-artifacts/2026-11-01-e3-live/protocol-XsK5j7/attempt-2/profile/codryn.sqlite",
+        ".r3-artifacts/2026-11-01-e3-live/protocol-XsK5j7/attempt-2/approval.png",
+        ".r3-artifacts/2026-11-01-e3-live/protocol-T66rKU/report.json",
+        "docs/evals/r3-desktop-2026-11-01.md"
+      ],
+      "assertions": {
+        "readSearch": true,
+        "patch": true,
+        "approval": true,
+        "verification": false,
+        "diff": false,
+        "safeReturn": false,
+        "permissionReload": false,
+        "streamBeforeCompletion": false,
+        "noSecretLeak": true
+      }
+    },
+    {
+      "id": 3,
+      "startedAt": "2026-11-01T14:40:10.707Z",
+      "fixtureId": "sum-reference-c0b17c121a133ff2d186c199164dc2769eb7a808bd6edad595c6a3966cb87248",
+      "mode": "git",
+      "scenario": "Independent synthetic sum repair through packaged GUI, permission and intended verification/return; first attempt reloads pending permission.",
+      "timeoutMs": 180000,
+      "maxSteps": 12,
+      "budgetUsd": 0.038486838,
+      "durationMs": 32860,
+      "success": false,
+      "failureOwner": "harness",
+      "safeReason": "Driver supplied nvm alias executable instead of backend canonical trusted Node path. Command succeeded but persisted verification remained unverified: Command is not a trusted project verification check. Diff and safe return were not reached. streamBeforeCompletion=false means not observed by polling, not proof of absent streaming. permissionReload=false on attempts 2-5 means not exercised.",
+      "usage": {
+        "known": true,
+        "inputTokens": 5762,
+        "outputTokens": 385
+      },
+      "estimatedCostUsd": 0.0007687000000000001,
+      "pricingReference": "https://developers.openai.com/api/docs/models/gpt-6-luna",
+      "evidencePaths": [
+        ".r3-artifacts/2026-11-01-e3-live/protocol-XsK5j7/report.json",
+        ".r3-artifacts/2026-11-01-e3-live/protocol-XsK5j7/attempt-3/profile/codryn.sqlite",
+        ".r3-artifacts/2026-11-01-e3-live/protocol-XsK5j7/attempt-3/approval.png",
+        ".r3-artifacts/2026-11-01-e3-live/protocol-T66rKU/report.json",
+        "docs/evals/r3-desktop-2026-11-01.md"
+      ],
+      "assertions": {
+        "readSearch": true,
+        "patch": true,
+        "approval": true,
+        "verification": false,
+        "diff": false,
+        "safeReturn": false,
+        "permissionReload": false,
+        "streamBeforeCompletion": false,
+        "noSecretLeak": true
+      }
+    },
+    {
+      "id": 4,
+      "startedAt": "2026-11-01T14:40:43.665Z",
+      "fixtureId": "sum-reference-c0b17c121a133ff2d186c199164dc2769eb7a808bd6edad595c6a3966cb87248",
+      "mode": "non-git",
+      "scenario": "Independent synthetic sum repair through packaged GUI, permission and intended verification/return; first attempt reloads pending permission.",
+      "timeoutMs": 180000,
+      "maxSteps": 12,
+      "budgetUsd": 0.038486838,
+      "durationMs": 18076,
+      "success": false,
+      "failureOwner": "harness",
+      "safeReason": "Driver supplied nvm alias executable instead of backend canonical trusted Node path. Command succeeded but persisted verification remained unverified: Command is not a trusted project verification check. Diff and safe return were not reached. streamBeforeCompletion=false means not observed by polling, not proof of absent streaming. permissionReload=false on attempts 2-5 means not exercised.",
+      "usage": {
+        "known": true,
+        "inputTokens": 5196,
+        "outputTokens": 387
+      },
+      "estimatedCostUsd": 0.0007131,
+      "pricingReference": "https://developers.openai.com/api/docs/models/gpt-6-luna",
+      "evidencePaths": [
+        ".r3-artifacts/2026-11-01-e3-live/protocol-XsK5j7/report.json",
+        ".r3-artifacts/2026-11-01-e3-live/protocol-XsK5j7/attempt-4/profile/codryn.sqlite",
+        ".r3-artifacts/2026-11-01-e3-live/protocol-XsK5j7/attempt-4/approval.png",
+        ".r3-artifacts/2026-11-01-e3-live/protocol-T66rKU/report.json",
+        "docs/evals/r3-desktop-2026-11-01.md"
+      ],
+      "assertions": {
+        "readSearch": true,
+        "patch": true,
+        "approval": true,
+        "verification": false,
+        "diff": false,
+        "safeReturn": false,
+        "permissionReload": false,
+        "streamBeforeCompletion": false,
+        "noSecretLeak": true
+      }
+    },
+    {
+      "id": 5,
+      "startedAt": "2026-11-01T14:41:01.791Z",
+      "fixtureId": "sum-reference-c0b17c121a133ff2d186c199164dc2769eb7a808bd6edad595c6a3966cb87248",
+      "mode": "non-git",
+      "scenario": "Independent synthetic sum repair through packaged GUI, permission and intended verification/return; first attempt reloads pending permission.",
+      "timeoutMs": 180000,
+      "maxSteps": 12,
+      "budgetUsd": 0.038486838,
+      "durationMs": 17069,
+      "success": false,
+      "failureOwner": "harness",
+      "safeReason": "Driver supplied nvm alias executable instead of backend canonical trusted Node path. Command succeeded but persisted verification remained unverified: Command is not a trusted project verification check. Diff and safe return were not reached. streamBeforeCompletion=false means not observed by polling, not proof of absent streaming. permissionReload=false on attempts 2-5 means not exercised.",
+      "usage": {
+        "known": true,
+        "inputTokens": 5734,
+        "outputTokens": 413
+      },
+      "estimatedCostUsd": 0.0007798999999999999,
+      "pricingReference": "https://developers.openai.com/api/docs/models/gpt-6-luna",
+      "evidencePaths": [
+        ".r3-artifacts/2026-11-01-e3-live/protocol-XsK5j7/report.json",
+        ".r3-artifacts/2026-11-01-e3-live/protocol-XsK5j7/attempt-5/profile/codryn.sqlite",
+        ".r3-artifacts/2026-11-01-e3-live/protocol-XsK5j7/attempt-5/approval.png",
+        ".r3-artifacts/2026-11-01-e3-live/protocol-T66rKU/report.json",
+        "docs/evals/r3-desktop-2026-11-01.md"
+      ],
+      "assertions": {
+        "readSearch": true,
+        "patch": true,
+        "approval": true,
+        "verification": false,
+        "diff": false,
+        "safeReturn": false,
+        "permissionReload": false,
+        "streamBeforeCompletion": false,
+        "noSecretLeak": true
+      }
+    }
+  ]
+}

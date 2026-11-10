@@ -15,12 +15,13 @@ function Send-Result([hashtable]$Result) {
 try {
   $json = [System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($CommandJson))
   $command = $json | ConvertFrom-Json
-  $result = [R2CommandJob]::Run(
+  $result = [R2CommandJob]::RunProtocol(
     [string]$command.executable,
     [string[]]$command.args,
     [string]$command.cwd,
     [int]$command.timeoutMs,
-    [int]$command.maxOutputBytes
+    [int]$command.maxOutputBytes,
+    [int]$command.hostPid
   )
   Send-Result @{
     type = 'result'
