@@ -1,6 +1,6 @@
 # R4: běžný uživatelský úkol jako cesta k široké alfě
 
-**Stav:** návrh k autorskému posouzení, nikoli schválená implementace
+**Stav:** autorem schválený směr 10. listopadu 2026; doplněno navazování na historii téhož chatu
 
 **Autority:** `PROJECT_CONTEXT.md`, `PRD_v1.1.md`, `REGISTR_ROZHODNUTI_v1.1.md`; pořadí a brány v `docs/product/ROADMAP.md` §8
 
@@ -12,7 +12,7 @@ Uživatel otevře vlastní malý TypeScript/React projekt, v projektovém chatu 
 
 Výsledek R4 není příslib, že model dokončí libovolné zadání. Podporovaný rozsah je malý lokální TypeScript/Node.js a React/Next.js projekt podle PRD. Nesplněný nebo neověřený úkol musí být takto označen.
 
-Současné R3 přijímá další vlastní zadání v témže chatu jako nový samostatný úkol; starší zprávy zůstávají v historii, ale automatické navázání na jejich obsah je v PRD vedeno jako `FR-CHAT-06` pro ŠF. Tento návrh R4 zahrnuje opakované vlastní úkoly, zatímco plné konverzační pokračování by vyžadovalo samostatné rozhodnutí o rozsahu.
+Současné R3 přijímá další vlastní zadání v témže chatu jako nový samostatný běh a starší zprávy nechává pouze v historii. Autor výslovně přesunul navazování na předchozí obsah do R4, tedy dříve než nejzazší etapa ŠF u `FR-CHAT-06`. Nový běh v témže chatu má rozumět návaznému zadání typu „teď oprav i test“ bez opakování celého předchozího promptu.
 
 ## Cíle a hranice
 
@@ -20,6 +20,7 @@ Současné R3 přijímá další vlastní zadání v témže chatu jako nový sa
 - Udržet demonstrační režim jako offline zálohu; reálný režim přijímá vlastní text uživatele a není vázán na `sum.mjs` fixture. Referenční fixture zůstává test, ne produktové omezení.
 - Použít backend jako zdroj pravdy. Renderer má pouze validované úzké IPC a nedostane Node, filesystem ani Git API.
 - Neodeslat modelu celý repozitář nebo ignorované tajemství. U každé projektové reference musí být zřejmé, co se skutečně načetlo.
+- Při dalším zadání použít omezenou relevantní historii pouze téhož chatu. Nedokončené běhy a jejich tool output se bez vysvětlení nevracejí modelu; obsah projektu se znovu čte podle aktuální politiky a revize.
 - Nepředstírat aktuální ověření po relevantní změně souboru, konfigurace nebo Gitu.
 - Vzdálený Git, import cizích manifestů, produktové subagenty, E0 a canvas jsou S/O1; do R4 vstoupí jen po samostatném zařazení. Účet, cloud, druhý adapter, Auto režim a finální systém rozložení nejsou R4.
 
@@ -32,13 +33,15 @@ R4 je několik navazujících projektů. Tento dokument určuje společný uživ
 
 ## Navržené pořadí oblastí
 
-### 1. První běžný TypeScript úkol se správným ověřením
+### 1. Návazný běžný TypeScript úkol se správným ověřením
 
-První přírůstek musí být viditelný: uživatel zadá vlastní úpravu v malém projektu mimo referenční fixture, zvolí reálný model a uvidí relevantní kontrolu typů nebo test odvozený z projektu. Nesmí se bez potvrzení instalovat chybějící závislosti. Opakovatelný fake scénář a samostatný živý protokol doloží stejnou cestu. Základní rozpoznání TypeScript projektu a výběr kontroly zde předchází úplným strukturálním dotazům v další oblasti.
+První přírůstek musí být viditelný: uživatel zadá vlastní úpravu v malém projektu mimo referenční fixture, zvolí reálný model, potom navazující prompt ve stejném chatu a uvidí relevantní kontrolu typů nebo test odvozený z projektu. Nesmí se bez potvrzení instalovat chybějící závislosti. Opakovatelný fake scénář a samostatný živý protokol doloží stejnou cestu. Základní rozpoznání TypeScript projektu a výběr kontroly zde předchází úplným strukturálním dotazům v další oblasti.
+
+Backend sestaví historii z dokončených dvojic uživatelské zadání / konečná odpověď v tomto chatu. Zachová pořadí, vyloučí aktuální zprávu, jiné chaty, přerušené nebo neúspěšné běhy, průběžný komentář a staré výstupy nástrojů. Vybere nejvýše osm posledních souvislých dvojic do celkových 32 KiB UTF-8; při překročení limitu starší dvojice vynechá a uvede to v auditu. Pokud poslední dvojice sama přesáhne limit, nepoužije ji a jasně označí, že návaznost nebyla dostupná. Aktuální prompt se neposílá dvakrát. Před odesláním backend zaznamená identifikátory použitých zpráv, počet bajtů a důvod vynechání, nikoli další kopii jejich textu; UI stručně ukáže, že běh navázal na historii a zda byla zkrácena. Historie je minulý rozhovor, ne důkaz aktuálního obsahu souborů. Nové čtení projektových souborů musí projít aktuální ignore politikou, nikoli převzít starý obsah ze zpráv nebo tool výsledků jako aktuální fakta o workspace.
 
 Současně sjednotit výchozí ochranu a `.codrynignore` na cestách, které tento první přírůstek používá, zejména čtení, hledání a sestavení kontextu. Ignorovaná cesta má viditelný důvod a tajemství se nesmí nenápadně odeslat. Backend sleduje aktuální obsah při zápisu a platnost ověření. Následující oblastní plány rozšíří stejnou politiku na nové indexy a mapu, zavedou jednorázové výjimky a dokončí monotónní `workspaceRevision`, provenienci a resource-key serializaci před lokálními Git operacemi. Bez těchto dokončení nelze uzavřít související M/O1 kritéria.
 
-**První použitelný výsledek:** vlastní prompt na úpravu TypeScript projektu mimo `sum.mjs` fixture vede k čitelné změně, skutečně spuštěné relevantní kontrole a pravdivému výsledku. Důkaz: opakovatelný integrační průchod, `FR-TERM-04`, bezpečnostní regrese R2/R3 a oddělený live report. `AC-O1-23/24/27` se uzavřou až po dokončení všech dotčených cest.
+**První použitelný výsledek:** vlastní prompt na úpravu TypeScript projektu mimo `sum.mjs` fixture a návazný prompt ve stejném chatu vedou k čitelné změně, skutečně spuštěné relevantní kontrole a pravdivému výsledku. Důkaz: opakovatelný integrační průchod, `FR-CHAT-06`, `FR-TERM-04`, bezpečnostní regrese R2/R3 a oddělený live report. `AC-O1-23/24/27` se uzavřou až po dokončení všech dotčených cest.
 
 ### 2. TypeScript profil a relevantní kontrola
 
@@ -83,4 +86,4 @@ Každá oblast má vlastní specifikaci, implementační plán, úzké testy a k
 
 ## Podklad pro autorské schválení
 
-Autor potvrdí nebo opraví hranici prvního přírůstku, zejména zda očekává také navazování na starší zprávy v chatu už v R4. Po schválení tohoto společného návrhu vznikne první oblastní specifikace a teprve z ní podrobný implementační plán s konkrétními soubory, rozhraními, testy a commity. Schválení návrhu samo o sobě nedokládá funkčnost R4.
+Autor schválil běžný uživatelský úkol jako výchozí cestu R4 a výslovně požaduje návaznost na předchozí obsah téhož chatu. Detailní plán prvního přírůstku určí konkrétní soubory, rozhraní, testy a commity. Schválení návrhu samo o sobě nedokládá funkčnost R4.

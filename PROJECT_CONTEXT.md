@@ -1,5 +1,11 @@
 # Kontext projektu – maturitní práce
 
+## Směr R4 — 10. listopadu 2026
+
+- Autor zvolil plánování R4 přes běžný uživatelský úkol: vlastní prompt v malém TypeScript/React projektu se skutečným modelem a postupné doplnění kontextu, strukturálních nástrojů, relevantního ověření a lokálního Gitu.
+- Autor výslovně chce, aby další prompt v témže chatu navazoval na předchozí obsah už v R4. `FR-CHAT-06` z PRD v1.1 má nejzazší etapu ŠF; jde o dřívější dodání, nikoli změnu jeho požadovaného chování. Historie musí být omezená, dohledatelná a nesmí vydávat staré soubory nebo výstupy nástrojů za aktuální stav projektu.
+- Návrh je v `docs/superpowers/specs/2026-11-10-r4-user-driven-alpha-design.md`. R3 je sloučené do `main`, ale jeho osobní přijetí a vypsané důkazní mezery zůstávají otevřené; plán R4 je nesmí automaticky označit za splněné.
+
 ## Doplnění R3 — 8. listopadu 2026
 
 - Autor dočasně odložil osobní průchod. Checklist zůstává nezaškrtnutý. Další fáze a plánování dodatečných funkcí mají navázat po sloučení PR.
