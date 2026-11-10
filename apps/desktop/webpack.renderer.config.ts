@@ -7,12 +7,13 @@ const config: Configuration = {
   module: {
     rules: [
       ...rules,
-      { test: /\.css$/, type: 'asset/source' }
+      { test: /\.css$/, type: 'asset/source' },
+      { test: /\.woff2$/,type:'asset/resource' }
     ]
   },
   resolve: {
-    extensions: ['.js', '.ts', '.json'],
-    extensionAlias: { '.js': ['.js', '.ts'] }
+    extensions: ['.js', '.ts', '.tsx', '.json'],
+    extensionAlias: { '.js': ['.js', '.ts', '.tsx'] }
   }
 };
 
