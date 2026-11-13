@@ -59,6 +59,33 @@ it('rolls back a source event and its cursor together and isolates chat cursors'
   expect((await f.projection.snapshot(f.chat.id)).cursor).toBe(before);
   expect((await f.projection.snapshot(second.id)).cursor).toBe(0);
 });
+it('records a metadata-only context audit once and projects it through the owned run', async () => {
+  const f = await fixture();
+  const sources = [
+    { source: 'user_text', hash: 'a'.repeat(64), bytes: 7, status: 'used' },
+    { source: 'project_reference', path: 'src/App.tsx', hash: 'b'.repeat(64), bytes: 0, status: 'used' },
+    { source: 'loaded_excerpt', path: 'src/App.tsx', hash: 'b'.repeat(64), bytes: 16, startLine: 1, endLine: 2, status: 'truncated', reason: 'excerpt_limit' },
+    { source: 'chat_history', bytes: 0, status: 'omitted', reason: 'stale' },
+    { source: 'repo_map', bytes: 0, status: 'omitted', reason: 'partial' }
+  ] as const;
+  const malformed = { ...sources[0], content: 'SECRET_FIXTURE_CANARY' };
+  await expect(f.projection.recordContextAudit(f.input.requestId, f.runId, [malformed])).rejects.toThrow();
+  await expect(f.projection.recordContextAudit(f.input.requestId, randomUUID(), sources)).rejects.toThrow('R3_CHAT_PROJECT_MISMATCH');
+  expect(f.db.prepare("SELECT payload_json FROM events WHERE event_type='context.assembled'").all()).toHaveLength(0);
+  await f.projection.recordContextAudit(f.input.requestId, f.runId, sources);
+  await f.projection.recordContextAudit(f.input.requestId, f.runId, sources);
+  const records = f.db.prepare("SELECT session_id,payload_json FROM events WHERE event_type='context.assembled'").all();
+  expect(records).toHaveLength(1);
+  expect(records[0]?.session_id).toBe(f.runId);
+  expect(JSON.parse(String(records[0]?.payload_json))).toEqual({ schemaVersion: 1, sources, totalBytes: 23 });
+  expect(JSON.stringify(records)).not.toContain('SECRET_FIXTURE_CANARY');
+  const detail = await f.projection.inspectRun(f.chat.id, f.input.requestId);
+  expect(detail.contextAudit).toMatchObject({ totalBytes: 23, sources: expect.arrayContaining([
+    { source: 'loaded_excerpt', used: 1, omitted: 0, truncated: 1, reasons: ['excerpt_limit'] },
+    { source: 'repo_map', used: 0, omitted: 1, truncated: 0, reasons: ['partial'] }
+  ]) });
+  expect(detail.activity.find(item => item.type === 'context.assembled')?.summary).toBe('Sestavený kontext');
+});
 it('persists idempotent assistant chunks, pages history and requests resync after retention expires', async () => {
   const f = await fixture();
   await f.projection.appendAssistant(f.input.requestId, 1, 1, 'Hello');
