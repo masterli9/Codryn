@@ -33,6 +33,7 @@ export interface ProjectFileReadInput {
   readonly path: string;
   readonly startLine?: number;
   readonly maxLines?: number;
+  readonly action?: 'context' | 'explicit_file';
 }
 
 export interface ProjectFileReadResult {
@@ -43,6 +44,7 @@ export interface ProjectFileReadResult {
   readonly totalLines: number;
   readonly truncated: boolean;
   readonly contentHash: string;
+  readonly policyRevision?: string;
 }
 
 export interface ProjectTextSearchInput {
@@ -61,6 +63,7 @@ export interface ProjectTextSearchResult {
 export interface ProjectFilesystem {
   readFile(input: ProjectFileReadInput, signal: AbortSignal): Promise<ProjectFileReadResult>;
   searchText(input: ProjectTextSearchInput, signal: AbortSignal): Promise<ProjectTextSearchResult>;
+  refreshPolicyRevision?(): Promise<string>;
 }
 
 export interface AgentRunStore {

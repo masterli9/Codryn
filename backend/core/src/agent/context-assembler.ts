@@ -6,8 +6,9 @@ const MAX_REFERENCES = 8;
 const MAX_CONTEXT_BYTES = 128 * 1024;
 
 export class ContextAssemblyFailure extends Error {
-  constructor(readonly code: 'R1_CONTEXT_REFERENCE_INVALID' | 'R1_CONTEXT_LIMIT_EXCEEDED' | 'R1_CANCELLED') {
-    super(code === 'R1_CANCELLED' ? 'Context assembly cancelled.' : 'Context assembly failed.');
+  constructor(readonly code: 'R1_CONTEXT_REFERENCE_INVALID' | 'R1_CONTEXT_LIMIT_EXCEEDED' | 'R1_CANCELLED' | 'R4_CONTEXT_POLICY_CHANGED') {
+    super(code === 'R4_CONTEXT_POLICY_CHANGED' ? 'Project context rules changed during the operation.'
+      : code === 'R1_CANCELLED' ? 'Context assembly cancelled.' : 'Context assembly failed.');
     this.name = 'ContextAssemblyFailure';
   }
 }
@@ -44,10 +45,13 @@ export class ContextAssembler {
     const modelContent: ModelContextSource[] = [];
     const sources: ContextSourceAudit[] = [];
     let totalBytes = 0;
+    let policyRevision: string | undefined;
     for (const path of references) {
       abortIfNeeded(signal);
       try {
-        const read = await this.filesystem.readFile({ path }, signal);
+        const read = await this.filesystem.readFile({ path, action: 'context' }, signal);
+        policyRevision ??= read.policyRevision;
+        if (policyRevision !== read.policyRevision) throw new ContextAssemblyFailure('R4_CONTEXT_POLICY_CHANGED');
         const bytes = Buffer.byteLength(read.content, 'utf8');
         if (totalBytes + bytes > MAX_CONTEXT_BYTES) throw new ContextAssemblyFailure('R1_CONTEXT_LIMIT_EXCEEDED');
         totalBytes += bytes;
@@ -58,9 +62,16 @@ export class ContextAssembler {
         if (signal.aborted || (typeof error === 'object' && error !== null && 'code' in error && error.code === 'R1_CANCELLED')) {
           throw new ContextAssemblyFailure('R1_CANCELLED');
         }
+        if (typeof error === 'object' && error !== null && 'code' in error
+          && (error.code === 'R2_CONTEXT_POLICY_INVALID' || error.code === 'R4_CONTEXT_POLICY_CHANGED')) throw error;
         throw new ContextAssemblyFailure('R1_CONTEXT_REFERENCE_INVALID');
       }
     }
+    if (policyRevision !== undefined && this.filesystem.refreshPolicyRevision !== undefined
+      && policyRevision !== await this.filesystem.refreshPolicyRevision()) {
+      throw new ContextAssemblyFailure('R4_CONTEXT_POLICY_CHANGED');
+    }
+    abortIfNeeded(signal);
     return { modelContent, sources, totalBytes };
   }
 }

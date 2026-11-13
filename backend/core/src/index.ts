@@ -65,7 +65,7 @@ export type { PermissionDecision, PermissionInput } from './tools/controlled-per
 export { filePatchTool } from './tools/change-tool.js';
 export type { PatchExecutor } from './tools/change-tool.js';
 export { safeToolAudit } from './tools/safe-tool-audit.js';
-export { isR1SensitiveRelativePath, isValidR1RelativePath } from './tools/r1-sensitive-path-policy.js';
+export { isR1SensitiveFilename, isR1SensitiveRelativePath, isValidR1RelativePath } from './tools/r1-sensitive-path-policy.js';
 export { ToolExecutionHarness } from './tools/tool-execution-harness.js';
 export type { ToolExecutionHarnessDependencies } from './tools/tool-execution-harness.js';
 export { RunAgentLoop } from './agent/run-agent-loop.js';

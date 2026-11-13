@@ -59,7 +59,8 @@ export { ProviderAdapterError, normalizeProviderError, providerStatus } from './
 export type { ProviderErrorCode } from './model/provider-errors.js';
 export { SessionSecret } from './model/session-secret.js';
 export { ContextPathPolicy, ContextPathPolicyError } from './filesystem/context-path-policy.js';
-export type { ContextPathDecision, ContextPathDecisionCode, ContextPathPolicyInvalidReason } from './filesystem/context-path-policy.js';
+export type { ContextPathAction, ContextPathDecision, ContextPathDecisionCode, ContextPathMetadata, ContextPathPolicyInvalidReason } from './filesystem/context-path-policy.js';
+export { MAX_CONTEXT_FILE_BYTES, readBoundedContextFile } from './filesystem/read-bounded-context-file.js';
 export { SqliteChatStore } from './persistence/sqlite-chat-store.js';
 export { SqliteDesktopActionStore } from './persistence/sqlite-desktop-action-store.js';
 export { SqliteDesktopProjectionStore } from './persistence/sqlite-desktop-projection-store.js';

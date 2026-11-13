@@ -1,13 +1,14 @@
 import { createHash } from 'node:crypto';
-import { lstat, readdir, readFile, realpath, stat } from 'node:fs/promises';
+import { lstat, readdir, realpath, stat } from 'node:fs/promises';
 import { isAbsolute, relative, resolve, sep } from 'node:path';
-import { decideSensitivePath } from './sensitive-path-policy.js';
-import type { ContextPathPolicy } from './context-path-policy.js';
+import { ContextPathPolicy, type ContextPathAction, type ContextPathMetadata } from './context-path-policy.js';
+import { MAX_CONTEXT_FILE_BYTES, readBoundedContextFile } from './read-bounded-context-file.js';
 
 interface ProjectFileReadInput {
   readonly path: string;
   readonly startLine?: number;
   readonly maxLines?: number;
+  readonly action?: 'context' | 'explicit_file';
 }
 
 interface ProjectFileReadResult {
@@ -18,6 +19,7 @@ interface ProjectFileReadResult {
   readonly totalLines: number;
   readonly truncated: boolean;
   readonly contentHash: string;
+  readonly policyRevision?: string;
 }
 
 interface ProjectTextSearchInput {
@@ -33,7 +35,6 @@ interface ProjectTextSearchResult {
   readonly bytesSearched: number;
 }
 
-const MAX_FILE_BYTES = 1024 * 1024;
 const MAX_READ_BYTES = 64 * 1024;
 const MAX_SEARCH_FILES = 500;
 const MAX_SEARCH_BYTES = 8 * 1024 * 1024;
@@ -67,55 +68,83 @@ function isWithin(root: string, target: string): boolean {
   return value === '' || (!isAbsolute(value) && !value.startsWith(`..${sep}`) && value !== '..');
 }
 
-function decodeText(bytes: Buffer): string | null {
-  if (bytes.includes(0)) return null;
-  const text = bytes.toString('utf8');
-  return Buffer.from(text, 'utf8').equals(bytes) ? text : null;
-}
-
-function rejectContextPath(relativePath: string, contextPolicy?: Pick<ContextPathPolicy, 'decide'>): void {
-  const decision = contextPolicy?.decide(relativePath) ?? decideSensitivePath(relativePath);
+function rejectContextPath(policy: ProjectFilesystemPolicy, relativePath: string, action: ContextPathAction, metadata?: ContextPathMetadata): void {
+  const decision = policy.decide(relativePath, action, metadata);
   if (!decision.allowed) {
     throw new ProjectFilesystemFailure(decision.code ?? 'R1_PATH_SENSITIVE', decision.reason ?? 'Path is sensitive.');
   }
 }
 
+type ProjectFilesystemPolicy = Pick<ContextPathPolicy, 'decide' | 'refresh'>;
+
+async function requirePolicyRevision(policy: ProjectFilesystemPolicy, revision: string): Promise<void> {
+  if (await policy.refresh() !== revision) throw new ProjectFilesystemFailure('R4_CONTEXT_POLICY_CHANGED', 'Project context rules changed during the operation.');
+}
+
+async function canonicalPath(root: string, candidate: string): Promise<string> {
+  let target: string;
+  try { target = await realpath(candidate); } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+    throw new ProjectFilesystemFailure('R1_FILE_NOT_FOUND', 'Project path was not found.');
+  }
+  if (!isWithin(root, target)) throw new ProjectFilesystemFailure('R1_PATH_OUTSIDE_ROOT', 'Project path resolves outside root.');
+  return target;
+}
+
 export interface ProjectFilesystemOptions {
-  readonly contextPolicy?: Pick<ContextPathPolicy, 'decide' | 'refresh'>;
+  readonly contextPolicy?: ProjectFilesystemPolicy;
 }
 
 export class ProjectFilesystem {
   readonly #rootReady: Promise<string>;
+  #policyReady: Promise<ProjectFilesystemPolicy> | undefined;
 
   constructor(root: string, private readonly options: ProjectFilesystemOptions = {}) {
     this.#rootReady = realpath(root);
   }
 
+  private async policy(root: string): Promise<ProjectFilesystemPolicy> {
+    if (this.options.contextPolicy !== undefined) return this.options.contextPolicy;
+    this.#policyReady ??= ContextPathPolicy.fromProjectRoot(root).catch((error: unknown) => {
+      this.#policyReady = undefined;
+      throw error;
+    });
+    return this.#policyReady;
+  }
+
+  async refreshPolicyRevision(): Promise<string> {
+    return (await this.policy(await this.#rootReady)).refresh();
+  }
+
   async readFile(input: ProjectFileReadInput, signal: AbortSignal): Promise<ProjectFileReadResult> {
     abortIfNeeded(signal);
-    await this.options.contextPolicy?.refresh?.();
     const path = normalizeRelativePath(input.path);
-    rejectContextPath(path, this.options.contextPolicy);
     const root = await this.#rootReady;
+    const policy = await this.policy(root);
+    const revision = await policy.refresh();
+    const action = input.action ?? 'explicit_file';
+    rejectContextPath(policy, path, action, { kind: 'file' });
     const candidate = resolve(root, path);
-    let target: string;
-    try { target = await realpath(candidate); } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
-      throw new ProjectFilesystemFailure('R1_FILE_NOT_FOUND', 'Project file was not found.');
-    }
-    if (!isWithin(root, target)) throw new ProjectFilesystemFailure('R1_PATH_OUTSIDE_ROOT', 'Project path resolves outside root.');
-    rejectContextPath(relative(root, target).replaceAll('\\', '/') || '.', this.options.contextPolicy);
+    const target = await canonicalPath(root, candidate);
+    const targetPath = relative(root, target).replaceAll('\\', '/') || '.';
+    rejectContextPath(policy, targetPath, action, { kind: 'file' });
     let details;
     try { details = await stat(target); } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
       throw new ProjectFilesystemFailure('R1_FILE_NOT_FOUND', 'Project file was not found.');
     }
     if (!details.isFile()) throw new ProjectFilesystemFailure('R1_FILE_NOT_REGULAR', 'Project path is not a regular file.');
-    if (details.size > MAX_FILE_BYTES) throw new ProjectFilesystemFailure('R1_FILE_TOO_LARGE', 'Project file exceeds the read limit.');
+    rejectContextPath(policy, targetPath, action, { kind: 'file', size: details.size });
+    await requirePolicyRevision(policy, revision);
     abortIfNeeded(signal);
-    const bytes = await readFile(target);
-    const text = decodeText(bytes);
-    if (text === null) throw new ProjectFilesystemFailure('R1_FILE_NOT_TEXT', 'Project file is not valid UTF-8 text.');
+    const bytes = await readBoundedContextFile(target, MAX_CONTEXT_FILE_BYTES, details);
+    if (bytes === null) throw new ProjectFilesystemFailure('R1_FILE_TOO_LARGE', 'Project file exceeds the read limit or changed during reading.');
+    if (await canonicalPath(root, candidate) !== target) throw new ProjectFilesystemFailure('R1_PATH_INVALID', 'Project path changed during reading.');
+    await requirePolicyRevision(policy, revision);
+    abortIfNeeded(signal);
+    rejectContextPath(policy, path, action, { kind: 'file', bytes });
+    rejectContextPath(policy, targetPath, action, { kind: 'file' });
+    const text = bytes.toString('utf8');
     const startLine = input.startLine ?? 1;
     const maxLines = input.maxLines ?? 200;
     if (!Number.isInteger(startLine) || startLine < 1 || !Number.isInteger(maxLines) || maxLines < 1 || maxLines > 400) {
@@ -138,13 +167,13 @@ export class ProjectFilesystem {
       endLine: output.length === 0 ? startLine - 1 : startLine + output.length - 1,
       totalLines: lines.length,
       truncated: output.length < selected.length || startLine - 1 + selected.length < lines.length,
-      contentHash: createHash('sha256').update(bytes).digest('hex')
+      contentHash: createHash('sha256').update(bytes).digest('hex'),
+      ...(action === 'context' ? { policyRevision: revision } : {})
     };
   }
 
   async searchText(input: ProjectTextSearchInput, signal: AbortSignal): Promise<ProjectTextSearchResult> {
     abortIfNeeded(signal);
-    await this.options.contextPolicy?.refresh?.();
     if (typeof input.query !== 'string' || input.query.length < 1 || input.query.length > 512) {
       throw new ProjectFilesystemFailure('R1_SEARCH_INPUT_INVALID', 'Search query is invalid.');
     }
@@ -153,13 +182,14 @@ export class ProjectFilesystem {
     if (!Number.isInteger(maxResults) || maxResults < 1 || maxResults > MAX_SEARCH_RESULTS) {
       throw new ProjectFilesystemFailure('R1_SEARCH_INPUT_INVALID', 'Search result limit is invalid.');
     }
-    rejectContextPath(path, this.options.contextPolicy);
     const root = await this.#rootReady;
+    const policy = await this.policy(root);
+    const revision = await policy.refresh();
     const start = resolve(root, path);
-    let canonicalStart: string;
-    try { canonicalStart = await realpath(start); } catch { throw new ProjectFilesystemFailure('R1_FILE_NOT_FOUND', 'Search path was not found.'); }
-    if (!isWithin(root, canonicalStart)) throw new ProjectFilesystemFailure('R1_PATH_OUTSIDE_ROOT', 'Project path resolves outside root.');
-    rejectContextPath(relative(root, canonicalStart).replaceAll('\\', '/') || '.', this.options.contextPolicy);
+    const canonicalStart = await canonicalPath(root, start);
+    const scopeKind = (await stat(canonicalStart)).isDirectory() ? 'directory' : 'file';
+    rejectContextPath(policy, path, 'search', { kind: scopeKind });
+    rejectContextPath(policy, relative(root, canonicalStart).replaceAll('\\', '/') || '.', 'search', { kind: scopeKind });
     const paths: string[] = [];
     let fileLimitExceeded = false;
     const visit = async (current: string): Promise<void> => {
@@ -167,7 +197,8 @@ export class ProjectFilesystem {
       const info = await lstat(current);
       if (info.isSymbolicLink()) return;
       const rel = relative(root, current).replaceAll('\\', '/') || '.';
-      if (!(this.options.contextPolicy?.decide(rel) ?? decideSensitivePath(rel)).allowed) return;
+      if (!policy.decide(rel, 'search', { kind: info.isDirectory() ? 'directory' : 'file' }).allowed) return;
+      if (await canonicalPath(root, current) !== current) return;
       if (info.isFile()) {
         if (paths.length >= MAX_SEARCH_FILES) fileLimitExceeded = true;
         else paths.push(current);
@@ -180,27 +211,32 @@ export class ProjectFilesystem {
         await visit(resolve(current, entry.name));
       }
     };
-    try { await visit(start); } catch (error) {
+    const sameStart = process.platform === 'win32' ? canonicalStart.toLowerCase() === start.toLowerCase() : canonicalStart === start;
+    try { if (sameStart) await visit(canonicalStart); } catch (error) {
       if (error instanceof ProjectFilesystemFailure) throw error;
       throw new ProjectFilesystemFailure('R1_FILE_NOT_FOUND', 'Search path was not found.');
     }
     const matches: { path: string; line: number; column: number; preview: string }[] = [];
     let bytesSearched = 0;
+    let bytesRead = 0;
     let truncated = fileLimitExceeded;
     let filesSearched = 0;
     for (const file of paths) {
       abortIfNeeded(signal);
-      if (bytesSearched >= MAX_SEARCH_BYTES || matches.length >= maxResults) { truncated = true; break; }
-      const size = (await lstat(file)).size;
-      if (size > MAX_FILE_BYTES || bytesSearched + size > MAX_SEARCH_BYTES) { truncated = true; continue; }
-      const bytes = await readFile(file);
-      const text = decodeText(bytes);
-      if (text === null) continue;
+      if (bytesRead >= MAX_SEARCH_BYTES || matches.length >= maxResults) { truncated = true; break; }
+      await requirePolicyRevision(policy, revision);
+      const relativePath = relative(root, file).replaceAll('\\', '/');
+      const details = await lstat(file);
+      if (!details.isFile() || await canonicalPath(root, file) !== file || !policy.decide(relativePath, 'search', { kind: 'file' }).allowed) continue;
+      const limit = Math.min(MAX_CONTEXT_FILE_BYTES, MAX_SEARCH_BYTES - bytesRead);
+      if (!policy.decide(relativePath, 'search', { kind: 'file', size: details.size }).allowed || details.size > limit) { truncated = true; continue; }
+      const bytes = await readBoundedContextFile(file, limit, details);
+      if (bytes === null) { truncated = true; continue; }
+      bytesRead += bytes.length;
+      if (await canonicalPath(root, file) !== file || !policy.decide(relativePath, 'search', { kind: 'file', bytes }).allowed) continue;
       filesSearched += 1;
       bytesSearched += bytes.length;
-      const relativePath = relative(root, file).replaceAll('\\', '/');
-      if (!(this.options.contextPolicy?.decide(relativePath) ?? decideSensitivePath(relativePath)).allowed) continue;
-      const lines = text.split('\n');
+      const lines = bytes.toString('utf8').split('\n');
       for (let index = 0; index < lines.length; index += 1) {
         abortIfNeeded(signal);
         const line = lines[index];
@@ -214,6 +250,8 @@ export class ProjectFilesystem {
         if (truncated && matches.length >= maxResults) break;
       }
     }
+    await requirePolicyRevision(policy, revision);
+    abortIfNeeded(signal);
     return { matches, truncated, filesSearched, bytesSearched };
   }
 }

@@ -44,6 +44,23 @@ Chyba připojení se zobrazí bezpečným důvodem; neodesílejte klíč, HTTP h
 
 Obnovení okna načte uloženou historii a čekající schválení. Po pádu celé aplikace se nástroje ani model automaticky znovu nespouštějí; neukončené běhy zůstanou přerušené a stará schválení nelze znovu použít. Pokud návrat hlásí novější ruční změnu, zastaralý podklad nebo nutnou obnovu, zachovejte soubory a přečtěte diff; nepřepisujte je ručně kvůli zelenému výsledku. Nedostupná složka nemá zničit historii. Neúspěšné potvrzení zastavení při zavření ponechá aplikaci otevřenou.
 
+## Projektový `.codrynignore`
+
+Kořenový soubor `.codrynignore` umožňuje vynechat části projektu z procházení, hledání a načítání kontextu. Použijte UTF-8 a jedno pravidlo na řádek.
+
+```gitignore
+# Výstupy generátoru
+generated/
+**/*.map
+src/generated/**
+!src/generated/example.ts
+```
+
+- Prázdné řádky, mezery na okrajích a řádky začínající `#` se přeskočí. `*` a `?` odpovídají znakům uvnitř jedné části cesty, `**` může odpovídat i více částem.
+- Vzor s lomítkem uvnitř se vyhodnocuje od kořene projektu. Vzor bez lomítka uvnitř platí v libovolné úrovni. Koncové `/` označuje složku a její potomky. `./` na začátku je volitelné. Zpětné lomítko se čte jako oddělovač cesty. Na Windows se nerozlišuje velikost písmen.
+- Poslední odpovídající pravidlo rozhoduje. `!` zruší předchozí pravidlo pro odpovídající cestu. Pokud procházení vynechává celou nadřazenou složku, musí pravidla znovu povolit i její procházení. Pevná ochrana `.git`, `node_modules`, běžných výstupů, `.env*` a známých klíčů platí i po negaci.
+- Absolutní cesty, `..`, prázdné části cesty, znak NUL a znakové třídy typu `[a-z]` jsou neplatné. Chyba syntaxe uvádí řádek a důvod. Po opravě souboru se pravidla znovu načtou při dalším čtení. Pro čtení projektových souborů platí limit 1 MiB a formát UTF-8 bez NUL.
+
 ## Ověření
 
 ```powershell

@@ -12,5 +12,10 @@ export function isR1SensitiveRelativePath(path: string): boolean {
   const segments = normalized.split('/').map((segment) => segment.toLowerCase());
   if (segments.some((segment) => blockedSegments.has(segment))) return true;
   const name = segments.at(-1) ?? '';
-  return name === '.env' || name.startsWith('.env.') || blockedNames.has(name) || name.endsWith('.pem') || name.endsWith('.key');
+  return isR1SensitiveFilename(name);
+}
+
+export function isR1SensitiveFilename(name: string): boolean {
+  const lower = name.toLowerCase();
+  return lower === '.env' || lower.startsWith('.env.') || blockedNames.has(lower) || lower.endsWith('.pem') || lower.endsWith('.key');
 }

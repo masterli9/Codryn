@@ -42,6 +42,8 @@ export interface RunAgentLoopDependencies {
 }
 
 const messages: Readonly<Record<AgentRunFailureCode, string>> = Object.freeze({
+  R2_CONTEXT_POLICY_INVALID: 'The .codrynignore rules are invalid or unreadable.',
+  R4_CONTEXT_POLICY_CHANGED: 'Project context rules changed during the operation.',
   R1_INPUT_INVALID: 'Agent run input is invalid.', R1_CONTEXT_REFERENCE_INVALID: 'Context reference is invalid.', R1_CONTEXT_LIMIT_EXCEEDED: 'Context limit exceeded.', R1_MODEL_CAPABILITY_MISSING: 'Model tool calling capability is missing.', R1_MODEL_ADAPTER_FAILED: 'Model adapter failed.', R1_MODEL_RESPONSE_UNSUPPORTED: 'Model response is unsupported.', R1_FAKE_SCENARIO_MISMATCH: 'Scripted model scenario mismatch.', R1_TOOL_UNKNOWN: 'Tool is not registered.', R1_TOOL_INPUT_INVALID: 'Tool input is invalid.', R1_TOOL_PERMISSION_DENIED: 'Tool permission was denied.', R1_TOOL_OUTPUT_INVALID: 'Tool output is invalid.', R1_TOOL_EXECUTION_FAILED: 'Tool execution failed.', R1_STEP_LIMIT_EXCEEDED: 'Agent run step limit exceeded.', R1_CANCELLED: 'Agent run cancelled.', R1_PERSISTENCE_FAILED: 'Agent run persistence failed.', R1_INTERNAL_ERROR: 'Agent run failed unexpectedly.'
 });
 
@@ -49,6 +51,13 @@ function code(error: unknown): AgentRunFailureCode {
   if (error instanceof ModelResponseFailure || error instanceof R1PersistenceFailure) return error.code;
   if (typeof error === 'object' && error !== null && 'code' in error && typeof error.code === 'string' && error.code in messages) return error.code as AgentRunFailureCode;
   return 'R1_INTERNAL_ERROR';
+}
+
+function policyFailureMessage(error: unknown, failure: AgentRunFailureCode): string | undefined {
+  if (failure === 'R4_CONTEXT_POLICY_CHANGED') return messages[failure];
+  if (failure !== 'R2_CONTEXT_POLICY_INVALID') return undefined;
+  if (!(error instanceof Error) || !/^Invalid \.codrynignore rule at line \d+: [a-z_]+\.$/.test(error.message)) return messages[failure];
+  return error.message;
 }
 
 export class RunAgentLoop {
@@ -112,7 +121,7 @@ export class RunAgentLoop {
       } catch { return this.unpersisted(request.requestId, 'R1_PERSISTENCE_FAILED', runId, steps); }
       return failure === 'R1_CANCELLED'
         ? { schemaVersion: 1, status: 'cancelled', runId, stepCount: steps, failure: { code: failure, message: messages[failure] }, verification: { status: 'not_applicable', reason: 'R1_READ_ONLY_RUN' } }
-        : { schemaVersion: 1, status: 'failed', runId, stepCount: steps, failure: { code: failure, message: messages[failure] }, verification: { status: 'not_applicable', reason: 'R1_READ_ONLY_RUN' } };
+        : { schemaVersion: 1, status: 'failed', runId, stepCount: steps, failure: { code: failure, message: policyFailureMessage(error, failure) ?? messages[failure] }, verification: { status: 'not_applicable', reason: 'R1_READ_ONLY_RUN' } };
     }
   }
 
@@ -186,7 +195,8 @@ export class RunAgentLoop {
         const terminal = cancelled ? 'cancelled' : 'failed';
         await this.transition(runId, request.requestId, state, terminal, steps, cancelled ? undefined : failureCode);
       } catch { /* The stable R2 result remains explicit about its unverified state. */ }
-      const result = this.r2Failure(runId, steps, 'unverified', activeChangeSetId, cancelled ? 'The R2 run was cancelled.' : 'The R2 run did not reach a verified completion.', recoveryRequired, cancelled ? 'cancelled' : 'failed');
+      const reason = cancelled ? 'The R2 run was cancelled.' : policyFailureMessage(error, failureCode) ?? 'The R2 run did not reach a verified completion.';
+      const result = this.r2Failure(runId, steps, 'unverified', activeChangeSetId, reason, recoveryRequired, cancelled ? 'cancelled' : 'failed');
       try { await this.persistR2Detail(runId, result, failureCode); } catch { /* The terminal projection remains the fallback when detail persistence fails. */ }
       return result;
     }
