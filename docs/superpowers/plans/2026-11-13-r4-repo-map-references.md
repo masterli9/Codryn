@@ -8,17 +8,17 @@
 
 **Tech Stack:** TypeScript, Zod, SQLite (`node:sqlite`), React, úzké Electron IPC, Vitest; stávající `ProjectFilesystem`, `FileWorkspaceObserver` a plánovaný TypeScript query engine.
 
-**Spec:** `docs/superpowers/specs/2026-11-10-r4-user-driven-alpha-design.md` §3; `PRD_v1.1.md` `FR-CHAT-12..14`, `FR-CTX-01..06/12..17`, `AC-O1-14/17/18/27`; `docs/superpowers/plans/2026-11-10-r4-chat-continuity.md`; `docs/superpowers/plans/2026-11-13-r4-typescript-structural-profile.md`.
+**Spec:** `docs/superpowers/specs/2026-11-10-r4-user-driven-alpha-design.md` §3 a `docs/superpowers/specs/r4-context-security.md`; `PRD_v1.1.md` `FR-CHAT-12..14`, `FR-CTX-01..06/12..17`, `AC-O1-14/17/18/27`; plány návaznosti chatu a TypeScript strukturálního profilu.
 
 ## Global Constraints
 
-- Plán navazuje na předchozí R4 plány; historie chatu a TypeScript query engine jsou závislosti, nikoli hotové funkce. Repo mapa musí fungovat i bez TypeScript engine jako omezená strukturální mapa. Jeho pozdější připojení doplní symboly, ale nesmí blokovat otevření projektu.
+- Task 0–1 tohoto plánu tvoří sdílený bezpečnostní základ a provedou se před TypeScript discovery/indexem i finálním sestavením kontextu chatu. Task 2–6 navazují na plán historie chatu; TypeScript query engine je volitelný zdroj pro prohloubení mapy, nikoli podmínka otevření projektu. Tyto plány jsou zatím dokumentace, ne hotové funkce.
 - Backend je zdroj pravdy. Renderer dostane jen validované IPC výsledky, nikdy přímý filesystem nebo Node API. Každý požadavek ověřuje vlastnictví projektu/chatu a projektově relativní cestu včetně realpath cíle. Bezpečnostní výjimky jsou jednorázové a vázané na jeden soubor a akci.
 - Rychlý základ je deterministický: cesty, typy, malá metadata projektu a hlavní symboly/exporty jen tam, kde je lze bezpečně a levně zjistit. „Role“ je krátká odvozená klasifikace (`source`, `test`, `config`, `docs`, `other`), ne domněnka modelu. Mapový záznam vždy nese hash obsahu nebo stav `unread`, verzi politiky a stav čerstvosti.
 - Rychlý crawl: nejvýše 5 000 položek, 64 MiB přečtených dat, 5 s na běh a 1 MiB na soubor. Jeho neúplnost se zobrazí. Prohloubení pro úkol vybírá nejvýše 12 položek a 32 KiB výsledných metadat; ruční hlubší inicializace má samostatné rozpočty 5 000 položek, 64 MiB a 30 s a také přizná neúplnost. Žádná z těchto operací nepošle automaticky obsah souborů modelu.
 - `@` ukazatel obsahuje druh (`file`/`directory`), kanonickou projektově relativní cestu a revizi z okamžiku výběru. Nejvýše osm ukazatelů v zadání. Souborový výřez má nejvýše 16 KiB UTF-8, jeden běh nejvýše 64 KiB z explicitních referencí; složka přidá jen omezený seznam položek/metadat, nikdy všechna těla souborů. Překročení je viditelné, ne tiché zkrácení bez záznamu.
 - Před odesláním se kontroluje existence, druh, obsahový hash, policy revision, velikost a kanonický cíl. Změněná, přejmenovaná či smazaná reference je stav k rozhodnutí uživatele: může ji znovu vybrat nebo odebrat, původní obsah se nepoužije. Backend znovu kontroluje při sestavení kontextu, takže UI preflight není autoritou.
-- Ignorovaná běžná cesta smí získat výjimku jen pro konkrétní soubor, konkrétní odeslání a explicitní volbu uživatele. Známé tajemství má oddělené varování a explicitní potvrzení pro stejný soubor/akci; žádná výjimka se nevztahuje na složku, crawl, index ani další běh. Neplatné `.codrynignore` ukáže řádek a důvod a zastaví nové odvozené čtení do opravy pravidla.
+- Ignorovaná běžná cesta smí získat výjimku jen pro konkrétní soubor, konkrétní odeslání a explicitní volbu uživatele. Známé tajemství má oddělené varování a explicitní potvrzení pro stejný soubor/akci; žádná výjimka se nevztahuje na složku, crawl, index ani další běh. Negace v `.codrynignore` nesmí trvale zrušit ochranu známého tajemství. Neplatné `.codrynignore` ukáže řádek a důvod a zastaví nové odvozené čtení do opravy pravidla.
 - Audit ukládá ID běhu, zdroj (`user_text`, `chat_history`, `project_reference`, `repo_map`, `loaded_excerpt`), cestu/ID, hash, použité bajty a rozsah řádků, stav a důvod vynechání. Neukládá druhou kopii obsahu ani tajemství. Uživatel u běhu vidí stručný přehled; úplný audit je v backendovém event logu.
 - Automatické testy používají fixture a fake model. Srovnání mapy s baseline bez mapy používá předem fixovanou stejnou sadu úloh, měří tokeny/kroky/úspěch a netvrdí přínos, pokud ho data neukážou. Placený live eval je oddělený.
 
@@ -29,6 +29,13 @@
 3. Změna souboru mezi vybráním `@`, preflightem a sestavením modelového požadavku: backend vrátí `stale`; nepoužije uložený text.
 4. Jednorázová výjimka pro ignorovaný soubor: nepovolí sousední soubor, složku, index, jiné zadání ani restartovaný pokus bez nového potvrzení. Tajemství má samostatné varování.
 5. Při pádu, abortu, limitu nebo neplatném pravidle zůstane chat použitelný a audit pravdivě označí, co nebylo načteno.
+
+---
+
+### Task 0: Ověřit kontextovou a bezpečnostní specifikaci před kódem
+
+- [ ] **Step 1: Ověřit** existující `docs/superpowers/specs/r4-context-security.md` proti aktuálnímu kódu, PRD, roadmapě §8 a TypeScript plánům.
+- [ ] **Step 2: Uzavřít** rozhraní jednotné politiky a případné technické rozpory před produkční implementací; zaznamenat přijaté rozhraní v dokumentačním commitu.
 
 ---
 
@@ -47,9 +54,9 @@
 
 **Interfaces:** `ContextPathPolicy.decide(path, action)` vrací `allowed`, stabilní kód a bezpečný důvod; `revision` je hash výchozí politiky a platných pravidel. Rozhodnutí rozlišuje `crawl`, `search`, `typescript_index`, `map`, `deep_init`, `context` a `explicit_file`. `refresh()` mění revizi atomicky, nebo vrací chybu s řádkem.
 
-- [ ] **Step 1: Napsat selhávající kontraktní testy** pro výchozí `.git`, `node_modules`, build/cache, `.env*`, klíče a binární/velké soubory; neplatné syntaxe s číslem řádku; negaci, adresáře, Windows case/oddělovače, symlinky, změnu politiky. Stejná fixture musí projít přes crawl, search, TS index, mapu a context.
+- [ ] **Step 1: Napsat selhávající kontraktní testy** pro výchozí `.git`, `node_modules`, build/cache, `.env*`, klíče a binární/velké soubory; neplatné syntaxe s číslem řádku; negaci, která nesmí znovu povolit tajemství; adresáře, Windows case/oddělovače, symlinky a změnu politiky. Stejná fixture projde přes současný crawl/search/context a po implementaci TS engine také přes TS index a mapu.
 - [ ] **Step 2: Spustit** `npx.cmd vitest run backend/infrastructure/test/context-path-policy.test.ts backend/infrastructure/test/project-filesystem.test.ts backend/infrastructure/test/workspace-observer.test.ts`; ověřit očekávané selhání nových případů.
-- [ ] **Step 3: Upravit** `ContextPathPolicy` a sdílené volání ve filesystemu/observeru; TS engine z předchozího plánu napojit přes stejnou metodu. Politika se před každým novým čtením osvěží. Cache/index drží policy revision. Nepotlačovat chybu pravidla na obecné `invalid reference`.
+- [ ] **Step 3: Upravit** `ContextPathPolicy` a sdílené volání ve filesystemu/observeru; při pozdější implementaci TS engine použít tutéž metodu. Politika se před každým novým čtením osvěží. Cache/index drží policy revision. Nepotlačovat chybu pravidla na obecné `invalid reference`. Dokumentovat podporovanou podmnožinu syntaxe v uživatelské dokumentaci.
 - [ ] **Step 4: Spustit** cílené testy; commit `feat(r4): unify project context path policy`.
 
 ### Task 2: Vytvořit rychlý základ repo mapy
@@ -66,9 +73,9 @@
 
 **Interfaces:** `RepoMapBuilder.deepen(projectId, task, explicitPaths, signal)` vrací nejvýše 12 aktuálních položek s důvodem výběru a stavem limitu. `init(projectId, signal)` je samostatná backendová akce vracející stav/progres; jeden projekt má nejvýše jeden aktivní init. Mapové metadata se nestávají vyšší autoritou než projektová pravidla.
 
-- [ ] **Step 1: Napsat selhávající testy** pro výběr podle cesty, symbolu a názvu z úkolu; deterministické pořadí při shodě; žádné čtení nerelevantních souborů; TS engine dostupný/nedostupný; změnu importované závislosti, `tsconfig` a `.codrynignore`; souběh init a běžného scanu.
+- [ ] **Step 1: Napsat selhávající testy** pro výběr podle cesty, symbolu a názvu z úkolu; deterministické pořadí při shodě; žádné čtení nerelevantních souborů; TS engine dostupný/nedostupný; změnu importované závislosti, `tsconfig` a `.codrynignore`; souběh init a běžného scanu. Ruční init musí zahrnout strukturu, konfiguraci, symboly, vazby a povolené projektové instrukce, každou jako odlišný zdroj.
 - [ ] **Step 2: Spustit** `npx.cmd vitest run backend/infrastructure/test/repo-map.test.ts`; ověřit selhání nových případů.
-- [ ] **Step 3: Implementovat** omezené prohloubení a invalidaci závislých položek podle hashů a import/export vazeb. Před sestavením kontextu znovu ověřit čerstvost vybraných položek; neaktuální přepočítat v limitu nebo vynechat s důvodem. Připojit symboly z TypeScript engine, je-li k dispozici.
+- [ ] **Step 3: Implementovat** omezené prohloubení a invalidaci závislých položek podle hashů a import/export vazeb. Ruční init čte povolené projektové instrukce podle stejné politiky a ukládá jejich vlastní hash/autoritu odděleně od odvozeného shrnutí. Před sestavením kontextu znovu ověřit čerstvost vybraných položek; neaktuální přepočítat v limitu nebo vynechat s důvodem. Připojit symboly z TypeScript engine, je-li k dispozici.
 - [ ] **Step 4: Přidat** validované `context.map.status` a `context.map.init` IPC operace a viditelnou akci „Prohloubit mapu projektu“ se stavem a možností zrušení. Ověřit přístup jen k otevřenému projektu.
 - [ ] **Step 5: Spustit** cílené a desktop integrační testy; commit `feat(r4): deepen and refresh repo map on demand`.
 
@@ -84,7 +91,7 @@
 
 ### Task 5: Znovu ověřit reference a sestavit omezený kontext
 
-**Interfaces:** `ReferenceResolver.resolve(input, projectRevision, signal)` vrací pro každý ukazatel `ready`, `changed`, `missing`, `ignored`, `sensitive`, `oversized`, `binary`, `outside_root` nebo `limited` spolu s bezpečným důvodem. `ContextAssembler` přijímá výsledek resolveru, navazující historii a aktuální mapový výběr; výstup rozlišuje typy zdrojů a limity. Pro změněné/nedostupné explicitní reference se běh před modelem zastaví s použitelným stavem, koncept zůstane.
+**Interfaces:** `ReferenceResolver.resolve(input, projectRevision, signal)` vrací pro každý ukazatel `ready`, `changed`, `missing` (včetně možné přejmenované cesty), `ignored`, `sensitive`, `oversized`, `binary`, `outside_root` nebo `limited` spolu s bezpečným důvodem. UI zobrazí `missing` jako „soubor nebo složka již na této cestě není; může být přejmenována“ a nikdy referenci samo nepřesměruje. `ContextAssembler` přijímá výsledek resolveru, navazující historii a aktuální mapový výběr; výstup rozlišuje typy zdrojů a limity. Pro změněné/nedostupné explicitní reference se běh před modelem zastaví s použitelným stavem, koncept zůstane.
 
 - [ ] **Step 1: Napsat selhávající testy** pro změnu/smazání/přejmenování, změnu po preflightu, folder s 500 položkami, 1 MiB soubor, UTF-8 hranici, ignorovaný běžný soubor, `.env` a klíč, souběžné změny politiky a symlink/junction alias. Prokázat, že modelový fake nikdy nevidí zakázaný či starý obsah.
 - [ ] **Step 2: Spustit** `npx.cmd vitest run backend/infrastructure/test/reference-resolver.test.ts backend/core/test/context-assembler.test.ts`; ověřit selhání.

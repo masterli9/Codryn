@@ -8,7 +8,7 @@
 
 **Tech Stack:** TypeScript, Zod, SQLite, nainstalovaný Git CLI přes `execFile`, Electron/React, Vitest a Git fixture.
 
-**Spec:** `PRD_v1.1.md` `FR-COORD-01/02/08..10/14`, `FR-VCS-01..07/09..14/16/20/21`, `AC-O1-19/20/22/23/24`; `docs/product/ROADMAP.md` §8; `docs/superpowers/specs/2026-11-10-r4-user-driven-alpha-design.md` §5. Vzdálené Git akce `FR-VCS-15/17..19` jsou S/O1 a nejsou součástí tohoto plánu.
+**Spec:** `PRD_v1.1.md` `FR-COORD-01/02/08..10/14`, `FR-VCS-01..07/09..14/16/20/21`, `AC-O1-19/20/22/23/24`; `docs/product/ROADMAP.md` §8; `docs/superpowers/specs/2026-11-10-r4-user-driven-alpha-design.md` §5; `docs/superpowers/specs/r4-workspace-state.md` a `docs/superpowers/specs/r4-local-git.md`. Vzdálené Git akce `FR-VCS-15/17..19` jsou S/O1 a nejsou součástí tohoto plánu.
 
 ## Global Constraints
 
@@ -28,6 +28,13 @@
 3. Dvě stavové Git akce stejného worktree nebo ref se nespustí současně, ale editace různých souborů běží dál.
 4. Externí změna HEAD/branch, konflikt, detached HEAD a non-Git režim nemohou potichu vést ke ztrátě uživatelských změn.
 5. Nezávislá změna souboru mimo rozsah testu nezneplatní ověření bez důvodu; změna dotčeného vstupu, nástroje, konfigurace nebo neúplné pozorování ano.
+
+---
+
+### Task 0: Ověřit specifikace bezpečnostního jádra a lokálního Gitu před kódem
+
+- [ ] **Step 1: Ověřit** existující `docs/superpowers/specs/r4-workspace-state.md` a `docs/superpowers/specs/r4-local-git.md` proti aktuálnímu kódu, `FR-COORD-01/02/08..10/14`, všem lokálním M/O1 `FR-VCS` a roadmapě §8.
+- [ ] **Step 2: Uzavřít** technické rozpory před produkčním kódem a zaznamenat přijatá rozhraní v dokumentačním commitu.
 
 ---
 

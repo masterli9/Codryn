@@ -8,7 +8,7 @@
 
 **Tech Stack:** TypeScript 6 Compiler API pro načtení `tsconfig`, Node.js 24.19.0, Zod, SQLite, Vitest, stávající Windows process runner a Electron/React.
 
-**Spec:** `docs/superpowers/specs/2026-11-10-r4-user-driven-alpha-design.md` §1–2; `PRD_v1.1.md` `FR-TERM-04/05/06`, `FR-TS-01` (rozpoznání), `FR-ORCH-06/07`, `AC-O1-24`. Úplné strukturální dotazy `FR-TS-02..08` a jejich eval `AC-O1-13` mají následující oblastní plán.
+**Spec:** `docs/superpowers/specs/2026-11-10-r4-user-driven-alpha-design.md` §1–2 a `docs/superpowers/specs/r4-typescript-profile.md`; `PRD_v1.1.md` `FR-TERM-04/05/06`, `FR-TS-01` (rozpoznání), `FR-ORCH-06/07`, `AC-O1-24`. Úplné dotazy `FR-TS-02..08` a jejich eval `AC-O1-13` mají následující implementační plán.
 
 ## Global Constraints
 
@@ -17,7 +17,7 @@
 - Objevování čte nejvýše 64 KiB na `package.json` a 64 KiB na každý projektový `tsconfig` soubor, maximálně 8 config souborů. Cesty musí zůstat uvnitř kanonického kořene, respektovat aktuální `ContextPathPolicy` a odmítnout symlink/junction alias mimo kořen. Při nejistotě vrátit `limited`/`unsupported`, ne falešnou důvěru.
 - První důvěryhodný TypeScript check je přímé `node <přibalený typescript/bin/tsc> --noEmit -p <projektový tsconfig>`. Přibalený TypeScript musí být produkční závislost v balíčku; jeho verze je uvedena v diagnostice. Pokud má projekt vlastní odlišnou verzi, UI označí omezení, ale nesmí tiše instalovat ani spustit jinou verzi. Timeout 60 s, výstup nejvýše 256 KiB.
 - První důvěryhodný test je pouze přímé `node --test --test-reporter=tap` pro `package.json` script přesně `node --test`, nebo přímé `node <lokální vitest/vitest.mjs> run --reporter=json` pro script přesně `vitest run`. Jiný script může být ručně spuštěn po schválení, ale nedostane důvěryhodné pokrytí v tomto plánu. Timeout 120 s, výstup nejvýše 256 KiB. Prázdná sada testů, potvrzená TAP/JSON počtem, není úspěšný důkaz.
-- Pro stav `verified` musí projít jak typecheck, tak test nad stejnou aktuální revizí/fingerprintem a všechny změněné `.ts`/`.tsx` soubory musí být v platném `tsconfig` file setu. Změny jiných typů souborů, neúplný scan, chybějící kontrola nebo změna během kontroly vedou k `unverified`, `partially_verified` či `stale` podle stávajícího významu; přesné důvody a příkazy zůstanou viditelné.
+- Pro stav `verified` musí projít jak typecheck, tak test nad stejnými aktuálními relevantními vstupy a všechny změněné `.ts`/`.tsx` soubory musí být v platném `tsconfig` file setu. Každý record uchová workspace revizi i otisky deklarovaného rozsahu: zdrojové soubory, příslušný `tsconfig`, manifest/lockfile, testy a nástroj. Nezávislá změna mimo tento rozsah sama record nezneplatní; změna dotčeného vstupu, neúplný scan, chybějící kontrola nebo změna během kontroly vede k `unverified`, `partially_verified` či `stale` s viditelným důvodem. Detailní posouzení rozsahu dokončuje plán workspace/Git podle `FR-COORD-14` a `AC-O1-24`.
 - Běžné čtení/hledání a R3 referenční profil musí fungovat stejně jako před změnou. Testy nepoužijí živé API; placený model patří až do odděleného eval průchodu.
 - V pracovní kopii nyní chybí `react` a `playwright`, takže `npm.cmd run typecheck` selhávalo před touto změnou. Před implementací obnovit závislosti z lockfile a zapsat výchozí stav kontrol.
 
@@ -28,6 +28,14 @@
 3. Model po doporučení změní `package.json` či `tsconfig`: stará nabídka příkazu nesmí projít novým preflightem; test v Task 3.
 4. Typecheck i test projdou, ale mezi nimi se změní zdrojový soubor: starší record je stale a výsledek nesmí být `verified`; test v Task 4.
 5. Test skončí 0 bez nalezených testů: neuznat jej jako důkaz; test v Task 3/4.
+6. Externí změna souboru mimo deklarovaný rozsah po obou kontrolách: record zůstane aktuální, pokud jsou všechny jeho vstupy beze změny; změna vstupu jej zneplatní; test v Task 4.
+
+---
+
+### Task 0: Ověřit oblastní TypeScript specifikaci před kódem
+
+- [ ] **Step 1: Ověřit** existující `docs/superpowers/specs/r4-typescript-profile.md` proti aktuálnímu kódu, oběma TypeScript plánům, `FR-TS-01..08`, `FR-TERM-04..06` a `AC-O1-13/24/27`.
+- [ ] **Step 2: Uzavřít** případný technický rozpor ve specifikaci a plánech před produkčním kódem; zaznamenat přijaté rozhraní v dokumentačním commitu.
 
 ---
 
@@ -89,12 +97,12 @@
 **Files:** Create `backend/core/src/verification/project-check-policy.ts`, `backend/core/test/project-check-policy.test.ts`; modify `backend/core/src/index.ts`, `backend/core/src/verification/verification-store.ts`, `backend/infrastructure/src/persistence/sqlite-verification-store.ts`, `backend/infrastructure/src/create-r2-infrastructure.ts`, `backend/infrastructure/src/persistence/sqlite-desktop-projection-store.ts`; tests `backend/infrastructure/test/r4-ts-verification.test.ts`, `backend/infrastructure/test/r3-projection-store.test.ts`.
 
 **Interfaces:**
-- Produce `assessProjectChecks(input: {changedPaths: readonly string[]; includedFiles: readonly string[]; records: readonly {record: VerificationRecord; profileId: string|null; coveredPaths: readonly string[]}[]; snapshot: WorkspaceSnapshot}): {status:'verified'|'partially_verified'|'unverified'|'stale'; reason:string; uncoveredPaths:readonly string[]; missingChecks:readonly ('typecheck'|'test')[]}`.
+- Produce `assessProjectChecks(input: {changedPaths: readonly string[]; includedFiles: readonly string[]; records: readonly {record: VerificationRecord; profileId: string|null; coveredPaths: readonly string[]; inputHashes: Readonly<Record<string,string>>}[]; snapshot: WorkspaceSnapshot; currentInputHashes: Readonly<Record<string,string>>}): {status:'verified'|'partially_verified'|'unverified'|'stale'; reason:string; uncoveredPaths:readonly string[]; missingChecks:readonly ('typecheck'|'test')[]}`.
 - Add `VerificationStore.list(runId: string, snapshot: WorkspaceSnapshot)` returning current/stale records with their profile and covered paths; `current()` stays for R2 callers.
 
-- [ ] **Step 1: Write failing tests.** Two passing checks over the same complete snapshot and all changed TS/TSX files in `includedFiles` yield `verified`. One check only yields `partially_verified` in the UI and `unverified` for agent completion. A non-TS change, changed config, absent test files, stale revision, incomplete watcher observation, failed check or empty changed set cannot yield `verified`. Assert exact commands remain visible in the UI.
+- [ ] **Step 1: Write failing tests.** Two passing checks over the same relevant input hashes and all changed TS/TSX files in `includedFiles` yield `verified`. One check only yields `partially_verified` in the UI and `unverified` for agent completion. A changed relevant config or source, absent test files, incomplete watcher observation, failed check or empty changed set cannot yield `verified`; a change outside declared inputs preserves `verified`. Assert exact commands and recorded workspace revision remain visible in the UI.
 - [ ] **Step 2: Run** the three targeted tests; expect failures.
-- [ ] **Step 3: Implement** the pure policy and SQLite `list`. Use the same assessment in backend `completion()` and desktop projection. Map `partially_verified` to `unverified` in `R2RunResult`, preserving a reason listing missing checks. A passing test cannot replace a missing or stale typecheck; a later passing check of the same kind supersedes an earlier failure only after both kinds pass on the current revision.
+- [ ] **Step 3: Implement** the pure policy and SQLite `list`. Use the same assessment in backend `completion()` and desktop projection. Map `partially_verified` to `unverified` in `R2RunResult`, preserving a reason listing missing checks. A passing test cannot replace a missing or stale typecheck; a later passing check of the same kind supersedes an earlier failure only after both kinds pass against current declared inputs. Incomplete observation or a missing input hash yields `stale/unknown`, never trusted `verified`.
 - [ ] **Step 4: Run** targeted tests; expect pass.
 - [ ] **Step 5: Commit** policy, storage, projections and tests as `feat(r4): assess current project checks`.
 

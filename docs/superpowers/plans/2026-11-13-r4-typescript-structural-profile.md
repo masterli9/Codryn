@@ -8,7 +8,7 @@
 
 **Tech Stack:** TypeScript 6.0.3 Compiler API, Zod, Node worker threads, Vitest, Electron Forge/Webpack, stávající SQLite event log a tool harness.
 
-**Spec:** `docs/superpowers/specs/2026-11-10-r4-user-driven-alpha-design.md` §2; `PRD_v1.1.md` `FR-TS-01..08`, `FR-CTX-14/15/17`, `AC-O1-13/27`; `docs/superpowers/plans/2026-11-10-r4-typescript-verification.md` pro rozpoznání projektu a balení TypeScript runtime.
+**Spec:** `docs/superpowers/specs/2026-11-10-r4-user-driven-alpha-design.md` §2 a předimplementační `docs/superpowers/specs/r4-typescript-profile.md` z Task 0 verifikačního plánu; `PRD_v1.1.md` `FR-TS-01..08`, `FR-CTX-14/15/17`, `AC-O1-13/27`; `docs/superpowers/plans/2026-11-10-r4-typescript-verification.md` pro rozpoznání projektu a balení TypeScript runtime.
 
 ## Global Constraints
 
@@ -16,7 +16,7 @@
 - Použít TypeScript Compiler API, které už předchozí R4 plán zavádí pro `tsconfig`; další `ts-morph` závislost zde nevzniká. Před vlastní implementací ověřit na fixture přesnost potřebných API a zabalení workeru; neúspěch znamená revizi plánu, nikoli tiché zúžení požadavků.
 - `typescript.query@1` je pouze čtecí nástroj. Vstup vždy obsahuje projektově relativní cestu; pro symbolový dotaz buď umístění `line`/`column`, nebo jméno symbolu. Výstup má nejvýše 50 položek, textové pole nejvýše 400 znaků a celé serializované JSON nejvýše 32 KiB. Nikdy nevrací AST, úplný obsah souboru ani závislostní zdrojový text.
 - Worker má limit 5 s na dotaz, 5 000 projektových souborů, 64 MiB projektového zdrojového textu a 1 MiB na soubor. Překročení vrátí `limited` s důvodem. Abort a timeout ukončí worker a nesmí zanechat běžící výpočet.
-- Cesta dotazu i každý projektový soubor pro index musí projít kanonickým kořenem, aktuální výchozí ochranou a `.codrynignore`. Změna pravidel se projeví před dalším dotazem. Standardní knihovny TypeScriptu jsou interní součást compileru. Deklarace `.d.ts` v `node_modules` lze číst pouze jako vysvětlenou interní výjimku pro rozlišení typů, nikdy jako indexované nebo modelu vracené soubory; explicitní `.codrynignore` a citlivá politika mají přednost a počet takto čtených deklarací se uvede v auditu. Citlivé a ignorované projektové zdroje se nečtou pro index ani nevracejí.
+- Cesta dotazu i každý projektový soubor pro index musí projít kanonickým kořenem, aktuální výchozí ochranou a `.codrynignore`. Změna pravidel se projeví před dalším dotazem. Standardní knihovny TypeScriptu přibalené k nástroji nejsou projektové soubory. Projektové `.d.ts` v ignorovaném `node_modules` se automaticky nečtou ani pro interní type resolution: `FR-CTX-14/15` platí i zde. Pokud bez nich nelze vrátit spolehlivý typ nebo mezisouborovou vazbu, výsledek to výslovně označí `limited`, nikoli domyšlený typ. Citlivé a ignorované projektové zdroje se nečtou pro index ani nevracejí.
 - Při neplatném či chybějícím `tsconfig` se vrací viditelný `fallback` nebo `unsupported` stav. Fallback smí použít omezenou syntaktickou analýzu jedné povolené cesty; nesmí předstírat spolehlivou typovou nebo mezisouborovou odpověď. Běžné `file.read` a `text.search` zůstanou dostupné.
 - Před a po dotazu se porovná aktuální workspace revize/fingerprint a obsahový hash cílového souboru. Změna během dotazu vrátí `stale`, žádný výsledek se nevydá jako aktuální. V první verzi není trvalá cache; nový dotaz vždy sestaví nové podklady.
 - Automatické testy používají fixture a fake model, nikoli placené API. Eval sada 20 dotazů se uloží s očekáváním před spuštěním měření; neshody se zveřejní. Dosažení 18/20 samo neprokazuje celý R4 ani použitelnost libovolného projektu.
@@ -24,7 +24,7 @@
 ## Review Focus
 
 1. Dotaz na soubor ignorovaný po změně `.codrynignore`: worker nesmí vrátit dříve získaný symbol ani obsah; test v Task 3/4.
-2. `tsconfig` přes `extends` nebo symlink míří mimo projekt: compiler host musí odmítnout projektový zdroj mimo kořen a označit omezení; test v Task 2.
+2. `tsconfig` přes `extends` nebo symlink míří mimo projekt, případně import do ignorovaného `node_modules`: compiler host nesmí číst zakázaný projektový zdroj ani deklaraci a označí omezení; test v Task 2.
 3. Uživatel upraví soubor během dlouhého dotazu: výsledek je `stale` a nový dotaz vidí novou definici; test v Task 4.
 4. Neplatný config nebo selhání workeru: strukturovaný dotaz vysvětlí fallback/chybu a následné `file.read`/`text.search` funguje; test v Task 4/5.
 5. Symbol se 100 referencemi nebo dlouhou diagnostikou: prvních 50 a 32 KiB limit mají pravdivý `truncated` příznak; test v Task 2/3.
@@ -65,9 +65,9 @@
 - Consume Task 1 `TypeScriptQueryInput` and `project-check-discovery.ts` from Task 1 of the preceding verification plan.
 - Produce `executeTypeScriptQuery(input: TypeScriptQueryInput, context: {root:string;policy:ContextPathPolicy;expectedRevision:number;signal:AbortSignal}): Promise<TypeScriptQueryOutput>`; the worker will call this engine.
 
-- [ ] **Step 1: Write failing fixture tests.** Exercise declaration by position and name, references across files, function signature, inferred type, exports, diagnostics and import/export edges in TS/TSX/React/Next style files. Assert exact relative paths and 1-based ranges. Add invalid `tsconfig`, missing import, unsupported extension, nested config, ignored path and symlink/junction cases. Assert no output includes full AST or source text.
+- [ ] **Step 1: Write failing fixture tests.** Exercise declaration by position and name, references across files, function signature, inferred type, exports, diagnostics and import/export edges in TS/TSX/React/Next style files. Assert exact relative paths and 1-based ranges. Add invalid `tsconfig`, missing import, unsupported extension, nested config, ignored path, import do ignorovaného `node_modules` a symlink/junction cases. Assert no output includes full AST or source text and that the ignored declaration was not read.
 - [ ] **Step 2: Run** the two targeted Vitest files; expect missing engine failure.
-- [ ] **Step 3: Implement** the bounded compiler host: canonicalize every candidate, enforce policy on project source files and config, track bytes/files, allow TypeScript standard libraries and the narrowly documented resolution-only declaration reads separately, and never return dependency contents. Parse the project config with the preceding plan's discovery service, construct a fresh `Program` and `TypeChecker`, then implement each query kind using Compiler API. The fallback is syntax-only for one allowed file and marks unavailable semantic fields.
+- [ ] **Step 3: Implement** the bounded compiler host: canonicalize every candidate, enforce policy on project source files, config and declarations used during type resolution, track bytes/files, allow packaged TypeScript standard libraries but no ignored project dependency reads. Parse the project config with the preceding plan's discovery service, construct a fresh `Program` and `TypeChecker`, then implement each query kind using Compiler API. The fallback is syntax-only for one allowed file and marks unavailable semantic fields.
 - [ ] **Step 4: Apply** output limits while collecting results rather than after building an unbounded array; set `truncated` when the next item would exceed count or JSON byte limit. Normalize compiler errors to safe `limited`/`unsupported` reasons without logging project content.
 - [ ] **Step 5: Run** targeted tests; expect pass.
 - [ ] **Step 6: Commit** engine, guarded host and tests as `feat(r4): answer TypeScript structural queries`.
@@ -116,7 +116,7 @@
 
 **Interfaces:** No new production API; consolidate evidence for `FR-TS-01..08` and `AC-O1-13` without claiming `AC-O1-14` repo-map completion.
 
-- [ ] **Step 1: Document** compiler host boundaries, resolution-only declaration behavior, worker lifecycle, output budgets, fallback and invalidation, supported project types and measured limitations.
+- [ ] **Step 1: Document** compiler host boundaries, denial of ignored dependency declarations, worker lifecycle, output budgets, fallback and invalidation, supported project types and measured limitations.
 - [ ] **Step 2: Run** `npm.cmd run typecheck`, `npm.cmd run lint`, `npm.cmd run check:deps`, then `npm.cmd test` sequentially after restoring lockfile dependencies. Run R2/R3 regressions and the packaged TypeScript smoke against a fresh build. Record exact output and build identity.
 - [ ] **Step 3: Inspect** the final diff for content leaks, dependency-boundary violations and ignored-file reads; verify `git diff --check` and staging contains only this area before committing.
 - [ ] **Step 4: Commit** architecture and acceptance updates as `docs(r4): record TypeScript profile evidence`. Push and PR only on explicit author request.
