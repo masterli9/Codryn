@@ -15,6 +15,7 @@ export * from './r3-chat.js';
 export * from './r3-project.js';
 export * from './r3-stream.js';
 export * from './r3-ipc.js';
+export * from './r4-repo-map.js';
 export * from './r3-settings.js';
 export * from './r3-changes.js';
 export * from './r3-verification.js';

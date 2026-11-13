@@ -9,7 +9,7 @@ import rendererConfig from './webpack.renderer.config.js';
 const config: ForgeConfig = {
   packagerConfig: {
     asar: {
-      unpack: '*.{ps1,cs}'
+      unpack: '{*.ps1,*.cs,repo-map-worker.js}'
     },
     name: 'Codryn',
     executableName: 'Codryn',

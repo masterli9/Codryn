@@ -3,7 +3,11 @@ import rules from './webpack.rules.js';
 
 const config: Configuration = {
   target: 'electron-main',
-  entry: './src/main.ts',
+  entry: {
+    index: './src/main.ts',
+    'repo-map-worker': './../../backend/infrastructure/src/context/repo-map-worker.ts'
+  },
+  output: { filename: '[name].js' },
   devtool: process.env.NODE_ENV === 'development' ? 'source-map' : false,
   module: { rules },
   resolve: {

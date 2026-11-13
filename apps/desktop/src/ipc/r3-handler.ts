@@ -3,7 +3,7 @@ import type { R3IpcResponse,R3ErrorCode } from '@codryn/shared';
 import type { R3Infrastructure } from '@codryn/infrastructure';
 export interface R3Sender {readonly id:number;readonly mainFrame:{readonly url:string};isDestroyed():boolean;send(channel:string,value:unknown):void}
 export interface R3SenderEvent {readonly sender:R3Sender;readonly senderFrame:{readonly url:string}|null}
-export type R3Services=Pick<R3Infrastructure,'projects'|'chats'|'manager'|'snapshot'|'history'|'inspectRun'|'activity'|'diff'|'revert'|'output'|'answerPermission'|'settings'|'stop'>;
+export type R3Services=Pick<R3Infrastructure,'projects'|'chats'|'manager'|'snapshot'|'history'|'inspectRun'|'activity'|'diff'|'revert'|'output'|'answerPermission'|'settings'|'stop'|'contextMap'>;
 export function assertR3Sender(event:{sender:Pick<R3Sender,'id'|'isDestroyed'>;senderFrame:{url:string}|null},main:Pick<R3Sender,'id'|'mainFrame'|'isDestroyed'>,entry:string):void {
   if(main.isDestroyed()||event.sender.isDestroyed()||event.sender.id!==main.id||event.senderFrame!==main.mainFrame||event.senderFrame.url!==new URL(entry).href)throw new Error('R3_SENDER_REJECTED');
 }
@@ -18,6 +18,10 @@ export function createR3Handler(dependencies:{services:R3Services|undefined;asse
       switch(request.operation){
         case 'project.open':{const root=await dependencies.chooseDirectory();value=root===null?{cancelled:true}:await services.projects.open(root,AbortSignal.timeout(10000));break;}
         case 'project.list':value=await services.projects.list();break;
+        case 'context.map.activate':value=await services.contextMap.activate(request.projectId);break;
+        case 'context.map.status':value=services.contextMap.status(request.projectId);break;
+        case 'context.map.init':value=services.contextMap.init(request.projectId);break;
+        case 'context.map.cancel':value=services.contextMap.cancel(request.projectId);break;
         case 'chat.create':value=await services.chats.create(request.projectId,request.title);break;
         case 'chat.list':value=await services.chats.list(request.projectId,request.archived);break;
         case 'chat.rename':value=await services.chats.rename(request.projectId,request.chatId,request.title);break;

@@ -8,6 +8,7 @@ import { r2AgentDetailsSql } from './r2-agent-details-migration.js';
 import { r3ChatSql } from './r3-chat-migration.js';
 import { r3ProjectionSql } from './r3-projection-migration.js';
 import { r3ProviderSettingsSql } from './r3-provider-settings-migration.js';
+import { r4RepoMapSql } from './r4-repo-map-migration.js';
 
 export interface Migration {
   readonly version: number;
@@ -219,5 +220,6 @@ export const migrations: readonly Migration[] = [
   },
   { version: 10, name: 'r3_desktop_chats', sql: r3ChatSql, checksum: sha256(r3ChatSql) },
   { version: 11, name: 'r3_desktop_projections', sql: r3ProjectionSql, checksum: sha256(r3ProjectionSql) },
-  { version: 12, name: 'r3_provider_settings', sql: r3ProviderSettingsSql, checksum: sha256(r3ProviderSettingsSql) }
+  { version: 12, name: 'r3_provider_settings', sql: r3ProviderSettingsSql, checksum: sha256(r3ProviderSettingsSql) },
+  { version: 13, name: 'r4_repo_map', sql: r4RepoMapSql, checksum: sha256(r4RepoMapSql) }
 ];

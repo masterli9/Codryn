@@ -180,7 +180,8 @@ describe('R1 SQLite persistence', () => {
         { version: 9, name: 'r2_agent_run_details', applied_at: secondTimestamp },
         { version: 10, name: 'r3_desktop_chats', applied_at: secondTimestamp },
         { version: 11, name: 'r3_desktop_projections', applied_at: secondTimestamp },
-        { version: 12, name: 'r3_provider_settings', applied_at: secondTimestamp }
+        { version: 12, name: 'r3_provider_settings', applied_at: secondTimestamp },
+        { version: 13, name: 'r4_repo_map', applied_at: secondTimestamp }
       ]);
 
       runMigrations(database, thirdTimestamp);
@@ -700,7 +701,7 @@ describe('R0 SQLite persistence', () => {
         defensiveModeEnabled: true,
         extensionsEnabled: false,
         quickCheck: 'ok',
-        migrationVersions: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11,12]
+        migrationVersions: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]
       });
     } finally {
       database.close();
@@ -777,7 +778,8 @@ describe('R0 SQLite persistence', () => {
         { version: 9, name: 'r2_agent_run_details', applied_at: firstTimestamp },
         { version: 10, name: 'r3_desktop_chats', applied_at: firstTimestamp },
         { version: 11, name: 'r3_desktop_projections', applied_at: firstTimestamp },
-        { version: 12, name: 'r3_provider_settings', applied_at: firstTimestamp }
+        { version: 12, name: 'r3_provider_settings', applied_at: firstTimestamp },
+        { version: 13, name: 'r4_repo_map', applied_at: firstTimestamp }
       ]);
       expect(secondConnection.prepare('PRAGMA integrity_check').get()).toEqual({ integrity_check: 'ok' });
       await expect(new SqliteSessionRepository(secondConnection).findById(session.id)).resolves.toEqual(session);
@@ -817,7 +819,8 @@ describe('R0 SQLite persistence', () => {
         expect.objectContaining({ version: 9, applied_at: firstTimestamp }),
         expect.objectContaining({ version: 10, applied_at: firstTimestamp }),
         expect.objectContaining({ version: 11, applied_at: firstTimestamp }),
-        expect.objectContaining({ version: 12, applied_at: firstTimestamp })
+        expect.objectContaining({ version: 12, applied_at: firstTimestamp }),
+        expect.objectContaining({ version: 13, applied_at: firstTimestamp })
       ]);
     } finally {
       database.close();

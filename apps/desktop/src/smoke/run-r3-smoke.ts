@@ -28,7 +28,10 @@ export async function runR3Smoke(profileRoot:string,fixtureSource:string,phase:R
         await writeFile(join(root,'delayed-child.mjs'),"import {writeFileSync} from 'node:fs';setTimeout(()=>writeFileSync('late-marker','late'),5000);setInterval(()=>{},1000);\n");
         await writeFile(join(root,'stream-child.mjs'),"import {spawn} from 'node:child_process';import {writeFileSync} from 'node:fs';const child=spawn(process.execPath,['delayed-child.mjs'],{stdio:'ignore'});writeFileSync('pids.json',JSON.stringify([process.pid,child.pid]));process.stdout.write('stdout before completion '+'.'.repeat(256)+'\\n');process.stderr.write('stderr before completion '+'.'.repeat(256)+'\\n');setInterval(()=>{},1000);\n");
       }
-      const before=await readFile(join(root,'sum.mjs')),project=await host.projects.open(root,signal),chat=await host.chats.create(project.id,'Packaged reference'),accepted=await host.manager.submit({requestId:randomUUID(),chatId:chat.id,mode:'demo',maxSteps:16,task:'Oprav a ověř referenční součet.'});
+      const before=await readFile(join(root,'sum.mjs')),project=await host.projects.open(root,signal);
+      const map=await poll(async()=>host.contextMap.status(project.id),status=>status.state!=='indexing',signal);
+      if(map.state!=='ready'||map.entries<2)throw new Error('R4_PACKAGED_REPO_MAP_FAILED');
+      const chat=await host.chats.create(project.id,'Packaged reference'),accepted=await host.manager.submit({requestId:randomUUID(),chatId:chat.id,mode:'demo',maxSteps:16,task:'Oprav a ověř referenční součet.'});
       const waiting=await poll(()=>host.projections.snapshot(chat.id),value=>value.permissions.length>0||value.run?.state==='finished'||value.run?.state==='interrupted',signal),permission=waiting.permissions[0];if(!permission)throw new Error('R3_SMOKE_APPROVAL_MISSING');
       await host.answerPermission(chat.id,project.id,{id:permission.id,digest:permission.digest,decision:'allow_once'});
       if(phase==='cancel'){
