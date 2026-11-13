@@ -19,7 +19,9 @@ it('selects a project folder and a file, then retains the draft when the file ch
     await page.getByRole('textbox', { name: 'Název chatu' }).fill('Projektové reference');
     await page.getByRole('button', { name: 'Uložit chat', exact: true }).click();
     const composer = page.getByRole('textbox', { name: 'Zadání úkolu' });
-    await page.getByRole('button', { name: 'Odeslat úkol' }).waitFor();
+    const submit = page.getByRole('button', { name: 'Odeslat úkol' });
+    await composer.fill('Zkontroluj');
+    await expect.poll(() => submit.isEnabled(), { timeout: 10_000 }).toBe(true);
     await composer.fill('Zkontroluj @reference-dir');
     await page.getByRole('option', { name: /reference-dir/ }).waitFor();
     await composer.press('Enter');
@@ -29,7 +31,7 @@ it('selects a project folder and a file, then retains the draft when the file ch
     await composer.press('Enter');
     await page.getByRole('button', { name: 'Odebrat referenci reference-only.txt' }).waitFor();
     await writeFile(join(fixture.root, 'reference-only.txt'), 'second revision');
-    await page.getByRole('button', { name: 'Odeslat úkol' }).click();
+    await submit.click();
     await page.getByRole('alert').filter({ hasText: /reference-only\.txt.*změnil/ }).waitFor();
     expect((await composer.inputValue()).trim()).toBe('Zkontroluj');
     await page.getByRole('button', { name: 'Odebrat referenci reference-only.txt' }).click();
