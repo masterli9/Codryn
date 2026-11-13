@@ -76,6 +76,7 @@ export async function createR2Infrastructure(options: {
   readonly filesystemEffect?: <T>(effect:()=>Promise<T>)=>Promise<T>;
   readonly database?: DatabaseSync;
   readonly onRunCreated?: (runId: string) => Promise<void>;
+  readonly prepareContext?: R2ExecutionOptions['prepareContext'];
   readonly allowReadOnlyCompletion?: boolean;
   readonly onModelEvent?: R2ExecutionOptions['onModelEvent'];
   readonly onModelTurnCompleted?: R2ExecutionOptions['onModelTurnCompleted'];
@@ -113,12 +114,12 @@ export async function createR2Infrastructure(options: {
     const workspaces = options.workspaceStore ?? new SqliteWorkspaceStore(database);
     const canonicalRoot = await realpath(projectRoot);
     const projectId = new SqliteWorkspaceStore(database).open(process.platform === 'win32' ? canonicalRoot.toLowerCase() : canonicalRoot, ids.next());
-    const contextPolicy = await ContextPathPolicy.fromProjectRoot(projectRoot);
+    const contextPolicy = await ContextPathPolicy.fromProjectRoot(projectRoot, options.prepareContext !== undefined);
     const filesystem = new ProjectFilesystem(projectRoot, { contextPolicy });
     let readCalls = 0;
     const git = new ProjectGitState(projectRoot);
     const observer = options.workspaceObserver ?? new FileWorkspaceObserver(projectRoot, { git, contextPolicy });
-    await workspaces.observe(projectId, await observer.inspect(new AbortController().signal));
+    if (!options.prepareContext) await workspaces.observe(projectId, await observer.inspect(new AbortController().signal));
     const eventStore = new SqliteEventStore(database);
     const toolCalls = new SqliteToolCallStore(database, { clock, ids });
     const agentRuns = new SqliteAgentRunStore(database);
@@ -266,6 +267,7 @@ export async function createR2Infrastructure(options: {
         let runId: string | null = null;
         const result = await loop.executeR2(request, signal, {
           ...(options.onRunCreated === undefined ? {} : { onRunCreated: options.onRunCreated }),
+          ...(options.prepareContext === undefined ? {} : { prepareContext: options.prepareContext }),
           ...(options.allowReadOnlyCompletion === undefined ? {} : { allowReadOnlyCompletion: options.allowReadOnlyCompletion }),
           ...(options.onModelEvent === undefined ? {} : { onModelEvent: options.onModelEvent }),
           ...(options.onModelTurnCompleted === undefined ? {} : { onModelTurnCompleted: options.onModelTurnCompleted }),

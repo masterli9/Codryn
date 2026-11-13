@@ -5,7 +5,7 @@ import type { R3ProjectService } from './project-service.js';
 import type { ProviderAccessGate } from '../secrets/ports.js';
 import { r3ModelDescriptor } from './model-catalog.js';
 interface Active {chatId:Uuid;view:R3RunView;controller:AbortController;done:Promise<void>}
-function sameInput(a:R3SubmitInput,b:R3SubmitInput):boolean{return a.chatId===b.chatId&&a.task===b.task&&a.maxSteps===b.maxSteps&&a.mode===b.mode&&a.retryOfRequestId===b.retryOfRequestId;}
+function sameInput(a:R3SubmitInput,b:R3SubmitInput):boolean{return a.chatId===b.chatId&&a.task===b.task&&a.maxSteps===b.maxSteps&&a.mode===b.mode&&a.retryOfRequestId===b.retryOfRequestId&&JSON.stringify(a.references??[])===JSON.stringify(b.references??[]);}
 export class DesktopRunManager {
   private readonly running=new Map<Uuid,Active>();private readonly jobs=new Map<Uuid,Promise<void>>();private closing=false;
   constructor(private readonly dependencies:{requests:DesktopRequestStore;chats:ChatStore;projections:DesktopProjectionStore;projects:R3ProjectService;createRun:DesktopRuntimeFactory;providerAccess:ProviderAccessGate;beforeAccept?:(input:R3SubmitInput)=>Promise<void>;operationLease?:(projectId:Uuid)=>()=>void}){}

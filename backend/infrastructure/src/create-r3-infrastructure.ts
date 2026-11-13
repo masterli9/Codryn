@@ -20,7 +20,10 @@ import { SqlitePermissionStore } from './persistence/sqlite-permission-store.js'
 import { EncryptedSecretStore } from './secrets/encrypted-secret-store.js';
 import { ProjectGitState } from './git/project-git-state.js';
 import { FileWorkspaceObserver } from './filesystem/workspace-observer.js';
-import { ContextPathPolicy } from './filesystem/context-path-policy.js';
+import { ContextPathPolicy,ContextPathPolicyError } from './filesystem/context-path-policy.js';
+import { searchReferences } from './context/reference-search.js';
+import { ReferenceResolver,requireReadyReferences } from './context/reference-resolver.js';
+import type { R4ReferenceSearch,R4ReferencePermitInput } from '@codryn/shared';
 import { recoverOwnedCommands } from './process/recover-owned-commands.js';
 import { testProviderConnection } from './model/provider-connection-test.js';
 import { createR2Infrastructure } from './create-r2-infrastructure.js';
@@ -35,6 +38,8 @@ export interface R3InfrastructureResources {
   secrets:SecretStore;settings:ProviderSettingsService;ownedCommands:OwnedCommandStore;permissionBroker:DesktopPermissionBroker;
   filesystemEffect:<T>(projectId:string,effect:()=>Promise<T>)=>Promise<T>;workspace:WorkspaceStore;observer:(projectId:string)=>Promise<WorkspaceObserver>;ids:IdGenerator;
   repoMap:RepoMapBuilder;
+  references:ReferenceResolver;
+  recordContextAudit:SqliteDesktopProjectionStore['recordContextAudit'];
 }
 const unavailableProtector:SecretProtector={available:async()=>false,encrypt:async()=>{throw new Error('R3_SECRET_UNAVAILABLE');},decrypt:async()=>{throw new Error('R3_SECRET_UNAVAILABLE');}};
 export async function createR3Infrastructure(options:{userDataPath:string;runtimeFactory:(resources:R3InfrastructureResources)=>DesktopRuntimeFactory;secretProtector?:SecretProtector;clock?:Clock;ids?:IdGenerator;preflight?:(mode:'demo'|'openai',root:string)=>Promise<void>;repoMapWorker?:MapWorker}) {
@@ -44,6 +49,7 @@ export async function createR3Infrastructure(options:{userDataPath:string;runtim
   const filesystemEffect=async<T>(projectId:string,effect:()=>Promise<T>):Promise<T>=>{const previous=filesystemTails.get(projectId)??Promise.resolve();let release:()=>void=()=>undefined;const done=new Promise<void>(resolve=>{release=resolve;});const tail=previous.then(()=>done);filesystemTails.set(projectId,tail);try{await previous;return await effect();}finally{release();if(filesystemTails.get(projectId)===tail)filesystemTails.delete(projectId);}};
   let periodic:ReturnType<typeof setInterval>|undefined,closed=false;
   const repoMap = new RepoMapBuilder(new RepoMapStore(database), options.repoMapWorker ?? (async () => { throw new Error('R4_REPO_MAP_WORKER_UNAVAILABLE'); }));
+  const references = new ReferenceResolver();
   let mapProject: string | null = null, mapSelection = 0;
   const mapLifetime = new AbortController();
   const activateMap = (id: string, root: string) => {
@@ -83,7 +89,12 @@ export async function createR3Infrastructure(options:{userDataPath:string;runtim
       if(closed)return Promise.reject(new Error('R3_PROJECT_BUSY'));const previous=refreshes.get(projectId);if(previous)return previous;
       const pending=(async()=>{const project=await projects.get(projectId,signal);if(!project)throw new Error('R3_NOT_FOUND');
         if(!project.available){const current=await workspace.current(projectId);await workspace.observe(projectId,{...current,complete:false});observers.get(projectId)?.close();observers.delete(projectId);return;}
-        const observation=await (await observer(projectId)).inspect(signal);if(!closed)await workspace.observe(projectId,observation);
+        try {
+          const observation=await (await observer(projectId)).inspect(signal);if(!closed)await workspace.observe(projectId,observation);
+        } catch(error) {
+          if(!(error instanceof ContextPathPolicyError))throw error;
+          const current=await workspace.current(projectId);if(!closed)await workspace.observe(projectId,{...current,complete:false});
+        }
       })().finally(()=>refreshes.delete(projectId));refreshes.set(projectId,pending);return pending;
     };
     const lease=(projectId:string)=>{if(closed||locks.has(projectId))throw new Error('R3_PROJECT_BUSY');locks.add(projectId);return ()=>locks.delete(projectId);};
@@ -97,20 +108,36 @@ export async function createR3Infrastructure(options:{userDataPath:string;runtim
         await requests.interruptUnfinished(project.id);
         for(const permission of await permissionStore.listPending(project.id))await permissionStore.closePending(permission.id,'expired');
         await permissionStore.expireAllowedUnclaimed(project.id);
-        if((await projects.get(project.id))?.available){const runtime=await utility(project.id);try{await runtime.recover.execute(project.id,AbortSignal.timeout(10000));}finally{runtime.close();}}
+        if((await projects.get(project.id))?.available){
+          try {const runtime=await utility(project.id);try{await runtime.recover.execute(project.id,AbortSignal.timeout(10000));}finally{runtime.close();}}
+          catch(error){if(!(error instanceof ContextPathPolicyError))throw error;}
+        }
       }
     };
     await recover();
-    const resources:R3InfrastructureResources={database,projects,projections,providerAccess,secrets,settings,ownedCommands,permissionBroker,workspace,observer,ids,filesystemEffect,repoMap};
+    const resources:R3InfrastructureResources={database,projects,projections,providerAccess,secrets,settings,ownedCommands,permissionBroker,workspace,observer,ids,filesystemEffect,repoMap,references,recordContextAudit:projections.recordContextAudit.bind(projections)};
     const manager=new DesktopRunManager({requests,chats:chatsStore,projections,projects,providerAccess,operationLease:lease,createRun:options.runtimeFactory(resources),beforeAccept:async(input)=>{
       const chat=await chatsStore.get(input.chatId);if(!chat)throw new Error('R3_NOT_FOUND');
       if((await ownedCommands.pending(chat.projectId)).length||(await journal.pending(chat.projectId)).length)throw new Error('R3_RECOVERY_REQUIRED');
       if(input.mode==='openai')await settings.ensureProjectTransmissionAllowed();
       const protectedState=await secrets.state('openai');const known=protectedState==='stored'?await secrets.read('openai'):null;
-      if((known&&input.task.includes(known))||/(?:API[_-]?KEY|TOKEN|SECRET|PASSWORD)\s*[=:]\s*\S+/i.test(input.task))throw new Error('R3_INPUT_INVALID');
-      await options.preflight?.(input.mode,await projects.root(chat.projectId));await refresh(chat.projectId,AbortSignal.timeout(6000));
+      if((known&&(input.task.includes(known)||input.references?.some(reference=>reference.path.includes(known))))||/(?:API[_-]?KEY|TOKEN|SECRET|PASSWORD)\s*[=:]\s*\S+/i.test(input.task))throw new Error('R3_INPUT_INVALID');
+      const root=await projects.root(chat.projectId);
+      await refresh(chat.projectId,AbortSignal.timeout(6000));
+      const checked=await references.resolve(root,input,AbortSignal.timeout(5000));
+      requireReadyReferences(checked.results);
+      await options.preflight?.(input.mode,root);
     }});
     const chatOwner=async(chatId:string,projectId?:string)=>{const chat=await chatsStore.get(uuidSchema.parse(chatId));if(!chat)throw new Error('R3_NOT_FOUND');if(projectId&&chat.projectId!==projectId)throw new Error('R3_CHAT_PROJECT_MISMATCH');return chat;};
+    const referenceSearch=async(projectId:string,chatId:string,input:R4ReferenceSearch,signal:AbortSignal)=>{
+      await chatOwner(chatId,uuidSchema.parse(projectId));
+      return searchReferences(await projects.root(projectId),input,signal);
+    };
+    const referencePermit=async(projectId:string,chatId:string,requestId:string,input:R4ReferencePermitInput,signal:AbortSignal)=>{
+      const chat=await chatOwner(chatId,uuidSchema.parse(projectId));
+      if(chat.archived||await requests.getByRequestId(requestId))throw new Error('R4_REFERENCE_PERMIT_INVALID');
+      return references.grant(await projects.root(projectId),{...input,chatId,requestId},signal);
+    };
     const history=async(chatId:string,before:number|null)=>{await chatOwner(chatId);const messages=await projections.messages(chatId,before),first=messages[0]?.sequence;const older=first!==undefined&&database.prepare('SELECT 1 FROM chat_messages WHERE chat_id=? AND sequence<? LIMIT 1').get(chatId,first)!==undefined;return {messages,beforeMessageSequence:older&&first!==undefined?first:null};};
     const stop=async(chatId:string,projectId:string,jobId:string)=>{await chatOwner(chatId,projectId);const job=database.prepare('SELECT chat_id FROM desktop_jobs WHERE id=?').get(uuidSchema.parse(jobId));if(!job)throw new Error('R3_NOT_FOUND');if(job.chat_id!==chatId)throw new Error('R3_CHAT_PROJECT_MISMATCH');return manager.stop(projectId,jobId);};
     const snapshot=async(chatId:string,signal:AbortSignal=AbortSignal.timeout(6000))=>{const chat=await chatOwner(chatId);await refresh(chat.projectId,signal);const result=await projections.snapshot(chatId);return {...result,project:await projects.get(chat.projectId,signal)??result.project};};
@@ -147,7 +174,7 @@ export async function createR3Infrastructure(options:{userDataPath:string;runtim
     };
     periodic=setInterval(()=>{for(const project of opened)void refresh(project,AbortSignal.timeout(6000)).catch(()=>undefined);},1000);periodic.unref();
     const shutdown=async(signal:AbortSignal)=>{providerAccess.beginShutdown();if(periodic)clearInterval(periodic);mapLifetime.abort();repoMap.closeAll();const result=await manager.shutdown(signal);await repoMap.drain(signal);while((!providerAccess.idle()||refreshes.size||scans.size||filesystemTails.size||reverts.size)&&!signal.aborted)await new Promise(resolve=>setTimeout(resolve,25));return {stopped:!signal.aborted&&result.stopped&&providerAccess.idle()&&(await ownedCommands.pending()).length===0&&reverts.size===0&&refreshes.size===0&&scans.size===0&&filesystemTails.size===0};};
-    return {projects,chats,requests,projections,manager,subscriptions,settings,resources,recover,snapshot,history,stop,inspectRun,diff,revert,answerPermission,shutdown,contextMap,
+    return {projects,chats,requests,projections,manager,subscriptions,settings,resources,recover,snapshot,history,stop,inspectRun,diff,revert,answerPermission,shutdown,contextMap,referenceSearch,referencePermit,
       activity:(chatId:string,target:string,before:number|null)=>projections.activity(chatId,target,before),output:(chatId:string,callId:string,after:number|null)=>projections.output(chatId,callId,after),
       close:()=>{if(activeJob()||!providerAccess.idle()||reverts.size)throw new Error('R3_PROJECT_BUSY');closed=true;if(periodic)clearInterval(periodic);mapLifetime.abort();repoMap.closeAll();subscriptions.close();for(const scanner of observers.values())scanner.close();handle.close();}
     };

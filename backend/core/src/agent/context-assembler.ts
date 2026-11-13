@@ -1,4 +1,5 @@
-import type { ModelContextSource } from '@codryn/shared';
+import { createHash } from 'node:crypto';
+import type { ModelContextSource, R4ContextAuditSource } from '@codryn/shared';
 import type { ProjectFilesystem } from './ports.js';
 import type { AssembledContext, ContextSourceAudit } from './model.js';
 
@@ -74,4 +75,69 @@ export class ContextAssembler {
     abortIfNeeded(signal);
     return { modelContent, sources, totalBytes };
   }
+}
+
+interface R4Content { path: string; hash: string | null; content: string; truncated?: boolean }
+interface R4ReferenceContent extends R4Content { kind: 'file' | 'directory'; hash: string }
+interface R4ContextInput {
+  task: string;
+  history: readonly R4Content[];
+  projectRules: readonly R4Content[];
+  references: readonly R4ReferenceContent[];
+  map: readonly R4Content[];
+  mapOmissions: readonly R4ContextAuditSource[];
+}
+const explicitBytes = 64 * 1024;
+const excerptBytes = 16 * 1024;
+const mapBytes = 32 * 1024;
+const hashText = (text: string) => createHash('sha256').update(text).digest('hex');
+
+export function assembleR4Context(input: R4ContextInput): { modelContent: ModelContextSource[]; audit: R4ContextAuditSource[] } {
+  const modelContent: ModelContextSource[] = [];
+  const taskBytes = Buffer.byteLength(input.task, 'utf8');
+  const audit: R4ContextAuditSource[] = [{ source: 'user_text', hash: hashText(input.task), bytes: taskBytes, status: 'used' }];
+  let remaining = MAX_CONTEXT_BYTES - taskBytes;
+
+  function add(value: R4Content, source: R4ContextAuditSource['source'], reason: ModelContextSource['reason'], budget: number) {
+    const hash = value.hash ?? hashText(value.content);
+    const original = Buffer.from(value.content, 'utf8');
+    const limit = Math.min(budget, remaining);
+    if (original.length && (limit === 0 || (source === 'repo_map' && original.length > limit))) {
+      audit.push({ source, path: value.path, hash, bytes: 0, status: 'omitted', reason: 'byte_budget' });
+      return 0;
+    }
+    let end = Math.min(limit, original.length);
+    while (end < original.length && end > 0 && ((original[end] ?? 0) & 0xc0) === 0x80) end--;
+    const content = original.subarray(0, end).toString('utf8');
+    if (!content && original.length) {
+      audit.push({ source, path: value.path, hash, bytes: 0, status: 'omitted', reason: 'byte_budget' });
+      return 0;
+    }
+    const truncated = value.truncated || end < original.length;
+    const lineCount = content.length ? content.split('\n').length - (content.endsWith('\n') ? 1 : 0) : 0;
+    const lines = reason === 'loaded_excerpt' && lineCount ? { startLine: 1, endLine: lineCount } : {};
+    audit.push({ source, path: value.path, hash, bytes: end, status: truncated ? 'truncated' : 'used', ...(truncated ? { reason: value.truncated ? 'limited' : 'byte_budget' } : {}), ...lines });
+    modelContent.push({ path: value.path, content, contentHash: hash, byteLength: end, reason });
+    remaining -= end;
+    return end;
+  }
+
+  let history = 8 * 1024;
+  for (const item of input.history) history -= add(item, 'chat_history', 'chat_history', history);
+  let rules = excerptBytes;
+  for (const item of input.projectRules) rules -= add(item, 'project_rules', 'project_rules', rules);
+  let explicit = explicitBytes;
+  for (const item of input.references) {
+    if (item.kind === 'file') {
+      audit.push({ source: 'project_reference', path: item.path, hash: item.hash, bytes: 0, status: 'used' });
+      explicit -= add(item, 'loaded_excerpt', 'loaded_excerpt', Math.min(explicit, excerptBytes));
+    } else {
+      explicit -= add(item, 'project_reference', 'directory_reference', Math.min(explicit, excerptBytes));
+    }
+  }
+  // Allocate optional map metadata only after preserving the entire selected-reference allowance.
+  let map = Math.min(mapBytes, remaining, explicit);
+  for (const item of input.map) map -= add(item, 'repo_map', 'repo_map', map);
+  audit.push(...input.mapOmissions);
+  return { modelContent, audit };
 }

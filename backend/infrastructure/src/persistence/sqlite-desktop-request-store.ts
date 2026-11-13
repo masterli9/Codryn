@@ -5,7 +5,7 @@ import { modelDescriptorSchema, r2RunResultSchema, r3AcceptedSchema, r3JobStateS
 import type { ModelDescriptor, R2RunResult, R3Accepted, R3JobState, R3RunView, R3SubmitInput, Uuid } from '@codryn/shared';
 import { desktopPhase, parseJson, text, transaction } from './r3-sqlite-helpers.js';
 export function desktopRequestDigest(input: R3SubmitInput, projectId: Uuid): string {
-  return createHash('sha256').update(JSON.stringify({ projectId, chatId: input.chatId, task: input.task, mode: input.mode, maxSteps: input.maxSteps, retryOfRequestId: input.retryOfRequestId ?? null })).digest('hex');
+  return createHash('sha256').update(JSON.stringify({ projectId, chatId: input.chatId, task: input.task, mode: input.mode, maxSteps: input.maxSteps, retryOfRequestId: input.retryOfRequestId ?? null, ...(input.references?.length ? { references: input.references } : {}) })).digest('hex');
 }
 export class SqliteDesktopRequestStore implements DesktopRequestStore {
   constructor(private readonly database: DatabaseSync, private readonly clock: Clock, private readonly ids: IdGenerator) {}

@@ -5,6 +5,7 @@ import { ProviderAdapterError, normalizeProviderError, providerStatus } from './
 import { ProviderHttpError, ProviderTransportError } from './provider-transport.js';
 import type { ProviderAdapterOptions } from './openai-responses-adapter.js';
 import { externalToolMap, externalToolName } from './provider-tool-names.js';
+import { describeModelContext } from './model-context-label.js';
 import type { ModelToolDefinition } from '@codryn/shared';
 
 interface GeminiFunctionCallState {
@@ -69,7 +70,7 @@ export class GeminiAdapter implements ModelAdapter {
     try { toolMap = externalToolMap(request.tools); } catch (error) { throw this.normalize(error); }
     const run = this.getRun(request.runId);
     const contents: unknown[] = [{ role: 'user', parts: [{ text: request.task }] }];
-    for (const source of request.context) contents.push({ role: 'user', parts: [{ text: `Context ${source.path}:\n${source.content}` }] });
+    for (const source of request.context) contents.push({ role: 'user', parts: [{ text: `${describeModelContext(source)}:\n${source.content}` }] });
     let assistantTurnIndex = 0;
     for (const turn of request.history ?? []) {
       if (turn.kind === 'assistant') {

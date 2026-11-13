@@ -12,6 +12,7 @@ import { canComplete } from './r2-completion.js';
 
 export interface R2ExecutionOptions {
   readonly onRunCreated?: (runId: Uuid) => Promise<void>;
+  readonly prepareContext?: (runId: Uuid, signal: AbortSignal) => Promise<readonly ModelRequest['context'][number][]>;
   readonly allowReadOnlyCompletion?: boolean;
   readonly onModelEvent?: (input:{runId:Uuid;step:number;event:ModelStreamEvent})=>Promise<void>;
   readonly onModelTurnCompleted?: (input:{runId:Uuid;step:number})=>Promise<void>;
@@ -54,6 +55,7 @@ function code(error: unknown): AgentRunFailureCode {
 }
 
 function policyFailureMessage(error: unknown, failure: AgentRunFailureCode): string | undefined {
+  if (error instanceof Error && error.name === 'ReferencePreparationFailure') return error.message;
   if (failure === 'R4_CONTEXT_POLICY_CHANGED') return messages[failure];
   if (failure !== 'R2_CONTEXT_POLICY_INVALID') return undefined;
   if (!(error instanceof Error) || !/^Invalid \.codrynignore rule at line \d+: [a-z_]+\.$/.test(error.message)) return messages[failure];
@@ -144,9 +146,11 @@ export class RunAgentLoop {
       if (activeChangeSetId === null && options.openChangeSet !== undefined) activeChangeSetId = await options.openChangeSet(runId);
       state = await this.transition(runId, request.requestId, state, 'preparing_context', steps);
       this.abort(signal);
-      const context = await this.dependencies.contextAssembler.assemble({ task: request.task, project: { id: projectId }, contextReferences: request.contextReferences }, signal);
+      const context = options.prepareContext
+        ? { modelContent: await options.prepareContext(runId, signal) }
+        : await this.dependencies.contextAssembler.assemble({ task: request.task, project: { id: projectId }, contextReferences: request.contextReferences }, signal);
       this.abort(signal);
-      await this.append(runId, request.requestId, 'context.assembled', { sources: context.sources.map((source) => ({ path: source.path, contentHash: source.contentHash, byteLength: source.byteLength, reason: source.reason })), totalBytes: context.totalBytes });
+      if ('sources' in context) await this.append(runId, request.requestId, 'context.assembled', { sources: context.sources.map((source) => ({ path: source.path, contentHash: source.contentHash, byteLength: source.byteLength, reason: source.reason })), totalBytes: context.totalBytes });
       if (this.dependencies.model.descriptor.capabilities.toolCalling !== 'supported') throw { code: 'R1_MODEL_CAPABILITY_MISSING' };
       while (true) {
         this.abort(signal);

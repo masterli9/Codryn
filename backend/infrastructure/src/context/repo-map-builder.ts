@@ -102,6 +102,10 @@ export class RepoMapBuilder {
     return this.requireOpen(projectId).latest.status;
   }
 
+  statusIfOpen(projectId: string): R4RepoMapStatus | undefined {
+    return this.projects.get(projectId)?.latest.status;
+  }
+
   init(projectId: string, signal: AbortSignal): RepoMapHandle {
     const open = this.requireOpen(projectId);
     if (open.active?.handle.status.mode === 'deep') return open.active.handle;

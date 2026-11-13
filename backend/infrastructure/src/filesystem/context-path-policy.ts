@@ -124,10 +124,10 @@ export class ContextPathPolicy {
     this.currentRevision = createHash('sha256').update(JSON.stringify([policyVersion, ...rules.map(({ negate, pattern }) => [negate, pattern])])).digest('hex');
   }
 
-  static async fromProjectRoot(root: string): Promise<ContextPathPolicy> {
+  static async fromProjectRoot(root: string, deferRefresh = false): Promise<ContextPathPolicy> {
     const policy = new ContextPathPolicy([]);
     policy.sourcePath = join(await realpath(root), '.codrynignore');
-    await policy.refresh();
+    if (!deferRefresh) await policy.refresh();
     return policy;
   }
 

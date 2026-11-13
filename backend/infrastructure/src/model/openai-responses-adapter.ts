@@ -4,6 +4,7 @@ import type { IdGenerator, ModelAdapter } from '@codryn/core';
 import { ProviderHttpError, ProviderTransportError, type ProviderTransport } from './provider-transport.js';
 import { ProviderAdapterError, normalizeProviderError, providerStatus } from './provider-errors.js';
 import { externalToolMap, externalToolName } from './provider-tool-names.js';
+import { describeModelContext } from './model-context-label.js';
 
 export interface ProviderAdapterOptions {
   readonly modelId: string;
@@ -34,7 +35,7 @@ function functionTools(request: ModelRequest): unknown[] {
 
 function inputItems(request: ModelRequest, externalByInternal: ReadonlyMap<string, string>, tools: ReadonlyMap<string, ModelToolDefinition>): unknown[] {
   const items: unknown[] = [{ role: 'user', content: [{ type: 'input_text', text: request.task }] }];
-  for (const source of request.context) items.push({ role: 'user', content: [{ type: 'input_text', text: `Context ${source.path}:\n${source.content}` }] });
+  for (const source of request.context) items.push({ role: 'user', content: [{ type: 'input_text', text: `${describeModelContext(source)}:\n${source.content}` }] });
   for (const turn of request.history ?? []) {
     if (turn.kind === 'assistant') {
       if (turn.text.length > 0) items.push({ role: 'assistant', content: [{ type: 'output_text', text: turn.text }] });

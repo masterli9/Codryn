@@ -28,7 +28,7 @@ export const modelContextSourceSchema = z.object({
   content: z.string(),
   contentHash: z.string().regex(/^[a-f0-9]{64}$/),
   byteLength: z.number().int().nonnegative(),
-  reason: z.literal('explicit_reference')
+  reason: z.enum(['explicit_reference', 'chat_history', 'project_rules', 'directory_reference', 'loaded_excerpt', 'repo_map'])
 }).strict();
 
 export const modelToolDefinitionSchema = z.object({
@@ -42,7 +42,7 @@ export const modelRequestSchema = z.object({
   runId: uuidSchema,
   task: z.string().trim().min(1).max(16_384),
   project: z.object({ id: z.string().min(1) }).strict(),
-  context: z.array(modelContextSourceSchema).max(8),
+  context: z.array(modelContextSourceSchema).max(32),
   tools: z.array(modelToolDefinitionSchema),
   previousToolResults: z.array(toolResultSchema),
   history: z.array(modelTurnSchema).max(64).optional()

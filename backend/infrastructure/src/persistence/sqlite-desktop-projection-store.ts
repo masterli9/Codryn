@@ -1,13 +1,14 @@
 import type { DatabaseSync, SQLOutputValue } from 'node:sqlite';
 import type { Clock, DesktopProjectionStore, IdGenerator } from '@codryn/core';
-import { permissionViewSchema, r3ActivityViewSchema, r3CommandViewSchema, r3MessageSchema, r3OutputPageSchema, r3ProviderErrorSchema, r3RunDetailSchema, r3RunViewSchema, r3SnapshotSchema, r3UpdateSchema, verificationRecordSchema, uuidSchema } from '@codryn/shared';
-import type { R3ActivityView, R3Message, R3OutputPage, R3RunDetail, R3RunView, R3Snapshot, R3Update, R3VerificationView, Uuid } from '@codryn/shared';
+import { permissionViewSchema, r3ActivityViewSchema, r3CommandViewSchema, r3MessageSchema, r3OutputPageSchema, r3ProviderErrorSchema, r3RunDetailSchema, r3RunViewSchema, r3SnapshotSchema, r3UpdateSchema, r4ContextAuditSchema, verificationRecordSchema, uuidSchema } from '@codryn/shared';
+import type { R3ActivityView, R3Message, R3OutputPage, R3RunDetail, R3RunView, R3Snapshot, R3Update, R3VerificationView, R4ContextAuditSource, R4ContextAuditSummary, Uuid } from '@codryn/shared';
 import { desktopPhase, integer, nullableText, parseJson, text, transaction } from './r3-sqlite-helpers.js';
 import { SqliteDesktopProjectStore } from './sqlite-desktop-project-store.js';
+import { insertEvent, validateEvent } from './sqlite-event-store.js';
 
 type Row = Record<string, SQLOutputValue>;
 function object(value: unknown): Record<string, unknown> { return typeof value==='object' && value!==null && !Array.isArray(value) ? value as Record<string, unknown> : {}; }
-function message(row: Row): R3Message { return r3MessageSchema.parse({id:row.id,chatId:row.chat_id,requestId:row.request_id,runId:row.run_id,retryOfRequestId:row.retry_of_request_id,role:row.role,text:row.text,sequence:row.sequence,state:row.state,createdAt:row.created_at}); }
+function message(row: Row): R3Message { return r3MessageSchema.parse({id:row.id,chatId:row.chat_id,requestId:row.request_id,runId:row.run_id,retryOfRequestId:row.retry_of_request_id,role:row.role,text:row.text,sequence:row.sequence,state:row.state,createdAt:row.created_at,references:row.references_json==null?[]:parseJson(row.references_json)}); }
 export function desktopRunView(database: DatabaseSync, jobId: Uuid): R3RunView|null {
   const row=database.prepare('SELECT j.*,a.state AS phase,a.step_count FROM desktop_jobs j LEFT JOIN agent_runs a ON a.run_id=j.run_id WHERE j.id=?').get(jobId); if(!row) return null;
   const input=object(parseJson(row.input_json));
@@ -18,6 +19,14 @@ const summaries: Record<string,string>={'agent_run.created':'Běh založen','age
 function activityView(row: Row): R3ActivityView {
   const payload=object(parseJson(row.payload_json)), type=text(row.event_type);
   const details:{label:string;value:string}[]=[]; let detailsTruncated=false;
+  if (type === 'context.assembled') {
+    const audit = r4ContextAuditSchema.safeParse(payload);
+    if (audit.success) {
+      details.push({ label: 'Použito bajtů', value: String(audit.data.totalBytes) });
+      details.push({ label: 'Zdroje', value: String(audit.data.sources.length) });
+    }
+    return r3ActivityViewSchema.parse({eventId:row.event_id,sequence:row.activity_sequence,runId:row.run_id,type,occurredAt:row.occurred_at,callId:null,summary:'Sestavený kontext',details,detailsTruncated});
+  }
   // Explicit scalar allowlist excludes file contents, raw arguments, native responses and blobs.
   for(const field of ['state','from','to','toolId','path','decision','permissionResult','permissionRuleId','permissionReason','result','exitCode','revision','errorCode']) {
     const value=payload[field]; if(typeof value!=='string' && typeof value!=='number' && typeof value!=='boolean') continue;
@@ -27,6 +36,42 @@ function activityView(row: Row): R3ActivityView {
 }
 export class SqliteDesktopProjectionStore implements DesktopProjectionStore {
   constructor(private readonly database: DatabaseSync,private readonly clock: Clock,private readonly ids: IdGenerator) {}
+  async recordContextAudit(requestId: Uuid, runId: Uuid, sources: readonly R4ContextAuditSource[]): Promise<void> {
+    const payload = r4ContextAuditSchema.parse({ schemaVersion: 1, sources, totalBytes: sources.reduce((sum, source) => sum + source.bytes, 0) });
+    transaction(this.database, () => {
+      const job = this.database.prepare('SELECT run_id FROM desktop_jobs WHERE request_id=?').get(uuidSchema.parse(requestId));
+      if (!job || job.run_id !== uuidSchema.parse(runId)) throw new Error('R3_CHAT_PROJECT_MISMATCH');
+      const existing = this.contextAuditEvent(runId);
+      if (existing) {
+        if (existing.payload_json !== JSON.stringify(payload)) throw new Error('R3_REQUEST_MISMATCH');
+        return;
+      }
+      insertEvent(this.database, validateEvent({
+        eventId: this.ids.next(), eventType: 'context.assembled', eventVersion: 1, correlationId: requestId,
+        occurredAt: this.clock.now(), source: 'core', sessionId: runId, payload
+      }));
+    });
+  }
+
+  private contextAuditEvent(runId: Uuid): Row | undefined {
+    return this.database.prepare("SELECT payload_json FROM events WHERE session_id=? AND event_type='context.assembled' AND json_extract(payload_json,'$.schemaVersion')=1 LIMIT 1").get(runId);
+  }
+
+  private contextAuditSummary(runId: Uuid | null): R4ContextAuditSummary | null {
+    const row = runId === null ? undefined : this.contextAuditEvent(runId);
+    if (!row) return null;
+    const audit = r4ContextAuditSchema.parse(parseJson(row.payload_json));
+    const bySource = new Map<R4ContextAuditSource['source'], R4ContextAuditSummary['sources'][number]>();
+    for (const item of audit.sources) {
+      const count = bySource.get(item.source) ?? { source: item.source, used: 0, omitted: 0, truncated: 0, reasons: [] };
+      if (item.status === 'omitted') count.omitted += 1;
+      else count.used += 1;
+      if (item.status === 'truncated') count.truncated += 1;
+      if (item.reason && !count.reasons.includes(item.reason) && count.reasons.length < 16) count.reasons.push(item.reason);
+      bySource.set(item.source, count);
+    }
+    return { totalBytes: audit.totalBytes, sources: [...bySource.values()] };
+  }
   private chat(chatId: Uuid): Row {const row=this.database.prepare('SELECT * FROM chats WHERE id=?').get(uuidSchema.parse(chatId)); if(!row)throw new Error('R3_NOT_FOUND');return row;}
   private job(chatId: Uuid,requestId: Uuid): Row {this.chat(chatId);const job=this.database.prepare('SELECT * FROM desktop_jobs WHERE request_id=?').get(uuidSchema.parse(requestId));if(!job)throw new Error('R3_NOT_FOUND');if(job.chat_id!==chatId)throw new Error('R3_CHAT_PROJECT_MISMATCH');return job;}
   private cursor(chatId: Uuid): number {return integer(this.database.prepare('SELECT cursor FROM chat_cursors WHERE chat_id=?').get(chatId)?.cursor??0);}
@@ -37,7 +82,7 @@ export class SqliteDesktopProjectionStore implements DesktopProjectionStore {
     return {items,beforeSequence:earliest && this.database.prepare('SELECT 1 FROM desktop_activity WHERE run_id=? AND sequence<? LIMIT 1').get(runId,earliest)?earliest:null};
   }
   private messagePage(chatId: Uuid,before: number|null): R3Message[] {
-    const messages=this.database.prepare('SELECT * FROM chat_messages WHERE chat_id=? AND (? IS NULL OR sequence<?) ORDER BY sequence DESC LIMIT 100').all(chatId,before,before).reverse().map(message);
+    const messages=this.database.prepare("SELECT m.*, json_extract(j.input_json, '$.references') AS references_json FROM chat_messages m LEFT JOIN desktop_jobs j ON j.message_id=m.id WHERE m.chat_id=? AND (? IS NULL OR m.sequence<?) ORDER BY m.sequence DESC LIMIT 100").all(chatId,before,before).reverse().map(message);
     while(messages.length>1 && Buffer.byteLength(JSON.stringify(messages))>768*1024)messages.shift();return messages;
   }
   private verification(run: R3RunView,available: boolean): R3VerificationView|null {
@@ -64,7 +109,7 @@ export class SqliteDesktopProjectionStore implements DesktopProjectionStore {
       return r3CommandViewSchema.parse({callId:row.call_id,executable:typeof command.executable==='string'?command.executable:'[redacted]',args:Array.isArray(command.args)?command.args:[],cwd:typeof command.cwd==='string'?command.cwd:'.',status:result.status??(row.state==='succeeded'?'succeeded':['failed','denied','timed_out','cancelled'].includes(text(row.state))?row.state==='denied'?'failed':row.state:'running'),exitCode:result.exitCode??null,durationMs:result.durationMs??null,treeStopped:result.treeStopped??null,stdoutTail:tail('stdout'),stderrTail:tail('stderr'),truncated,outputAvailable:output.length>0});
     }):[];
     while(commands.length>1&&Buffer.byteLength(JSON.stringify(commands))>384*1024)commands.shift();
-    return r3RunDetailSchema.parse({chatId,run,cursor:this.cursor(chatId),changes:set?{setId:set.id,entryCount:set.entry_count,recoveryRequired:set.state==='recovery_required'}:null,verification:this.verification(run,available),commands,activity:activity.items,beforeActivitySequence:activity.beforeSequence});
+    return r3RunDetailSchema.parse({chatId,run,cursor:this.cursor(chatId),changes:set?{setId:set.id,entryCount:set.entry_count,recoveryRequired:set.state==='recovery_required'}:null,verification:this.verification(run,available),commands,activity:activity.items,beforeActivitySequence:activity.beforeSequence,contextAudit:this.contextAuditSummary(run.runId)});
   }
   async snapshot(chatId: Uuid): Promise<R3Snapshot> {
     const owner=this.chat(chatId);const project=await new SqliteDesktopProjectStore(this.database,this.clock).get(text(owner.project_id));if(!project)throw new Error('R3_NOT_FOUND');
@@ -74,7 +119,7 @@ export class SqliteDesktopProjectionStore implements DesktopProjectionStore {
       const chat=this.chat(chatId),messages=this.messagePage(chatId,null),job=this.database.prepare("SELECT * FROM desktop_jobs WHERE chat_id=? ORDER BY CASE WHEN state IN ('queued','running','stopping') THEN 0 ELSE 1 END,created_at DESC,rowid DESC LIMIT 1").get(chatId);
       const detail=job?this.detail(chatId,job,project.available):null;
       const permissions=job?.run_id?this.database.prepare("SELECT p.* FROM permission_requests p JOIN tool_calls t ON t.call_id=p.call_id WHERE t.run_id=? AND p.state='pending' ORDER BY p.created_at,p.id").all(text(job.run_id)).map(row=>{const input=object(parseJson(row.safe_input_json));return permissionViewSchema.parse({id:row.id,callId:row.call_id,digest:row.digest,command:input.command,reason:input.reason,impact:input.impact,state:row.state});}):[];
-      const first=messages[0]?.sequence;const snapshot={project,chat:{id:chat.id,projectId:chat.project_id,title:chat.title,archived:chat.archived===1,createdAt:chat.created_at},cursor:this.cursor(chatId),messages,beforeMessageSequence:first&&this.database.prepare('SELECT 1 FROM chat_messages WHERE chat_id=? AND sequence<? LIMIT 1').get(chatId,first)?first:null,run:detail?.run??null,permissions,activity:detail?.activity??[],changes:detail?.changes??null,commands:detail?.commands??[],verification:detail?.verification??null,beforeActivitySequence:detail?.beforeActivitySequence??null};
+      const first=messages[0]?.sequence;const snapshot={project,chat:{id:chat.id,projectId:chat.project_id,title:chat.title,archived:chat.archived===1,createdAt:chat.created_at},cursor:this.cursor(chatId),messages,beforeMessageSequence:first&&this.database.prepare('SELECT 1 FROM chat_messages WHERE chat_id=? AND sequence<? LIMIT 1').get(chatId,first)?first:null,run:detail?.run??null,permissions,activity:detail?.activity??[],changes:detail?.changes??null,commands:detail?.commands??[],verification:detail?.verification??null,beforeActivitySequence:detail?.beforeActivitySequence??null,contextAudit:detail?.contextAudit??null};
       while(Buffer.byteLength(JSON.stringify(snapshot))>1024*1024&&snapshot.messages.length>1){snapshot.messages.shift();snapshot.beforeMessageSequence=snapshot.messages[0]?.sequence??null;}
       const result=r3SnapshotSchema.parse(snapshot);this.database.exec('COMMIT');return result;
     }catch(error){if(this.database.isTransaction)this.database.exec('ROLLBACK');throw error;}

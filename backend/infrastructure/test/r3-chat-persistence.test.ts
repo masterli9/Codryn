@@ -8,6 +8,7 @@ import { openR0Database, runMigrations, SqliteWorkspaceStore, migrations } from 
 import { SqliteChatStore } from '../src/persistence/sqlite-chat-store.js';
 import { SqliteDesktopRequestStore } from '../src/persistence/sqlite-desktop-request-store.js';
 import { SqliteDesktopProjectStore } from '../src/persistence/sqlite-desktop-project-store.js';
+import { SqliteDesktopProjectionStore } from '../src/persistence/sqlite-desktop-projection-store.js';
 import { openDesktopDatabase } from '../src/persistence/open-desktop-database.js';
 import type { ModelDescriptor, R3SubmitInput } from '@codryn/shared';
 const now = '2026-10-11T10:00:00Z';
@@ -40,6 +41,27 @@ it('rolls back the message and job together on a real SQLite failure', async () 
   await expect(f.requests.accept(f.input, f.projectId, model)).rejects.toThrow('injected');
   expect(f.db.prepare('SELECT count(*) AS n FROM desktop_jobs').get()?.n).toBe(0);
   expect(f.db.prepare('SELECT count(*) AS n FROM chat_messages').get()?.n).toBe(0);
+});
+it('restores reference metadata after reopening and includes it in request identity', async () => {
+  const f = await fixture();
+  const references = [{ path: 'src/app.ts', kind: 'file' as const, contentHash: 'a'.repeat(64), policyRevision: 'b'.repeat(64) }];
+  const input = { ...f.input, references };
+  const first = await f.requests.accept(input, f.projectId, model);
+  f.db.close();
+  const db = openR0Database(join(f.root, 'codryn.sqlite')); databases.push(db);
+  const requests = new SqliteDesktopRequestStore(db, clock, ids);
+  const projection = new SqliteDesktopProjectionStore(db, clock, ids);
+  expect((await requests.getByRequestId(input.requestId))?.input.references).toEqual(references);
+  expect((await projection.messages(input.chatId, null))[0]?.references).toEqual(references);
+  expect(await requests.accept(input, f.projectId, model)).toEqual({ ...first, duplicate: true });
+  await expect(requests.accept({ ...input, references: [] }, f.projectId, model)).rejects.toThrow('R3_REQUEST_MISMATCH');
+});
+it('projects an empty list for legacy messages and preserves their request identity', async () => {
+  const f = await fixture();
+  const first = await f.requests.accept(f.input, f.projectId, model);
+  const projection = new SqliteDesktopProjectionStore(f.db, clock, ids);
+  expect((await projection.messages(f.input.chatId, null))[0]?.references).toEqual([]);
+  expect(await f.requests.accept({ ...f.input, references: [] }, f.projectId, model)).toEqual({ ...first, duplicate: true });
 });
 it('preserves archived chats and immutable request metadata across reopen without replay', async () => {
   const f = await fixture(); const accepted = await f.requests.accept(f.input, f.projectId, model);

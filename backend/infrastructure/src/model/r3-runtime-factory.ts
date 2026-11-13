@@ -6,6 +6,7 @@ import { createR2Infrastructure } from '../create-r2-infrastructure.js';
 import { StreamRedactor } from '../logging/stream-redactor.js';
 import { createR3Provider } from './r3-provider-factory.js';
 import { safeProviderError } from './provider-connection-test.js';
+import { prepareDesktopContext } from '../context/prepare-desktop-context.js';
 export function createDesktopRuntimeFactory(options:R3InfrastructureResources&{userDataPath:string;nodeExecutable:string|null;providerFactory?:typeof createR3Provider}):DesktopRuntimeFactory {
   return async input=>{
     const root=await options.projects.root(input.projectId),abort=new AbortController(),signal=AbortSignal.any([input.signal,abort.signal]);
@@ -40,7 +41,8 @@ export function createDesktopRuntimeFactory(options:R3InfrastructureResources&{u
     };
     let runtime:Awaited<ReturnType<typeof createR2Infrastructure>>;
     try {
-      runtime=await createR2Infrastructure({userDataPath:options.userDataPath,projectRoot:root,database:options.database,model,workspaceObserver:await options.observer(input.projectId),workspaceStore:options.workspace,allowReadOnlyCompletion:true,onRunCreated:input.onRunCreated,
+      runtime=await createR2Infrastructure({userDataPath:options.userDataPath,projectRoot:root,database:options.database,model,workspaceObserver:{inspect:async signal=>(await options.observer(input.projectId)).inspect(signal)},workspaceStore:options.workspace,allowReadOnlyCompletion:true,onRunCreated:input.onRunCreated,
+        prepareContext:(runId,signal)=>prepareDesktopContext(options,input.request,input.projectId,root,runId,safe,signal),
         trustedVerificationExecutable:options.nodeExecutable??'__unavailable_node__',filesystemEffect:effect=>options.filesystemEffect(input.projectId,effect),safeModelText:safe,safeToolInput:args=>!keys.some(key=>JSON.stringify(args).includes(key)),
         onModelEvent:async({step,event})=>{if(event.type==='text_delta'){const stream=getStream(step);await stream.batcher.push(stream.redactor.push('model',event.text));}},
         onModelTurnCompleted:async({step})=>{const stream=streams.get(step);if(stream){await stream.batcher.push(stream.redactor.finish('model'));await stream.batcher.close('complete');await options.projections.sealAssistant(input.request.requestId,step,'complete');stream.sealed=true;}},

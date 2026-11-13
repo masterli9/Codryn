@@ -5,3 +5,77 @@
 .shell:not(.detail-open){grid-template-columns:240px minmax(0,1fr)}.shell:not(.detail-open)>.detail{display:none}
 @media(max-width:1099px){.shell{grid-template-columns:220px minmax(0,1fr);gap:12px;padding:12px}.detail{display:none}.detail-open .detail{display:flex;position:fixed;right:16px;top:16px;bottom:16px;width:min(420px,calc(100vw - 48px));z-index:2;box-shadow:0 12px 64px #0003}.workspace header{padding:16px 20px;align-items:flex-start}.messages{padding:20px}.header-actions button{font-size:12px;padding:6px 8px}.composer-wrap{padding:12px 20px 20px}.composer-footer .meta{font-size:12px}}
 @media(prefers-reduced-motion:reduce){*{scroll-behavior:auto;transition:none}}
+.project-references{display:flex;flex-wrap:wrap;gap:6px;list-style:none;margin:0 0 8px;padding:0;max-height:88px;overflow:auto}
+.project-references li{display:inline-flex;align-items:center;gap:2px;min-width:0;max-width:100%;padding:3px 8px;border:1px solid var(--border);border-radius:9px;font-size:13px;background:var(--panel)}
+.project-references li span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.project-references li button{min-height:26px;padding:0 5px}
+.reference-picker{margin:0 0 10px;padding:5px;border:1px solid var(--border);border-radius:12px;background:var(--panel)}
+.reference-picker ul{list-style:none;margin:0;padding:0;max-height:min(30vh,200px);overflow:auto}
+.reference-picker li{cursor:pointer;padding:5px 8px;border-radius:8px;font-size:13px;overflow-wrap:anywhere}
+.reference-picker li[aria-selected=true],.reference-picker li:hover{background:var(--soft);box-shadow:inset 2px 0 var(--focus)}
+.reference-picker li span{color:var(--muted);margin-right:8px}
+.reference-picker p{padding:0 8px}
+
+/* Compact workspace: more conversation and project context in the same window. */
+:root{font-size:14px;line-height:1.45}
+button{min-height:34px;padding:6px 10px;border-radius:9px;gap:6px}
+input,select{padding:7px 10px;border-radius:9px}
+.icon{width:18px;height:18px}
+.shell{height:100dvh;grid-template-columns:208px minmax(0,1fr) 304px;gap:10px;padding:10px}
+.shell:not(.detail-open){grid-template-columns:208px minmax(0,1fr)}
+.sidebar{padding:8px 4px;gap:14px}
+.brand{font-size:22px;letter-spacing:-.7px;gap:8px}
+.brand .icon{width:24px;height:24px}
+.sidebar h2{font-size:12px;margin:0 0 5px 8px}
+.project{padding:9px 10px;border-radius:11px;margin-top:8px}
+.meta{font-size:12px}
+.chat-navigation nav{gap:2px}
+.chat-navigation nav button{font-size:13px;min-height:32px;padding:5px 8px}
+.theme-label{font-size:12px}
+.theme-label select{padding:4px 7px;font-size:12px}
+.workspace,.detail{border-radius:16px}
+.workspace header{padding:10px 16px;gap:10px}
+.workspace header h1{font-size:17px;letter-spacing:-.2px}
+.header-actions{gap:2px;font-size:12px}
+.header-actions button{min-height:32px;padding:5px 8px;font-size:12px}
+.messages{padding:14px 18px}
+.thread{max-width:840px}
+.message{margin:14px 0}
+.message.user{padding:10px 14px;border-radius:14px 14px 4px 14px}
+.message-meta{gap:8px}
+.message-meta button{min-height:26px;padding:2px 5px}
+.activity-strip{gap:4px 10px;font-size:12px;margin:14px 0;padding-left:9px}
+.permission{padding:13px 14px;border-radius:13px;margin-top:14px}
+.permission h2{font-size:14px;margin-bottom:6px}
+.permission p{font-size:13px}
+.permission pre{font-size:12px}
+.actions{gap:6px;margin-top:10px}
+.composer-wrap{padding:8px 16px 12px;max-width:880px}
+.composer{padding:9px 11px;border-radius:14px}
+textarea{min-height:40px;max-height:128px}
+.composer-footer{gap:8px;font-size:12px}
+.composer-footer .primary{min-height:32px}
+.hint{font-size:11px;margin:4px 0 0}
+.detail{padding:15px;gap:15px}
+.detail h2{font-size:16px}
+.detail h3,.detail h4{font-size:13px}
+.detail p,.pair{font-size:13px}
+.status{font-size:12px;padding:6px 9px;border-radius:9px}
+pre{font-size:12px;line-height:1.55;padding:10px;border-radius:9px}
+.pair{padding:4px 0}
+.banner{padding:8px 16px;font-size:13px}
+.empty{margin:8vh auto}
+.empty h2{font-size:23px}
+dialog{border-radius:16px;padding:18px}
+dialog h2{font-size:19px}
+
+@media(max-width:1099px){
+  .shell{grid-template-columns:184px minmax(0,1fr);gap:10px;padding:10px}
+  .shell:not(.detail-open){grid-template-columns:184px minmax(0,1fr)}
+  .sidebar{padding:7px 3px;gap:12px}
+  .workspace header{padding:9px 14px;gap:8px}
+  .messages{padding:12px 14px}
+  .composer-wrap{padding:8px 12px 10px}
+  .header-actions button{font-size:11px;padding:4px 6px}
+  .detail-open .detail{right:10px;top:10px;bottom:10px;width:min(360px,calc(100vw - 24px))}
+}

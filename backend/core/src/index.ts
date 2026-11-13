@@ -52,7 +52,7 @@ export type {
 export { R1PersistenceFailure } from './agent/model.js';
 export type { AgentRunRecord, ToolCallRecord, AssembledContext, ContextSourceAudit } from './agent/model.js';
 export type { AgentRunStore, ModelAdapter, PermissionResponder, ToolCallBinding, ToolCallStore, ToolExecutionContext } from './agent/ports.js';
-export { ContextAssembler, ContextAssemblyFailure } from './agent/context-assembler.js';
+export { ContextAssembler, ContextAssemblyFailure, assembleR4Context } from './agent/context-assembler.js';
 export type { ContextAssemblyInput } from './agent/context-assembler.js';
 export { ToolRegistry, ToolRegistryFailure } from './tools/tool-registry.js';
 export type { ToolDefinition, ToolRisk } from './tools/tool-registry.js';

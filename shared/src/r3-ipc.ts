@@ -7,6 +7,7 @@ import { r3ProviderSettingsSchema } from './r3-settings.js';
 import { r3ActivityViewSchema, r3ChangeViewSchema, r3OutputPageSchema, r3RevertInputSchema, r3RevertResultSchema } from './r3-changes.js';
 import { permissionDecisionInputSchema } from './r2-permission.js';
 import { r4RepoMapStatusSchema } from './r4-repo-map.js';
+import { r4ReferenceSchema, r4ReferencePermitInputSchema, r4ReferenceSearchPageSchema, r4ReferenceSearchSchema } from './r4-context.js';
 const request = { requestId: uuidSchema };
 const chat = { ...request, chatId: uuidSchema };
 const owned = { ...chat, projectId: uuidSchema };
@@ -16,6 +17,8 @@ export const r3IpcRequestSchema = z.discriminatedUnion('operation', [
   operation('project.open', {}), operation('project.list', {}),
   operation('context.map.activate', { projectId: uuidSchema }), operation('context.map.status', { projectId: uuidSchema }),
   operation('context.map.init', { projectId: uuidSchema }), operation('context.map.cancel', { projectId: uuidSchema }),
+  operation('context.reference.search', { ...owned, ...r4ReferenceSearchSchema.shape }),
+  operation('context.reference.permit', { ...owned, ...r4ReferencePermitInputSchema.shape }),
   operation('chat.create', { projectId: uuidSchema, title: r3TitleSchema }), operation('chat.list', { projectId: uuidSchema, archived: z.boolean() }),
   operation('chat.rename', { ...owned, title: r3TitleSchema }), operation('chat.archive', owned), operation('chat.snapshot', chat), operation('chat.history', { ...chat, beforeSequence: before }),
   operation('run.active', {}), operation('run.submit', r3SubmitInputSchema.shape), operation('run.stop', { ...owned, jobId: uuidSchema }), operation('run.inspect', { ...chat, targetRequestId: uuidSchema }), operation('run.activity', { ...chat, targetRequestId: uuidSchema, beforeSequence: before }),
@@ -31,6 +34,8 @@ export const r3ResponseSchemas = {
   'project.open': response(z.union([z.object({ cancelled: z.literal(true) }).strict(), r3ProjectSchema])), 'project.list': response(z.array(r3ProjectSchema)),
   'context.map.activate': response(r4RepoMapStatusSchema), 'context.map.status': response(r4RepoMapStatusSchema),
   'context.map.init': response(r4RepoMapStatusSchema), 'context.map.cancel': response(r4RepoMapStatusSchema),
+  'context.reference.search': response(r4ReferenceSearchPageSchema),
+  'context.reference.permit': response(r4ReferenceSchema),
   'chat.create': response(r3ChatSchema), 'chat.list': response(z.array(r3ChatSchema)), 'chat.rename': response(r3ChatSchema), 'chat.archive': response(z.object({ archived: z.literal(true) }).strict()), 'chat.snapshot': response(r3SnapshotSchema), 'chat.history': response(z.object({ messages: z.array(r3MessageSchema).max(100), beforeMessageSequence: before }).strict().refine(pageLimit)),
   'run.submit': response(r3AcceptedSchema), 'run.stop': response(z.object({ status: z.enum(['requested', 'already_terminal']) }).strict()), 'run.inspect': response(r3RunDetailSchema), 'run.activity': response(z.object({ items: z.array(r3ActivityViewSchema).max(100), beforeSequence: before }).strict().refine(pageLimit)),
   'permission.answer': response(z.object({ status: z.enum(['accepted', 'duplicate', 'rejected']) }).strict()), 'changes.diff': response(r3ChangeViewSchema), 'changes.revert': response(r3RevertResultSchema), 'command.output': response(r3OutputPageSchema),
