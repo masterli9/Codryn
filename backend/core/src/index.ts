@@ -145,3 +145,4 @@ export type { SecretProtector, SecretStore, ProviderSettingsStore, ProviderAcces
 export { assessProjectChecks, isProjectCheckInput, sameCheckInputs } from './verification/project-check-policy.js';
 export type { ClassifiedCheck } from './verification/verify-command.js';
 export type { ProfiledVerificationRecord, VerificationCoverage } from './verification/verification-store.js';
+export { typescriptQueryTool } from './tools/typescript-query-tool.js';
