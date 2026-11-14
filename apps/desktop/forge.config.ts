@@ -9,7 +9,7 @@ import rendererConfig from './webpack.renderer.config.js';
 const config: ForgeConfig = {
   packagerConfig: {
     asar: {
-      unpack: '{*.ps1,*.cs,repo-map-worker.js}'
+      unpack: '{*.ps1,*.cs,repo-map-worker.js,typescript-query-worker.js}'
     },
     name: 'Codryn',
     executableName: 'Codryn',
@@ -17,6 +17,7 @@ const config: ForgeConfig = {
       path.resolve(__dirname, '../../tests/support/fixtures/process'),
       path.resolve(__dirname, '../../tests/support/fixtures/r2-project'),
       path.resolve(__dirname, '../../node_modules/typescript'),
+      path.resolve(__dirname, '../../tests/support/fixtures/r4-ts-queries'),
       path.resolve(__dirname, 'src/renderer/assets/instrument-sans-license.txt')
     ]
   },

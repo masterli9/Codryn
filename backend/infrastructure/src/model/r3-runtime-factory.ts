@@ -10,7 +10,8 @@ import { prepareDesktopContext } from '../context/prepare-desktop-context.js';
 import { SqliteConversationReader } from '../persistence/sqlite-conversation-reader.js';
 import { inspectProjectChecks } from '../typescript/project-check-discovery.js';
 import { createProjectCheckClassifier } from '../typescript/project-check-classifier.js';
-export function createDesktopRuntimeFactory(options:R3InfrastructureResources&{userDataPath:string;nodeExecutable:string|null;typescriptCli?:string;providerFactory?:typeof createR3Provider}):DesktopRuntimeFactory {
+import type { TypeScriptQueryRunner } from '../typescript/typescript-query-client.js';
+export function createDesktopRuntimeFactory(options:R3InfrastructureResources&{userDataPath:string;nodeExecutable:string|null;typescriptCli?:string;typescriptQueries?:TypeScriptQueryRunner;providerFactory?:typeof createR3Provider}):DesktopRuntimeFactory {
   return async input=>{
     const root=await options.projects.root(input.projectId),abort=new AbortController(),signal=AbortSignal.any([input.signal,abort.signal]);
     const keys:string[]=[];
@@ -53,6 +54,7 @@ export function createDesktopRuntimeFactory(options:R3InfrastructureResources&{u
         priorConversation,
         projectChecks:projectChecks.catalog,
         classifyCheck:createProjectCheckClassifier(root,projectChecks,options.nodeExecutable,options.typescriptCli),
+        ...(options.typescriptQueries ? { typescriptQueries: options.typescriptQueries } : {}),
         prepareContext:(runId,signal)=>prepareDesktopContext(options,input.request,input.projectId,root,runId,safe,signal,priorConversation),
         trustedVerificationExecutable:options.nodeExecutable??'__unavailable_node__',filesystemEffect:effect=>options.filesystemEffect(input.projectId,effect),safeModelText:safe,safeToolInput:args=>!keys.some(key=>JSON.stringify(args).includes(key)),
         onModelEvent:async({step,event})=>{if(event.type==='text_delta'){const stream=getStream(step);await stream.batcher.push(stream.redactor.push('model',event.text));}},

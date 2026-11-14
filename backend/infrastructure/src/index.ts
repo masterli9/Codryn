@@ -78,3 +78,5 @@ export type { R3Infrastructure,R3InfrastructureResources } from './create-r3-inf
 export { SqliteOwnedCommandStore } from './persistence/sqlite-owned-command-store.js';
 export { assertR3ProfileRoot } from './filesystem/r3-profile-boundary.js';
 export { runRepoMapWorker } from './context/repo-map-builder.js';
+export { TypeScriptQueryClient } from './typescript/typescript-query-client.js';
+export type { TypeScriptQueryRunner } from './typescript/typescript-query-client.js';

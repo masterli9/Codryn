@@ -23,6 +23,9 @@ import { R2CommandRunner } from './process/r2-command-runner.js';
 import { VerifyingCommandExecutor } from './process/verifying-command-executor.js';
 import type { VerifyingCommandExecutorDependencies } from './process/verifying-command-executor.js';
 import { assessCurrentProjectChecks, currentCheckInputs } from './typescript/current-project-checks.js';
+import { typescriptQueryTool } from '@codryn/core';
+import { freshTypeScriptQuery } from './typescript/fresh-typescript-query.js';
+import type { TypeScriptQueryRunner } from './typescript/typescript-query-client.js';
 import { ScriptedModelAdapter } from './model/scripted-model-adapter.js';
 import { changeVerifyReturnScenario } from './model/change-verify-return-scenario.js';
 import { openR0Database } from './persistence/open-database.js';
@@ -82,6 +85,7 @@ export async function createR2Infrastructure(options: {
   readonly priorConversation?: R2ExecutionOptions['priorConversation'];
   readonly projectChecks?: R2ExecutionOptions['projectChecks'];
   readonly classifyCheck?: NonNullable<VerifyingCommandExecutorDependencies['classify']>;
+  readonly typescriptQueries?: TypeScriptQueryRunner;
   readonly allowReadOnlyCompletion?: boolean;
   readonly onModelEvent?: R2ExecutionOptions['onModelEvent'];
   readonly onModelTurnCompleted?: R2ExecutionOptions['onModelTurnCompleted'];
@@ -205,7 +209,9 @@ export async function createR2Infrastructure(options: {
         if (result.status === 'applied' && options.onPatch !== undefined) await options.onPatch(result.entry.path);
         return result;
       } }),
-      commandRunTool(verifyingCommand)
+      commandRunTool(verifyingCommand),
+      ...(options.typescriptQueries ? [typescriptQueryTool(freshTypeScriptQuery(canonicalRoot, options.typescriptQueries,
+        async signal => workspaces.observe(projectId, await observer.inspect(signal))))] : [])
     ]);
     const permissionStore = new SqlitePermissionStore(database, clock, ids);
     const permissions = new PermissionService({ store: permissionStore, calls: toolCalls, ids, clock, digest });

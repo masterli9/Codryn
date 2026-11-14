@@ -22,6 +22,8 @@
     "package": "node scripts/package-r3.mjs",
     "test:r3-desktop": "node scripts/verify-r3-desktop.mjs",
     "test:r3-packaged": "node scripts/verify-packaged-r3.mjs",
+    "test:r4-typescript-packaged": "node scripts/verify-packaged-r4-typescript.mjs",
+    "eval:r4-typescript": "node scripts/eval-r4-typescript.mjs",
     "verify:r3": "node scripts/verify-r3.mjs",
     "make": "npm run make --workspace @codryn/desktop",
     "verify:r0": "node scripts/verify-r0.mjs",

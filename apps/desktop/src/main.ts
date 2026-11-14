@@ -14,6 +14,7 @@ import { runR0Smoke } from './smoke/run-r0-smoke.js';
 import { runR2Smoke } from './smoke/run-r2-smoke.js';
 import { runR3Smoke,r3SmokePhases } from './smoke/run-r3-smoke.js';
 import type { R3SmokePhase } from './smoke/run-r3-smoke.js';
+import { runR4TypeScriptSmoke } from './smoke/run-r4-typescript-smoke.js';
 
 let mainWindow: BrowserWindow | undefined;
 let applicationServices: ApplicationServices | undefined;
@@ -80,7 +81,8 @@ const r0SmokeMode = process.argv.includes('--r0-smoke');
 const r2SmokeMode = process.argv.includes('--r2-smoke');
 const r3SmokeMode=process.argv.includes('--r3-smoke');
 const r3Phase=process.argv.find(value=>value.startsWith('--r3-phase='))?.slice('--r3-phase='.length);
-const smokeMode = r0SmokeMode || r2SmokeMode||r3SmokeMode;
+const r4TypeScriptSmokeMode = process.argv.includes('--r4-ts-smoke');
+const smokeMode = r0SmokeMode || r2SmokeMode || r3SmokeMode || r4TypeScriptSmokeMode;
 const testProfileArgument=process.argv.find(value=>value.startsWith('--r3-test-profile='));
 const testProfile=testProfileArgument?.slice('--r3-test-profile='.length);
 const testScenario=process.argv.find(value=>value.startsWith('--r3-test-scenario='))?.slice('--r3-test-scenario='.length);
@@ -94,15 +96,15 @@ if (smokeMode) {
   app.commandLine.appendSwitch('use-gl', 'swiftshader');
   app.commandLine.appendSwitch('disable-gpu-sandbox');
 }
-const userDataPrefix = r3SmokeMode?'--r3-user-data-dir=':r2SmokeMode ? '--r2-user-data-dir=' : '--r0-user-data-dir=';
+const userDataPrefix = r4TypeScriptSmokeMode ? '--r4-ts-user-data-dir=' : r3SmokeMode ? '--r3-user-data-dir=' : r2SmokeMode ? '--r2-user-data-dir=' : '--r0-user-data-dir=';
 const userDataArgument = process.argv.find((argument) => argument.startsWith(userDataPrefix));
-const anyUserDataArgument = process.argv.find((argument) => argument.startsWith('--r0-user-data-dir=') || argument.startsWith('--r2-user-data-dir=')||argument.startsWith('--r3-user-data-dir='));
+const anyUserDataArgument = process.argv.find((argument) => argument.startsWith('--r0-user-data-dir=') || argument.startsWith('--r2-user-data-dir=') || argument.startsWith('--r3-user-data-dir=') || argument.startsWith('--r4-ts-user-data-dir='));
 const r2NodeExecutableArgument = process.argv.find((argument) => argument.startsWith('--r2-node-executable='));
 const r2NodeExecutable = r2NodeExecutableArgument?.slice('--r2-node-executable='.length);
 const smokeUserDataPath = userDataArgument?.slice(userDataPrefix.length);
-const r3SmokeProfileValid = !r3SmokeMode || (()=>{try{assertR3ProfileRoot(path.resolve(process.cwd(),'.r3-artifacts'),smokeUserDataPath??'');return true;}catch{return false;}})();
+const r3SmokeProfileValid = (!r3SmokeMode && !r4TypeScriptSmokeMode) || (()=>{try{assertR3ProfileRoot(path.resolve(process.cwd(),'.r3-artifacts'),smokeUserDataPath??'');return true;}catch{return false;}})();
 const smokeArgumentsValid = !smokeMode || (
-  smokeUserDataPath !== undefined && path.isAbsolute(smokeUserDataPath) && [r0SmokeMode,r2SmokeMode,r3SmokeMode].filter(Boolean).length===1 && (!r3SmokeMode||(r3Phase!==undefined&&r3SmokePhases.includes(r3Phase as R3SmokePhase))) &&
+  smokeUserDataPath !== undefined && path.isAbsolute(smokeUserDataPath) && [r0SmokeMode,r2SmokeMode,r3SmokeMode,r4TypeScriptSmokeMode].filter(Boolean).length===1 && (!r3SmokeMode||(r3Phase!==undefined&&r3SmokePhases.includes(r3Phase as R3SmokePhase))) &&
   r3SmokeProfileValid && (r2NodeExecutable === undefined || path.isAbsolute(r2NodeExecutable))
 );
 
@@ -122,6 +124,11 @@ if (anyUserDataArgument !== undefined && !smokeMode) {
   void app.whenReady().then(async () => {
     try {
       const fixtureDirectory = resolveFixtureDirectory(app.isPackaged);
+      if (r4TypeScriptSmokeMode && smokeUserDataPath) {
+        if (!app.isPackaged) { app.exit(1); return; }
+        const passed = await runR4TypeScriptSmoke(smokeUserDataPath, path.join(process.resourcesPath, 'r4-ts-queries'), process.resourcesPath);
+        app.exit(passed ? 0 : 1); return;
+      }
       if(r3SmokeMode&&smokeUserDataPath&&r3Phase){const report=await runR3Smoke(smokeUserDataPath,resolveR2FixtureDirectory(app.isPackaged),r3Phase as R3SmokePhase);app.exit(report.passed?0:1);return;}
       if (r0SmokeMode) {
         requireFixtures(fixtureDirectory);
