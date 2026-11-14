@@ -24,3 +24,11 @@ Pro `AC-O1-13` vznikla pevná sada 20 dotazů v commitu `185337d`, před měřen
 Samostatně evidovaný průchod během souběžných kontrol skončil 17/20. Dva dotazy na definici překročily pětisekundový limit pracovního vlákna a vrátily omezený výsledek. Třetí neshodou byl stejný reexport. Limit zůstal zachován. [Protokol souběžného průchodu](evals/r4-ts-queries-report-concurrent.json)
 
 Cílená sada kontraktů, hostu, workeru a runtime prošla 19/19. Dva testy vyhodnocovače prošly 2/2. Úplná sada před opravou čtení archivu pouze v ověřovacím režimu prošla se 754 úspěšnými a dvěma přeskočenými testy. Obsahovala ověření zabalených R0 a R2.
+
+Po opravě čtení archivu prošly kontrola typů, lint i kontrola hranic závislostí. Na stejném finálním balíčku prošel přímý ověřovací scénář strukturního workeru, všech osm fází R3 a oba cílené testy zabaleného R2 a R4. Worker v zabalené aplikaci našel deklaraci funkce `duplicate` na `src/math.ts:1:17`. Lokální protokoly jsou v `.r3-artifacts/r4-ts-worker-GnALeD/r4-typescript-worker-smoke.json` a `.r3-artifacts/packaged-iKpzMc/r3-report.json`. Binární balíček zůstal lokální.
+
+Otisky SHA-256 finálního balíčku
+
+- Zdroj `91e5ed6999e80804cdc3bf7566c921a38b1739bdde0c02cb7fea3cf6f95b8e69`
+- Archiv ASAR `58b599a1251bc4bd09397e9021a2287f70e407e4aea8851302c275da4d5d2279`
+- Worker `9830cdd07335b07f314f311bc946990e17834fc68f981beec6ffa4ca0a810d19`
