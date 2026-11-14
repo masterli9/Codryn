@@ -34,7 +34,14 @@ function functionTools(request: ModelRequest): unknown[] {
 }
 
 function inputItems(request: ModelRequest, externalByInternal: ReadonlyMap<string, string>, tools: ReadonlyMap<string, ModelToolDefinition>): unknown[] {
-  const items: unknown[] = [{ role: 'user', content: [{ type: 'input_text', text: request.task }] }];
+  const items: unknown[] = [];
+  if (request.priorConversation?.length) {
+    items.push({ role: 'developer', content: [{ type: 'input_text', text: 'Previous chat messages describe past work. Re-read project files before relying on their contents.' }] });
+    for (const message of request.priorConversation) {
+      items.push({ role: message.role, content: [{ type: message.role === 'assistant' ? 'output_text' : 'input_text', text: message.text }] });
+    }
+  }
+  items.push({ role: 'user', content: [{ type: 'input_text', text: request.task }] });
   for (const source of request.context) items.push({ role: 'user', content: [{ type: 'input_text', text: `${describeModelContext(source)}:\n${source.content}` }] });
   for (const turn of request.history ?? []) {
     if (turn.kind === 'assistant') {

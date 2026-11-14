@@ -4,6 +4,7 @@ import { GeminiAdapter, OpenAIResponsesAdapter, ProviderAdapterError } from '../
 import { ProviderHttpError } from '../src/model/provider-transport.js';
 import type { ProviderTransport } from '../src/model/provider-transport.js';
 import { externalToolMap } from '../src/model/provider-tool-names.js';
+import { modelRequestSchema } from '@codryn/shared';
 import type { ModelRequest } from '@codryn/shared';
 
 const ids = (() => {
@@ -23,6 +24,16 @@ const request: ModelRequest = {
   runId: '93333333-3333-4333-8333-333333333333', task: 'Read the fixture.', project: { id: 'project' }, context: [],
   tools: [{ toolId: 'file.read', toolVersion: 1, description: 'Read a file.', inputSchema: { type: 'object' } }], previousToolResults: []
 };
+
+it('bounds prior conversation independently of tool history in the model contract', () => {
+  const pair = [{ role: 'user', text: 'ě'.repeat(16_383) }, { role: 'assistant', text: 'ok' }];
+  expect(modelRequestSchema.safeParse(request).success).toBe(true);
+  expect(modelRequestSchema.safeParse({ ...request, priorConversation: pair }).success).toBe(true);
+  expect(modelRequestSchema.safeParse({ ...request, priorConversation: [...pair, ...pair] }).success).toBe(false);
+  expect(modelRequestSchema.safeParse({ ...request, priorConversation: [...pair].reverse() }).success).toBe(false);
+  const tooMany = Array.from({ length: 9 }, () => [{ role: 'user', text: 'x' }, { role: 'assistant', text: 'y' }]).flat();
+  expect(modelRequestSchema.safeParse({ ...request, priorConversation: tooMany }).success).toBe(false);
+});
 
 async function* failingStream(error: unknown): AsyncGenerator<unknown> {
   yield await Promise.reject(error);
@@ -73,10 +84,26 @@ describe('R2 provider adapters', () => {
     const firstCall = first.calls[0];
     if (firstCall === undefined) throw new Error('Expected one call');
     expect(firstCall.toolId).toBe('file.read');
-    const nextRequest: ModelRequest = { ...request, history: [{ kind: 'assistant', text: '', calls: [...first.calls] }, { kind: 'tool', result: { ok: true, callId: firstCall.callId, output: { content: 'safe' } } }] };
+    const nextRequest: ModelRequest = {
+      ...request,
+      context: [{ path: 'README.md', content: 'current file contents', contentHash: 'a'.repeat(64), byteLength: 21, reason: 'loaded_excerpt' }],
+      priorConversation: [{ role: 'user', text: 'What did the file say?' }, { role: 'assistant', text: 'The file used to say 33.' }],
+      history: [{ kind: 'assistant', text: '', calls: [...first.calls] }, { kind: 'tool', result: { ok: true, callId: firstCall.callId, output: { content: 'safe' } } }]
+    };
     await expect(collectModelResponse(adapter.stream(nextRequest, new AbortController().signal), new AbortController().signal)).resolves.toMatchObject({ kind: 'final', text: 'done' });
     expect(JSON.stringify(sent[0])).not.toContain('TEST_SECRET_CANARY');
-    expect(JSON.stringify(sent[1])).toContain('call-1');
+    expect(sent[1]).toMatchObject({
+      store: false,
+      input: [
+        { role: 'developer', content: [{ type: 'input_text', text: 'Previous chat messages describe past work. Re-read project files before relying on their contents.' }] },
+        { role: 'user', content: [{ type: 'input_text', text: 'What did the file say?' }] },
+        { role: 'assistant', content: [{ type: 'output_text', text: 'The file used to say 33.' }] },
+        { role: 'user', content: [{ type: 'input_text', text: 'Read the fixture.' }] },
+        { role: 'user', content: [{ type: 'input_text', text: expect.stringContaining('current file contents') }] },
+        { type: 'function_call', call_id: 'call-1' },
+        { type: 'function_call_output', call_id: 'call-1' }
+      ]
+    });
   });
 
   it('maps Gemini functionCall and sends a functionResponse on the next turn', async () => {
