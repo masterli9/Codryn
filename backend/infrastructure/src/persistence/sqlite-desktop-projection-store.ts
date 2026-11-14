@@ -1,4 +1,5 @@
 import type { DatabaseSync, SQLOutputValue } from 'node:sqlite';
+import { conversationContextEventSchema } from '@codryn/shared';
 import type { Clock, DesktopProjectionStore, IdGenerator } from '@codryn/core';
 import { permissionViewSchema, r3ActivityViewSchema, r3CommandViewSchema, r3MessageSchema, r3OutputPageSchema, r3ProviderErrorSchema, r3RunDetailSchema, r3RunViewSchema, r3SnapshotSchema, r3UpdateSchema, r4ContextAuditSchema, verificationRecordSchema, uuidSchema } from '@codryn/shared';
 import type { R3ActivityView, R3Message, R3OutputPage, R3RunDetail, R3RunView, R3Snapshot, R3Update, R3VerificationView, R4ContextAuditSource, R4ContextAuditSummary, Uuid } from '@codryn/shared';
@@ -19,6 +20,19 @@ const summaries: Record<string,string>={'agent_run.created':'Běh založen','age
 function activityView(row: Row): R3ActivityView {
   const payload=object(parseJson(row.payload_json)), type=text(row.event_type);
   const details:{label:string;value:string}[]=[]; let detailsTruncated=false;
+  if (type === 'conversation.context_selected') {
+    const selection = conversationContextEventSchema.safeParse(payload);
+    let summary = 'Historii chatu se nepodařilo zobrazit';
+    if (selection.success) {
+      const { messageCount, truncated, reason } = selection.data;
+      const messages = messageCount === 2 || messageCount === 4 ? 'předchozí zprávy' : 'předchozích zpráv';
+      if (reason === 'oversized_latest') summary = 'Historie nebyla použita · poslední výměna překračuje limit';
+      else if (messageCount === 0) summary = 'Bez předchozích dokončených výměn';
+      else summary = `Navázáno na ${messageCount} ${messages}${truncated ? ' · starší historie zkrácena' : ''}`;
+      details.push({ label: 'messageCount', value: String(messageCount) }, { label: 'truncated', value: String(truncated) }, { label: 'reason', value: reason });
+    }
+    return r3ActivityViewSchema.parse({eventId:row.event_id,sequence:row.activity_sequence,runId:row.run_id,type,occurredAt:row.occurred_at,callId:null,summary,details,detailsTruncated});
+  }
   if (type === 'context.assembled') {
     const audit = r4ContextAuditSchema.safeParse(payload);
     if (audit.success) {

@@ -3,6 +3,10 @@ import { act,cleanup,fireEvent,render,screen,waitFor } from '@testing-library/re
 import { afterEach,expect,it,vi } from 'vitest';
 import { Composer } from '../src/renderer/components/composer.js';
 afterEach(cleanup);
+it('explains that a new task continues the current chat', () => {
+  render(<Composer chatId="a" busy={false} archived={false} send={vi.fn()} />);
+  expect(screen.getByText(/Nové zadání navazuje na tento chat/)).toBeTruthy();
+});
 it('keeps the draft on rejected send and preserves IME and Shift+Enter',async()=>{
   const send=vi.fn(async()=>{throw new Error('Projekt je zaneprázdněný.');});render(<Composer chatId="a" busy={false} archived={false} send={send}/>);
   const text=screen.getByRole('textbox',{name:'Zadání úkolu'});fireEvent.change(text,{target:{value:'Oprav součet'}});fireEvent.keyDown(text,{key:'Enter',shiftKey:true});fireEvent.keyDown(text,{key:'Enter',isComposing:true});expect(send).not.toHaveBeenCalled();

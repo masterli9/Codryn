@@ -8,6 +8,7 @@ import { ControlledPermissionPolicy,fileReadTool,ToolExecutionHarness,ToolRegist
 import { SqliteDesktopProjectionStore } from '../src/persistence/sqlite-desktop-projection-store.js';
 import { SqliteDesktopActionStore } from '../src/persistence/sqlite-desktop-action-store.js';
 import { SqliteOwnedCommandStore } from '../src/persistence/sqlite-owned-command-store.js';
+import { SqliteEventStore } from '../src/persistence/sqlite-event-store.js';
 import type { ModelDescriptor, R3SubmitInput } from '@codryn/shared';
 const now = '2026-10-11T10:00:00Z', clock = { now: () => now }, ids = { next: () => randomUUID() };
 const model: ModelDescriptor = { adapterId: 'demo', modelId: 'demo', capabilities: { streaming: 'supported', toolCalling: 'supported', structuredOutput: 'unsupported', imageInput: 'unsupported', usageMetadata: 'unknown', contextLimit: 'unknown', compaction: 'unsupported' } };
@@ -49,6 +50,24 @@ it('shows the automatic permission decision and reason produced by a real file r
   expect(activity).toMatchObject({summary:'Rozhodnutí o oprávnění',detailsTruncated:false});
   expect(activity?.details).toEqual(expect.arrayContaining([{label:'permissionResult',value:'allowed_by_rule'},{label:'permissionRuleId',value:'R1_SAFE_READ_WITHIN_PROJECT'},{label:'permissionReason',value:'Validated read-only path is within the open project.'}]));
   expect(JSON.stringify(activity)).not.toContain('Private fixture content');expect(Buffer.byteLength(JSON.stringify(activity?.details))).toBeLessThanOrEqual(4096);
+});
+it('shows whether prior conversation was used, shortened or too large without projecting message IDs', async () => {
+  const f = await fixture(), events = new SqliteEventStore(f.db);
+  for (const [summary, reason] of [
+    ['Navázáno na 2 předchozí zprávy', 'none'],
+    ['Navázáno na 2 předchozí zprávy · starší historie zkrácena', 'byte_limit'],
+    ['Historie nebyla použita · poslední výměna překračuje limit', 'oversized_latest']
+  ] as const) {
+    const messageIds = reason === 'oversized_latest' ? [] : [randomUUID(), randomUUID()];
+    const eventId = randomUUID();
+    await events.append({ eventId, eventType: 'conversation.context_selected', eventVersion: 1, correlationId: f.input.requestId,
+      occurredAt: now, source: 'core', sessionId: f.runId, payload: {
+        messageIds, messageCount: messageIds.length, byteLength: messageIds.length ? 80 : 0, truncated: reason !== 'none', reason
+      } });
+    const item = (await f.projection.activity(f.chat.id, f.input.requestId, null)).items.find(value => value.eventId === eventId);
+    expect(item).toMatchObject({ summary });
+    for (const id of messageIds) expect(JSON.stringify(item)).not.toContain(id);
+  }
 });
 it('rolls back a source event and its cursor together and isolates chat cursors', async () => {
   const f = await fixture(); const second = await f.chats.create(f.projectId, 'Other');

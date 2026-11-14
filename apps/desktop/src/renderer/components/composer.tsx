@@ -201,7 +201,7 @@ export function Composer({ chatId, busy, archived, send, retryDraft, searchRefer
           }}>×</button>
         </li>)}
       </ul>}
-      <textarea ref={input} aria-label="Zadání úkolu" placeholder="Zadejte nový samostatný úkol…" maxLength={16384} value={draft.text}
+      <textarea ref={input} aria-label="Zadání úkolu" placeholder="Zadejte úkol…" maxLength={16384} value={draft.text}
         disabled={archived || sending || authorizing} aria-autocomplete={searchReferences ? 'list' : undefined}
         aria-controls={picker ? listId : undefined} aria-activedescendant={picker && items[active] ? `${listId}-${active}` : undefined}
         onChange={event => {
@@ -250,6 +250,6 @@ export function Composer({ chatId, busy, archived, send, retryDraft, searchRefer
       </div>
     </form>
     {error && <p role="alert" className="error">{error}</p>}
-    <p className="hint">Nový úkol začíná samostatně. Starší zprávy zůstávají v historii.</p>
+    <p className="hint">Nové zadání navazuje na tento chat s omezenou historií dokončených výměn.</p>
   </footer>;
 }

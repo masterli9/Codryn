@@ -7,6 +7,71 @@ import { createR2Project } from '@codryn/test-support';
 import { createR3Infrastructure } from '../src/create-r3-infrastructure.js';
 import { createDesktopRuntimeFactory } from '../src/model/r3-runtime-factory.js';
 import { r3ModelDescriptor,type ModelAdapter,type SecretProtector } from '@codryn/core';
+import type { ModelRequest } from '@codryn/shared';
+
+for (const mode of ['git', 'non-git'] as const) it(`continues a completed same-chat exchange in ${mode} without replaying its tools`, async () => {
+  const fixture = await createR2Project(mode);
+  const requests: ModelRequest[] = [], callId = randomUUID(), nextCallId = randomUUID();
+  const secret = 'synthetic-chat-history-marker-6197';
+  const firstTask = 'Zjisti starou hodnotu.', nextTask = 'A teď zkontroluj novou.';
+  const model: ModelAdapter = { descriptor: r3ModelDescriptor('demo'), async *stream(request) {
+    requests.push(request);
+    if (!request.history?.length) {
+      yield { type: 'text_delta', text: request.task === firstTask ? 'Průběžný komentář z prvního běhu' : 'Komentář k novému čtení' };
+      yield { type: 'tool_call', call: { callId: request.task === firstTask ? callId : nextCallId, toolId: 'file.read', toolVersion: 1, arguments: { path: 'note.txt' } } };
+    } else {
+      yield { type: 'text_delta', text: request.task === firstTask ? `Původní soubor měl starou hodnotu. ${secret}` : 'Současný soubor se změnil.' };
+    }
+    yield { type: 'completed' };
+  } };
+  const host = await createR3Infrastructure({
+    userDataPath: fixture.userData, secretProtector: storageProtector,
+    runtimeFactory: resources => createDesktopRuntimeFactory({ ...resources, userDataPath: fixture.userData, nodeExecutable: process.execPath, providerFactory: async () => ({ model, dispose() {} }) })
+  });
+  try {
+    await host.settings.saveKey(secret);
+    const settings = await host.settings.get();
+    expect(settings.dataPolicy.notice).toContain('historii');
+    await expect(host.settings.confirmDataPolicy('openai-api-2026-10-11')).rejects.toThrow('R3_CONSENT_REQUIRED');
+    await host.settings.confirmDataPolicy(settings.dataPolicy.version);
+    await expect(host.settings.ensureProjectTransmissionAllowed()).resolves.toBeUndefined();
+    await writeFile(join(fixture.root, 'note.txt'), 'FIRST_TOOL_OUTPUT_ONLY');
+    const signal = AbortSignal.timeout(45_000);
+    const project = await host.projects.open(fixture.root, signal), chat = await host.chats.create(project.id, 'Navázání');
+    const run = async (task: string) => {
+      const accepted = await host.manager.submit({ chatId: chat.id, requestId: randomUUID(), mode: 'demo', maxSteps: 4, task });
+      expect((await host.manager.wait(accepted.jobId)).result?.status).toBe('completed');
+      return accepted;
+    };
+    const first = await run(firstTask);
+    await writeFile(join(fixture.root, 'note.txt'), 'CURRENT_TOOL_OUTPUT');
+    const next = await run(nextTask);
+    const priorConversation = [
+      { role: 'user', text: firstTask },
+      { role: 'assistant', text: 'Původní soubor měl starou hodnotu. [redacted]' }
+    ];
+    expect(next.requestId).not.toBe(first.requestId);
+    expect(requests[2]).toMatchObject({ priorConversation, history: [], previousToolResults: [] });
+    expect(requests[3]).toMatchObject({ priorConversation, previousToolResults: [{ callId: nextCallId }] });
+    expect(JSON.stringify(requests.slice(2))).not.toMatch(/FIRST_TOOL_OUTPUT_ONLY|Průběžný komentář/);
+    expect(JSON.stringify(requests[3]?.previousToolResults)).toContain('CURRENT_TOOL_OUTPUT');
+    const messages = await host.history(chat.id, null);
+    const firstMessages = messages.messages.filter(message => message.requestId === first.requestId);
+    const events = host.resources.database.prepare('SELECT event_type, payload_json FROM events WHERE correlation_id=? ORDER BY rowid').all(next.requestId);
+    const selected = events.filter(event => event.event_type === 'conversation.context_selected');
+    expect(selected).toHaveLength(1);
+    expect(JSON.parse(String(selected[0]?.payload_json))).toEqual({
+      messageIds: [firstMessages[0]?.id, firstMessages.at(-1)?.id],
+      messageCount: 2, byteLength: priorConversation.reduce((sum, item) => sum + Buffer.byteLength(item.text), 0), truncated: false, reason: 'none'
+    });
+    expect(events.findIndex(event => event.event_type === 'conversation.context_selected')).toBeLessThan(events.findIndex(event => event.event_type === 'model.requested'));
+    const detail = await host.inspectRun(chat.id, next.requestId);
+    expect(detail.activity.some(item => item.summary === 'Navázáno na 2 předchozí zprávy')).toBe(true);
+    expect(detail.contextAudit?.sources.find(item => item.source === 'chat_history')).toMatchObject({ used: 2, omitted: 0 });
+  } finally {
+    await host.shutdown(AbortSignal.timeout(10000)); host.close(); await fixture.close();
+  }
+}, 60000);
 
 // This protector proves backend persistence boundaries, not Windows DPAPI.
 const storageProtector:SecretProtector={available:async()=>true,encrypt:async value=>Uint8Array.from(Buffer.from(value),byte=>byte^129),decrypt:async bytes=>({value:Buffer.from(bytes.map(byte=>byte^129)).toString(),shouldReEncrypt:false})};
