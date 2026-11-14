@@ -1,6 +1,8 @@
 import type { DatabaseSync, SQLOutputValue } from 'node:sqlite';
-import { verificationRecordSchema, uuidSchema, type VerificationRecord } from '@codryn/shared';
-import type { VerificationStore, WorkspaceSnapshot } from '@codryn/core';
+import { r4ReferencePathSchema, verificationRecordSchema, uuidSchema, type VerificationRecord } from '@codryn/shared';
+import { sameCheckInputs } from '@codryn/core';
+import type { ProfiledVerificationRecord, VerificationCoverage, VerificationStore, WorkspaceSnapshot } from '@codryn/core';
+import { isAbsolute } from 'node:path';
 import { insertEvent } from './sqlite-event-store.js';
 
 interface VerificationRow {
@@ -16,7 +18,7 @@ function rowRecord(row: VerificationRow): VerificationRecord {
 export class SqliteVerificationStore implements VerificationStore {
   constructor(private readonly database: DatabaseSync) {}
 
-  async append(recordInput: VerificationRecord, coverage?: { readonly profileId: string; readonly coveredPaths: readonly string[] }): Promise<void> {
+  async append(recordInput: VerificationRecord, coverage?: VerificationCoverage): Promise<void> {
     const record = verificationRecordSchema.parse(recordInput);
     let started = false;
     try {
@@ -29,7 +31,12 @@ export class SqliteVerificationStore implements VerificationStore {
         JSON.stringify(record), record.occurredAt
       );
       if(coverage) {
-        if(coverage.profileId!=='r2-sum-v1'||coverage.coveredPaths.some(path=>path!=='sum.mjs'))throw new TypeError('R3_COVERAGE_INVALID');
+        if (coverage.profileId === 'r2-sum-v1') {
+          if (record.kind !== 'test' || coverage.coveredPaths.some(path => path !== 'sum.mjs')) throw new TypeError('R3_COVERAGE_INVALID');
+        } else if (coverage.profileId === 'r4-ts-v1') {
+          validateEvidence(coverage);
+          this.database.prepare('INSERT INTO r4_verification_inputs VALUES(?,?,?)').run(record.id, JSON.stringify(coverage.inputHashes), JSON.stringify(coverage.toolPaths));
+        } else throw new TypeError('R3_COVERAGE_INVALID');
         this.database.prepare('INSERT INTO desktop_verification_coverage VALUES(?,?,?)').run(record.id,coverage.profileId,JSON.stringify(coverage.coveredPaths));
       }
       insertEvent(this.database, {
@@ -72,4 +79,51 @@ export class SqliteVerificationStore implements VerificationStore {
         || record.fingerprint !== snapshot.fingerprint
     });
   }
+
+  list(runIdInput: string, snapshot: WorkspaceSnapshot, currentInputs: Readonly<Record<string, string>> = {}): ProfiledVerificationRecord[] {
+    const rows = this.database.prepare(`SELECT v.record_json, c.profile_id, c.covered_paths_json, e.input_hashes_json, e.tool_paths_json
+      FROM verification_records v LEFT JOIN desktop_verification_coverage c ON c.record_id=v.id
+      LEFT JOIN r4_verification_inputs e ON e.record_id=v.id WHERE v.run_id=? ORDER BY v.rowid DESC LIMIT 96`).all(uuidSchema.parse(runIdInput));
+    return rows.map(row => {
+      const record = rowRecord({ record_json: row.record_json ?? null });
+      const profileId = typeof row.profile_id === 'string' ? row.profile_id : '';
+      const paths: unknown = typeof row.covered_paths_json === 'string' ? JSON.parse(row.covered_paths_json) : [];
+      if (!Array.isArray(paths) || !paths.every(path => typeof path === 'string')) throw new TypeError('R3_COVERAGE_INVALID');
+      if (profileId === 'r4-ts-v1') {
+        const evidence = { profileId, coveredPaths: paths as string[],
+          inputHashes: parseStringRecord(row.input_hashes_json), toolPaths: parseStringRecord(row.tool_paths_json) };
+        validateEvidence(evidence);
+        const stale = record.stale || !snapshot.complete || !sameCheckInputs(evidence.inputHashes, currentInputs);
+        return { ...evidence, record: { ...record, stale } };
+      }
+      const stale = record.stale || !snapshot.complete || record.revision !== snapshot.revision || record.fingerprint !== snapshot.fingerprint;
+      return { profileId, coveredPaths: paths as string[], record: { ...record, stale } };
+    });
+  }
+
+  toolPaths(projectIdInput: string): readonly Readonly<Record<string, string>>[] {
+    const rows = this.database.prepare(`SELECT DISTINCT i.tool_paths_json FROM r4_verification_inputs i
+      JOIN verification_records v ON v.id=i.record_id WHERE v.project_id=? ORDER BY v.rowid DESC LIMIT 64`).all(uuidSchema.parse(projectIdInput));
+    return rows.map(row => parseStringRecord(row.tool_paths_json));
+  }
+}
+
+function parseStringRecord(raw: SQLOutputValue | undefined): Record<string, string> {
+  const value: unknown = typeof raw === 'string' ? JSON.parse(raw) : null;
+  if (value === null || typeof value !== 'object' || Array.isArray(value) || !Object.values(value).every(item => typeof item === 'string')) throw new TypeError('R3_COVERAGE_INVALID');
+  return value as Record<string, string>;
+}
+
+function validateEvidence(evidence: VerificationCoverage): void {
+  const hashes = evidence.inputHashes, tools = evidence.toolPaths;
+  const invalid = () => { throw new TypeError('R3_COVERAGE_INVALID'); };
+  if (!hashes || !tools) return invalid();
+  const inputs = Object.keys(hashes), covered = evidence.coveredPaths;
+  const toolName = /^@(node|tsc|tsc-runtime|tsc-libs|vitest)$/u;
+  if (!Object.hasOwn(hashes, '@policy') || !Object.hasOwn(tools, '@node') || inputs.length > 5006 ||
+    !inputs.every(path => (path === '@policy' || (toolName.test(path) && Object.hasOwn(tools, path)) || r4ReferencePathSchema.safeParse(path).success)
+      && /^[a-f0-9]{64}$/u.test(hashes[path] ?? '')) ||
+    !Object.entries(tools).every(([name, path]) => toolName.test(name) && isAbsolute(path) && path.length <= 4096 && Object.hasOwn(hashes, name)) ||
+    covered.length > 5000 || new Set(covered).size !== covered.length ||
+    !covered.every(path => r4ReferencePathSchema.safeParse(path).success && /\.tsx?$/iu.test(path) && Object.hasOwn(hashes, path))) invalid();
 }

@@ -10,11 +10,14 @@ import type { AgentRunState } from '../state/agent-run.js';
 import { appendAssistantTurn, appendToolTurn, toolResultsFromHistory } from './model-history.js';
 import { canComplete } from './r2-completion.js';
 import type { ConversationSelection } from '../desktop/conversation-context.js';
+import { projectChecksDiscoveredSchema } from '@codryn/shared';
+import type { ProjectCheckCatalog } from '@codryn/shared';
 
 export interface R2ExecutionOptions {
   readonly onRunCreated?: (runId: Uuid) => Promise<void>;
   readonly prepareContext?: (runId: Uuid, signal: AbortSignal) => Promise<readonly ModelRequest['context'][number][]>;
   readonly priorConversation?: ConversationSelection;
+  readonly projectChecks?: ProjectCheckCatalog;
   readonly allowReadOnlyCompletion?: boolean;
   readonly onModelEvent?: (input:{runId:Uuid;step:number;event:ModelStreamEvent})=>Promise<void>;
   readonly onModelTurnCompleted?: (input:{runId:Uuid;step:number})=>Promise<void>;
@@ -153,6 +156,13 @@ export class RunAgentLoop {
         : await this.dependencies.contextAssembler.assemble({ task: request.task, project: { id: projectId }, contextReferences: request.contextReferences }, signal);
       this.abort(signal);
       if ('sources' in context) await this.append(runId, request.requestId, 'context.assembled', { sources: context.sources.map((source) => ({ path: source.path, contentHash: source.contentHash, byteLength: source.byteLength, reason: source.reason })), totalBytes: context.totalBytes });
+      const projectChecks = options.projectChecks;
+      if (projectChecks && projectChecks.level !== 'unsupported') {
+        const { level, framework, typescriptVersion, reasons, checks } = projectChecks;
+        await this.append(runId, request.requestId, 'project.checks_discovered', projectChecksDiscoveredSchema.parse({
+          level, framework, typescriptVersion, reasons, checks: checks.map(({ kind, available, reason }) => ({ kind, available, reason }))
+        }));
+      }
       const selection = options.priorConversation;
       const conversation = selection ? priorConversationSchema.parse(selection.messages) : undefined;
       if (selection && conversation) {
@@ -170,7 +180,8 @@ export class RunAgentLoop {
         const modelRequest: ModelRequest = {
           runId, task: request.task, project: { id: projectId }, context: [...context.modelContent],
           tools: [...this.dependencies.registry.descriptors], previousToolResults, history: [...history],
-          ...(conversation?.length ? { priorConversation: conversation } : {})
+          ...(conversation?.length ? { priorConversation: conversation } : {}),
+          ...(projectChecks?.checks.length ? { recommendedChecks: projectChecks.checks } : {})
         };
         await this.append(runId, request.requestId, 'model.requested', { step: steps + 1, profile: 'change', toolCount: modelRequest.tools.length, contextSourceCount: modelRequest.context.length, previousToolResultCount: previousToolResults.length });
         const onModelEvent = options.onModelEvent;

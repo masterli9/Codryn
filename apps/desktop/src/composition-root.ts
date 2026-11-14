@@ -20,7 +20,9 @@ export async function createDesktopApplicationServices(userDataPath:string,testS
     : join(__dirname, 'repo-map-worker.js');
   return createR3Infrastructure({userDataPath,repoMapWorker:request=>runRepoMapWorker(workerPath,request),secretProtector:new ElectronSecretProtector(safeStorage),runtimeFactory:resources=>async input=>{
     const runtime=await resolveNodeRuntime(input.signal,await resources.projects.root(input.projectId));
-    return createDesktopRuntimeFactory({...resources,userDataPath,nodeExecutable:runtime.executable,...(testScenario?{providerFactory:desktopTestProvider(testScenario)}:{})})(input);
+    return createDesktopRuntimeFactory({...resources,userDataPath,nodeExecutable:runtime.executable,
+      ...(app.isPackaged?{typescriptCli:join(process.resourcesPath,'typescript','bin','tsc')}:{}),
+      ...(testScenario?{providerFactory:desktopTestProvider(testScenario)}:{})})(input);
   },preflight:async(mode,root)=>{if(mode==='demo'){const runtime=await resolveNodeRuntime(AbortSignal.timeout(6000),root);if(!runtime.available)throw new Error('R3_RUNTIME_UNAVAILABLE');try{const provider=await createR3Provider({mode,projectRoot:root,nodeExecutable:runtime.executable,ids:{next:randomUUID},secrets:{state:async()=> 'missing',read:async()=>{throw new Error('R3_SECRET_UNAVAILABLE');},save:async()=>undefined,remove:async()=>undefined}});provider.dispose();}catch{throw new Error('R3_INPUT_INVALID');}}}});
 }
 

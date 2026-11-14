@@ -5,6 +5,8 @@ export interface WorkspaceObservation {
   watcherGeneration?: string;
   /** Files actually hashed by this observation; absent on persisted-only snapshots. */
   observedPaths?: readonly string[];
+  /** Per-file hashes from this same complete observation. */
+  inputHashes?: Readonly<Record<string, string>>;
 }
 
 export interface WorkspaceSnapshot extends WorkspaceObservation {

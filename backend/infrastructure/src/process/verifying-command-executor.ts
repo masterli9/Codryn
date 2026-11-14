@@ -9,6 +9,7 @@ export interface VerifyingCommandExecutorDependencies {
   readonly ids: IdGenerator;
   readonly clock: Clock;
   readonly isRelevant?: (command: CommandSpec, snapshot: WorkspaceSnapshot) => boolean | Promise<boolean>;
+  readonly classify?: NonNullable<VerifyCommandDependencies['classify']>;
   readonly onResult?: (result: CommandResult) => Promise<void>;
   readonly runnerForActor?: NonNullable<VerifyCommandDependencies['runnerForActor']>;
   readonly onOutput?: NonNullable<VerifyCommandDependencies['onOutput']>;

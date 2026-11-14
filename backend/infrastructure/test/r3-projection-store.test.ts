@@ -69,6 +69,16 @@ it('shows whether prior conversation was used, shortened or too large without pr
     for (const id of messageIds) expect(JSON.stringify(item)).not.toContain(id);
   }
 });
+it('projects bounded project check recommendations and their availability', async () => {
+  const f = await fixture(), events = new SqliteEventStore(f.db), eventId = randomUUID();
+  await events.append({ eventId, eventType: 'project.checks_discovered', eventVersion: 1, correlationId: f.input.requestId,
+    occurredAt: now, source: 'core', sessionId: f.runId, payload: { level: 'limited', framework: 'react', typescriptVersion: '6.0.3',
+      checks: [{ kind: 'test', available: false, reason: 'Místní Vitest není dostupný.' }], reasons: [] } });
+  const item = (await f.projection.activity(f.chat.id, f.input.requestId, null)).items.find(item => item.eventId === eventId);
+  expect(item).toMatchObject({ summary: 'Navržené kontroly projektu', details: expect.arrayContaining([
+    { label: 'Testy · nedostupné', value: 'Místní Vitest není dostupný.' }
+  ]) });
+});
 it('rolls back a source event and its cursor together and isolates chat cursors', async () => {
   const f = await fixture(); const second = await f.chats.create(f.projectId, 'Other');
   const before = (await f.projection.snapshot(f.chat.id)).cursor;

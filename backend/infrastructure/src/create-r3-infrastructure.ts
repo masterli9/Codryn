@@ -10,6 +10,8 @@ import { SqliteChatStore } from './persistence/sqlite-chat-store.js';
 import { SqliteDesktopProjectStore } from './persistence/sqlite-desktop-project-store.js';
 import { SqliteDesktopRequestStore } from './persistence/sqlite-desktop-request-store.js';
 import { SqliteDesktopProjectionStore } from './persistence/sqlite-desktop-projection-store.js';
+import { SqliteVerificationStore } from './persistence/sqlite-verification-store.js';
+import { currentCheckInputs } from './typescript/current-project-checks.js';
 import { SqliteDesktopActionStore } from './persistence/sqlite-desktop-action-store.js';
 import { SqliteWorkspaceStore } from './persistence/sqlite-workspace-store.js';
 import { SqliteOwnedCommandStore } from './persistence/sqlite-owned-command-store.js';
@@ -59,7 +61,11 @@ export async function createR3Infrastructure(options:{userDataPath:string;runtim
     return repoMap.start(id, root, mapLifetime.signal).status;
   };
   try {
-    const store=new SqliteDesktopProjectStore(database,clock),workspace=new SqliteWorkspaceStore(database),chatsStore=new SqliteChatStore(database,clock,ids),requests=new SqliteDesktopRequestStore(database,clock,ids),projections=new SqliteDesktopProjectionStore(database,clock,ids),actions=new SqliteDesktopActionStore(database),providerAccess=new InMemoryProviderAccessGate(),ownedCommands=new SqliteOwnedCommandStore(database),permissionBroker=new DesktopPermissionBroker();
+    const currentVerificationInputs = new Map<string, { revision: number; hashes: Readonly<Record<string, string>> }>();
+    const verificationStore = new SqliteVerificationStore(database);
+    const store=new SqliteDesktopProjectStore(database,clock),workspace=new SqliteWorkspaceStore(database),chatsStore=new SqliteChatStore(database,clock,ids),requests=new SqliteDesktopRequestStore(database,clock,ids),projections=new SqliteDesktopProjectionStore(database,clock,ids,(id,revision)=>{
+      const current=currentVerificationInputs.get(id);return current?.revision===revision?current.hashes:{};
+    }),actions=new SqliteDesktopActionStore(database),providerAccess=new InMemoryProviderAccessGate(),ownedCommands=new SqliteOwnedCommandStore(database),permissionBroker=new DesktopPermissionBroker();
     const projects=new R3ProjectService({store,ids,canonicalizeRoot:async(root,signal)=>{signal.throwIfAborted();const canonical=await realpath(root);if(!(await stat(canonical)).isDirectory())throw new Error('R3_PROJECT_UNAVAILABLE');return {root:canonical,identity:process.platform==='win32'?canonical.toLowerCase():canonical};},openWorkspace:async(identity,id)=>workspace.open(identity,id),inspectGit:(root,signal)=>{const id=database.prepare('SELECT project_id FROM desktop_projects WHERE root=?').get(root)?.project_id;return filesystemEffect(String(id??root),()=>new ProjectGitState(root).inspect(signal));},
       onOpened:(id,root)=>{if(!mapLifetime.signal.aborted){mapSelection++;activateMap(id,root);}}
     });
@@ -88,11 +94,17 @@ export async function createR3Infrastructure(options:{userDataPath:string;runtim
     const refresh=(projectId:string,signal:AbortSignal):Promise<void>=>{
       if(closed)return Promise.reject(new Error('R3_PROJECT_BUSY'));const previous=refreshes.get(projectId);if(previous)return previous;
       const pending=(async()=>{const project=await projects.get(projectId,signal);if(!project)throw new Error('R3_NOT_FOUND');
-        if(!project.available){const current=await workspace.current(projectId);await workspace.observe(projectId,{...current,complete:false});observers.get(projectId)?.close();observers.delete(projectId);return;}
+        if(!project.available){const current=await workspace.current(projectId);await workspace.observe(projectId,{...current,complete:false});currentVerificationInputs.delete(projectId);observers.get(projectId)?.close();observers.delete(projectId);return;}
         try {
-          const observation=await (await observer(projectId)).inspect(signal);if(!closed)await workspace.observe(projectId,observation);
+          const observation=await (await observer(projectId)).inspect(signal);
+          if(!closed){
+            const snapshot=await workspace.observe(projectId,observation);
+            const hashes=await currentCheckInputs(verificationStore,projectId,snapshot);
+            if(!closed)currentVerificationInputs.set(projectId,{revision:snapshot.revision,hashes});
+          }
         } catch(error) {
           if(!(error instanceof ContextPathPolicyError))throw error;
+          currentVerificationInputs.delete(projectId);
           const current=await workspace.current(projectId);if(!closed)await workspace.observe(projectId,{...current,complete:false});
         }
       })().finally(()=>refreshes.delete(projectId));refreshes.set(projectId,pending);return pending;

@@ -21,6 +21,8 @@ import { ProjectGitState } from './git/project-git-state.js';
 import { JsonlDiagnosticLogger } from './logging/jsonl-diagnostic-logger.js';
 import { R2CommandRunner } from './process/r2-command-runner.js';
 import { VerifyingCommandExecutor } from './process/verifying-command-executor.js';
+import type { VerifyingCommandExecutorDependencies } from './process/verifying-command-executor.js';
+import { assessCurrentProjectChecks, currentCheckInputs } from './typescript/current-project-checks.js';
 import { ScriptedModelAdapter } from './model/scripted-model-adapter.js';
 import { changeVerifyReturnScenario } from './model/change-verify-return-scenario.js';
 import { openR0Database } from './persistence/open-database.js';
@@ -78,6 +80,8 @@ export async function createR2Infrastructure(options: {
   readonly onRunCreated?: (runId: string) => Promise<void>;
   readonly prepareContext?: R2ExecutionOptions['prepareContext'];
   readonly priorConversation?: R2ExecutionOptions['priorConversation'];
+  readonly projectChecks?: R2ExecutionOptions['projectChecks'];
+  readonly classifyCheck?: NonNullable<VerifyingCommandExecutorDependencies['classify']>;
   readonly allowReadOnlyCompletion?: boolean;
   readonly onModelEvent?: R2ExecutionOptions['onModelEvent'];
   readonly onModelTurnCompleted?: R2ExecutionOptions['onModelTurnCompleted'];
@@ -167,6 +171,7 @@ export async function createR2Infrastructure(options: {
         onOutput:commandHooks.output
       }),
       coverageFor: (_command,relevant) => relevant ? {profileId:'r2-sum-v1',coveredPaths:['sum.mjs']} : undefined,
+      ...(options.classifyCheck ? { classify: options.classifyCheck } : {}),
       isRelevant: async (command, snapshot) => {
         if (command.executable !== (options.trustedVerificationExecutable ?? process.execPath) || resolve(command.cwd) !== projectRoot
           || command.args.length !== 2 || command.args[0] !== '--test' || command.args[1] !== 'sum.test.mjs') return false;
@@ -270,6 +275,7 @@ export async function createR2Infrastructure(options: {
           ...(options.onRunCreated === undefined ? {} : { onRunCreated: options.onRunCreated }),
           ...(options.prepareContext === undefined ? {} : { prepareContext: options.prepareContext }),
           ...(options.priorConversation === undefined ? {} : { priorConversation: options.priorConversation }),
+          ...(options.projectChecks === undefined ? {} : { projectChecks: options.projectChecks }),
           ...(options.allowReadOnlyCompletion === undefined ? {} : { allowReadOnlyCompletion: options.allowReadOnlyCompletion }),
           ...(options.onModelEvent === undefined ? {} : { onModelEvent: options.onModelEvent }),
           ...(options.onModelTurnCompleted === undefined ? {} : { onModelTurnCompleted: options.onModelTurnCompleted }),
@@ -288,6 +294,15 @@ export async function createR2Infrastructure(options: {
             const entries = setId === null ? [] : await journal.entries(setId);
             const pending = await journal.pending(projectId);
             const snapshot = await workspaces.observe(projectId, await observer.inspect(signal));
+            if (runId && options.projectChecks?.level !== undefined && options.projectChecks.level !== 'unsupported') {
+              const currentDiff = setId === null ? [] : await changes.diff.execute(setId, signal);
+              const changedPaths = currentDiff.filter(file => file.status !== 'reverted').map(file => file.path);
+              const assessment = assessCurrentProjectChecks(verifications, runId, changedPaths, snapshot, await currentCheckInputs(verifications, projectId, snapshot));
+              const recordId = assessment.records.find(item => item.profileId === 'r4-ts-v1')?.record.id ?? null;
+              return { changed: entries.some(entry => entry.kind === 'patch'),
+                verification: { status: assessment.status === 'partially_verified' ? 'unverified' : assessment.status, recordId, reason: assessment.reason },
+                recoveryRequired: pending.length > 0, pending: pending.length > 0 };
+            }
             const record = runId === null ? null : await verifications.current(runId, snapshot);
             let verification = record === null
               ? { status: 'unverified' as const, recordId: null, reason: 'No persisted verification record exists.' }

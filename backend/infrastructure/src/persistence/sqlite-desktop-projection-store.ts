@@ -1,10 +1,12 @@
 import type { DatabaseSync, SQLOutputValue } from 'node:sqlite';
-import { conversationContextEventSchema } from '@codryn/shared';
+import { conversationContextEventSchema, projectChecksDiscoveredSchema } from '@codryn/shared';
 import type { Clock, DesktopProjectionStore, IdGenerator } from '@codryn/core';
 import { permissionViewSchema, r3ActivityViewSchema, r3CommandViewSchema, r3MessageSchema, r3OutputPageSchema, r3ProviderErrorSchema, r3RunDetailSchema, r3RunViewSchema, r3SnapshotSchema, r3UpdateSchema, r4ContextAuditSchema, verificationRecordSchema, uuidSchema } from '@codryn/shared';
 import type { R3ActivityView, R3Message, R3OutputPage, R3RunDetail, R3RunView, R3Snapshot, R3Update, R3VerificationView, R4ContextAuditSource, R4ContextAuditSummary, Uuid } from '@codryn/shared';
 import { desktopPhase, integer, nullableText, parseJson, text, transaction } from './r3-sqlite-helpers.js';
 import { SqliteDesktopProjectStore } from './sqlite-desktop-project-store.js';
+import { SqliteVerificationStore } from './sqlite-verification-store.js';
+import { assessCurrentProjectChecks } from '../typescript/current-project-checks.js';
 import { insertEvent, validateEvent } from './sqlite-event-store.js';
 
 type Row = Record<string, SQLOutputValue>;
@@ -20,6 +22,18 @@ const summaries: Record<string,string>={'agent_run.created':'Běh založen','age
 function activityView(row: Row): R3ActivityView {
   const payload=object(parseJson(row.payload_json)), type=text(row.event_type);
   const details:{label:string;value:string}[]=[]; let detailsTruncated=false;
+  if (type === 'project.checks_discovered') {
+    const parsed = projectChecksDiscoveredSchema.safeParse(payload);
+    if (parsed.success) {
+      details.push({ label: 'Projekt', value: parsed.data.framework }, { label: 'TypeScript', value: parsed.data.typescriptVersion });
+      for (const candidate of parsed.data.checks) {
+        const name = candidate.kind === 'typecheck' ? 'Kontrola typů' : 'Testy';
+        details.push({ label: `${name} · ${candidate.available ? 'k dispozici' : 'nedostupné'}`, value: candidate.reason });
+      }
+      for (const reason of parsed.data.reasons.slice(0, 4)) details.push({ label: 'Omezení', value: reason });
+    }
+    return r3ActivityViewSchema.parse({eventId:row.event_id,sequence:row.activity_sequence,runId:row.run_id,type,occurredAt:row.occurred_at,callId:null,summary:'Navržené kontroly projektu',details,detailsTruncated});
+  }
   if (type === 'conversation.context_selected') {
     const selection = conversationContextEventSchema.safeParse(payload);
     let summary = 'Historii chatu se nepodařilo zobrazit';
@@ -49,7 +63,8 @@ function activityView(row: Row): R3ActivityView {
   return r3ActivityViewSchema.parse({eventId:row.event_id,sequence:row.activity_sequence,runId:row.run_id,type,occurredAt:row.occurred_at,callId:typeof payload.callId==='string' && uuidSchema.safeParse(payload.callId).success?payload.callId:row.tool_call_id??null,summary:summaries[type]??'Událost běhu',details,detailsTruncated});
 }
 export class SqliteDesktopProjectionStore implements DesktopProjectionStore {
-  constructor(private readonly database: DatabaseSync,private readonly clock: Clock,private readonly ids: IdGenerator) {}
+  constructor(private readonly database: DatabaseSync,private readonly clock: Clock,private readonly ids: IdGenerator,
+    private readonly currentInputs: (projectId: Uuid, revision: number) => Readonly<Record<string, string>> = () => ({})) {}
   async recordContextAudit(requestId: Uuid, runId: Uuid, sources: readonly R4ContextAuditSource[]): Promise<void> {
     const payload = r4ContextAuditSchema.parse({ schemaVersion: 1, sources, totalBytes: sources.reduce((sum, source) => sum + source.bytes, 0) });
     transaction(this.database, () => {
@@ -104,6 +119,15 @@ export class SqliteDesktopProjectionStore implements DesktopProjectionStore {
     const workspace=this.database.prepare('SELECT w.* FROM workspaces w JOIN desktop_jobs j ON j.project_id=w.id WHERE j.id=?').get(run.jobId);
     const rows=this.database.prepare('SELECT r.record_json,c.covered_paths_json FROM verification_records r LEFT JOIN desktop_verification_coverage c ON c.record_id=r.id WHERE r.run_id=? ORDER BY r.occurred_at DESC,r.id DESC LIMIT 20').all(run.runId);
     const paths=this.database.prepare(`SELECT DISTINCT e.path FROM change_entries e JOIN mutation_intents m ON m.entry_id=e.id WHERE e.run_id=? AND e.kind='patch' AND m.state='applied' AND NOT EXISTS(SELECT 1 FROM change_entries r JOIN mutation_intents rm ON rm.entry_id=r.id WHERE r.reverses_id=e.id AND rm.state='applied')`).all(run.runId).map(row=>text(row.path));
+    if (workspace && this.database.prepare(`SELECT 1 FROM events WHERE session_id=? AND event_type='project.checks_discovered' LIMIT 1`).get(run.runId)) {
+      const revision = integer(workspace.revision), projectId = text(workspace.id);
+      const snapshot = { revision, fingerprint: text(workspace.fingerprint), gitIdentity: nullableText(workspace.git_identity), complete: available && workspace.observation_complete === 1 };
+      const result = assessCurrentProjectChecks(new SqliteVerificationStore(this.database), run.runId, paths, snapshot, this.currentInputs(projectId, revision));
+      return { status: result.status, reason: result.reason, checks: result.records.slice(0, 20).map(item => ({
+        record: item.record, coveredPaths: [...item.coveredPaths].slice(0, 40), durationMs: null
+      })), uncoveredPaths: result.uncoveredPaths, missingChecks: result.missingChecks.map(kind => kind === 'typecheck' ? 'Chybí kontrola typů.' : 'Chybí testy.'),
+      freshness: available ? 'current' : 'unavailable', observedAt: available ? this.clock.now() : null };
+    }
     const checks=rows.map(row=>{const record=verificationRecordSchema.parse(parseJson(row.record_json));const coverage:unknown=row.covered_paths_json===null?[]:parseJson(row.covered_paths_json);if(!Array.isArray(coverage)||coverage.some(p=>typeof p!=='string'))throw new Error('R3_INTERNAL');return {record:{...record,stale:record.stale||!available||workspace?.observation_complete!==1||record.revision!==workspace.revision||record.fingerprint!==workspace.fingerprint},coveredPaths:coverage as string[],durationMs:null};});
     const covered=new Set(checks.filter(c=>c.record.result==='passed'&&!c.record.stale).flatMap(c=>c.coveredPaths));const uncoveredPaths=paths.filter(p=>!covered.has(p));
     const status=!available?'unverified':paths.length>0&&uncoveredPaths.length===0?'verified':paths.some(p=>covered.has(p))?'partially_verified':checks.some(c=>c.record.result==='passed'&&c.record.stale)?'stale':'unverified';

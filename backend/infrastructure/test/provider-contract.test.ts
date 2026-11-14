@@ -88,6 +88,7 @@ describe('R2 provider adapters', () => {
       ...request,
       context: [{ path: 'README.md', content: 'current file contents', contentHash: 'a'.repeat(64), byteLength: 21, reason: 'loaded_excerpt' }],
       priorConversation: [{ role: 'user', text: 'What did the file say?' }, { role: 'assistant', text: 'The file used to say 33.' }],
+      recommendedChecks: [{ kind: 'test', available: false, command: null, reason: 'No supported test script.' }],
       history: [{ kind: 'assistant', text: '', calls: [...first.calls] }, { kind: 'tool', result: { ok: true, callId: firstCall.callId, output: { content: 'safe' } } }]
     };
     await expect(collectModelResponse(adapter.stream(nextRequest, new AbortController().signal), new AbortController().signal)).resolves.toMatchObject({ kind: 'final', text: 'done' });
@@ -100,6 +101,8 @@ describe('R2 provider adapters', () => {
         { role: 'assistant', content: [{ type: 'output_text', text: 'The file used to say 33.' }] },
         { role: 'user', content: [{ type: 'input_text', text: 'Read the fixture.' }] },
         { role: 'user', content: [{ type: 'input_text', text: expect.stringContaining('current file contents') }] },
+        { role: 'developer', content: [{ type: 'input_text', text: expect.stringContaining('separate permission') }] },
+        { role: 'user', content: [{ type: 'input_text', text: expect.stringContaining('"kind":"test","available":false') }] },
         { type: 'function_call', call_id: 'call-1' },
         { type: 'function_call_output', call_id: 'call-1' }
       ]

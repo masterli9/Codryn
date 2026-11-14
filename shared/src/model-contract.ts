@@ -4,6 +4,7 @@ import { jsonValueSchema } from './json-value.js';
 import { projectRelativePathSchema } from './r1-agent.js';
 import { modelToolCallSchema, toolResultSchema } from './tool-contract.js';
 import { modelTurnSchema } from './r2-agent.js';
+import { projectCheckCandidateSchema } from './r4-project-checks.js';
 
 export const modelCapabilityStatusSchema = z.enum(['supported', 'unsupported', 'unknown']);
 
@@ -69,7 +70,8 @@ export const modelRequestSchema = z.object({
   tools: z.array(modelToolDefinitionSchema),
   previousToolResults: z.array(toolResultSchema),
   history: z.array(modelTurnSchema).max(64).optional(),
-  priorConversation: priorConversationSchema.optional()
+  priorConversation: priorConversationSchema.optional(),
+  recommendedChecks: z.array(projectCheckCandidateSchema).max(2).optional()
 }).strict();
 
 const modelErrorSchema = z.object({

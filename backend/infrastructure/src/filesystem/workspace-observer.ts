@@ -48,6 +48,7 @@ export class FileWorkspaceObserver implements WorkspaceObserver {
     const startedAt = Date.now();
     const entries: string[] = [];
     const observedPaths: string[] = [];
+    const inputHashes: Record<string, string> = Object.create(null) as Record<string, string>;
     let totalBytes = 0;
     let complete = this.watcherHealthy;
     let policyChanged = false;
@@ -77,7 +78,9 @@ export class FileWorkspaceObserver implements WorkspaceObserver {
         || after.size !== info.size || after.mtimeMs !== info.mtimeMs || await realpath(current) !== current) { complete = false; return; }
       totalBytes += bytes.length;
       if (!policy.decide(rel, 'crawl', { kind: 'file', bytes }).allowed) return;
-      entries.push(`${rel}\0${createHash('sha256').update(bytes).digest('hex')}\0${bytes.length}`);
+      const digest = createHash('sha256').update(bytes).digest('hex');
+      entries.push(`${rel}\0${digest}\0${bytes.length}`);
+      inputHashes[rel] = digest;
       observedPaths.push(rel);
     };
     try { await visit(root); } catch (error) {
@@ -104,7 +107,9 @@ export class FileWorkspaceObserver implements WorkspaceObserver {
     policyChanged ||= await policy.refresh() !== revision;
     cancelled(signal);
     const fingerprint = createHash('sha256').update(revision).update('\0').update(policyChanged ? '' : entries.join('\n'), 'utf8').digest('hex');
-    return { fingerprint, gitIdentity, complete: complete && !policyChanged, observedPaths: policyChanged ? [] : observedPaths, watcherGeneration: `${this.watcherId}:${this.generation}` };
+    if (!policyChanged) inputHashes['@policy'] = revision;
+    return { fingerprint, gitIdentity, complete: complete && !policyChanged, observedPaths: policyChanged ? [] : observedPaths,
+      inputHashes: policyChanged ? {} : inputHashes, watcherGeneration: `${this.watcherId}:${this.generation}` };
   }
 
   close(): void {
