@@ -18,3 +18,11 @@
 - Kontraktní a integrační testy pro rozpoznání, strukturu, ignore politiku, změnu během dotazu, neplatný config, fallback, relevantní příkazy a invalidaci ověření.
 - Předem zafixovaných 20 ručně ověřených dotazů, nejméně 18 shod pro `AC-O1-13`; zveřejnit všechny neshody. Stejný build projde packaged worker smoke.
 - Malý Git i non-Git TypeScript/React průchod s fake modelem: vlastní zadání, patch, dvě oprávněné kontroly, chybná kontrola a oprava, čitelný výsledek. Živý model patří do odděleného rozpočtovaného eval.
+
+## Rozhraní první implementace ověřování
+
+- Výchozí stav na `53dc666` používá Node 24.19.0 a npm 11.17.0. Nainstalované závislosti umožňují výchozí kontrolu typů. Poznámka v plánu o chybějících balíčcích popisuje starší kopii.
+- Rozpoznání načte kořenový `tsconfig.json` a omezený řetězec relativních `extends` v projektu. Samostatné projektové reference a konfigurace z balíčků přesouvají profil do omezeného režimu. Kompilátor spouštěný se souhlasem uživatele může číst lokální deklarace závislostí. Omezený host budoucího strukturního nástroje takové deklarace při automatickém indexování nečte.
+- Příkaz po schválení projde stejným procesním runnerem jako dosud. Profil přizná důvěryhodné pokrytí jen při přesné shodě s nabídkou a při novém ověření konfigurace, vstupů a neprázdného výstupu testu. Ruční schválený příkaz může běžet i bez důvěryhodného pokrytí.
+- Ověřovací záznamy profilu TypeScript používají hash vstupů uložený v samostatné evidenci navázané na záznam kontroly. Stávající profil `r2-sum-v1` zachová kontrolu celého pracovního snímku. Platnost během příkazu vyžaduje úplný a nezměněný snímek. Platnost po skončení příkazu porovnává deklarované vstupy a úplnost nového pozorování.
+- Zabalená aplikace dodá kopii TypeScriptu mimo ASAR, archiv souborů aplikace. Systémový Node spustí ověřenou kopii CLI z této složky. Strukturní dotazy, jejich worker a eval zůstávají součástí navazujícího plánu.
