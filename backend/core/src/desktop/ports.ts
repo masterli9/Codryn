@@ -1,4 +1,9 @@
 import type { ModelDescriptor, R2RunResult, R3Accepted, R3ActivityView, R3Chat, R3JobState, R3Message, R3OutputPage, R3Project, R3RevertInput, R3RevertResult, R3RunDetail, R3RunView, R3Snapshot, R3SubmitInput, R3Update, Uuid } from '@codryn/shared';
+import type { ConversationPair } from './conversation-context.js';
+
+export interface ConversationHistoryReader {
+  readCandidates(chatId: Uuid, currentRequestId: Uuid): Promise<readonly ConversationPair[]>;
+}
 export interface ChatStore {
   create(projectId: Uuid, title: string): Promise<R3Chat>;
   list(projectId: Uuid, archived: boolean): Promise<readonly R3Chat[]>;

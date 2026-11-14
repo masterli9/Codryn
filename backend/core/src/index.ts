@@ -53,6 +53,8 @@ export { R1PersistenceFailure } from './agent/model.js';
 export type { AgentRunRecord, ToolCallRecord, AssembledContext, ContextSourceAudit } from './agent/model.js';
 export type { AgentRunStore, ModelAdapter, PermissionResponder, ToolCallBinding, ToolCallStore, ToolExecutionContext } from './agent/ports.js';
 export { ContextAssembler, ContextAssemblyFailure, assembleR4Context } from './agent/context-assembler.js';
+export { selectConversationContext } from './desktop/conversation-context.js';
+export type { ConversationPair, ConversationSelection } from './desktop/conversation-context.js';
 export type { ContextAssemblyInput } from './agent/context-assembler.js';
 export { ToolRegistry, ToolRegistryFailure } from './tools/tool-registry.js';
 export type { ToolDefinition, ToolRisk } from './tools/tool-registry.js';
@@ -138,5 +140,5 @@ export { ProviderSettingsService } from './secrets/provider-settings-service.js'
 export { ReferenceVerificationPolicy } from './verification/reference-verification-policy.js';
 export { StreamBatcher } from './desktop/stream-batcher.js';
 export { DesktopPermissionBroker } from './desktop/permission-broker.js';
-export type { ChatStore, DesktopProjectStore, DesktopRequestStore, DesktopActionStore, DesktopProjectionStore, DesktopRuntimeFactory } from './desktop/ports.js';
+export type { ChatStore, DesktopProjectStore, DesktopRequestStore, DesktopActionStore, DesktopProjectionStore, DesktopRuntimeFactory, ConversationHistoryReader } from './desktop/ports.js';
 export type { SecretProtector, SecretStore, ProviderSettingsStore, ProviderAccessGate } from './secrets/ports.js';
