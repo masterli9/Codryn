@@ -17,3 +17,5 @@
 - Concurrency fixture pro dva konfliktní resource keys, paralelní nezávislé soubory, stale patch, externí změnu během čekání a restart.
 - Integrační důkaz `AC-O1-22/23/24` zahrne odmítnutí před zápisem, zachování novějšího obsahu a přesnou invalidaci ověření.
 - Produktová koordinace relací a subagenti zůstávají S/O1; bezpečnostní jádro platí pro každého zapisujícího aktéra i bez jejich UI.
+
+Ověření ukládá obsahové otisky pro zvolený režim sledování. Test spouštěný běžným Node nebo Vitest může číst libovolný projektový soubor. Bez důkazu užšího rozsahu zvolí backend konzervativní rozsah a porovná všechny úplně pozorované vstupy. Výslovně užší pokrytí musí prokázat odpovídající důvěryhodný profil.

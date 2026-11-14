@@ -18,3 +18,10 @@
 - Git fixture pro projekt v podadresáři worktree, status/diff/historii, stage/unstage, branch a commit, včetně externí změny indexu a konfliktního stavu.
 - `AC-O1-19/20/22`: integrační a E2E test panelu, návrhu/commitu, auditní log a souběh dvou stavových operací.
 - Regrese Git i non-Git safe return a ochrany před přepsáním novějších ručních změn.
+
+## Rozhraní implementace
+
+- Snapshot zahrnuje celý index a identitu HEAD, i když panel zobrazuje jen otevřený projekt. V podadresáři lze číst stav a upravovat index pro vlastní cesty. Commit se zastaví při staged cestě mimo projekt. Přepnutí branche mění celý worktree a vyžaduje otevření jeho kořene.
+- Aplikační zámek serializuje tutéž Git správu. Stage a unstage použijí dočasný index a výhradní `index.lock` před vydáním změny. Commit vytvoří objekt ze zkontrolovaného indexu, ověří symbolický HEAD pod jeho zámkem a uloží větev příkazem `update-ref` s očekávaným předchozím hashem. Symlink a neznámý režim metadat omezí mutaci.
+- Git ochrání pracovní změny při nevnuceném přepnutí s vypnutým přepisováním ignorovaných cest. Nativní přepnutí nemá parametr pro porovnání očekávané revize celé pracovní oblasti při každém jednotlivém zápisu. Nový preflight a kontrola cílových lokálních referencí předcházejí příkazu. Stávající Git zámky a ochrana souborů platí i během příkazu.
+- Git služby používají argumentová pole, omezené prostředí, vypínají hooky, fsmonitor, externí diff, převod textu a síťové načítání objektů. Při nakonfigurovaných externích filtrech se mutace odmítnou. Návrh zprávy přes model vyžaduje schválený přenos dat a potvrzený snapshot.
