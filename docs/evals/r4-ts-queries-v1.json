@@ -1,0 +1,509 @@
+{
+  "schemaVersion": 1,
+  "typescriptVersion": "6.0.3",
+  "fixtureFiles": {
+    "tsconfig.json": "87f1e0721a9a801badfd5e12c1a684ee6f27b06fdd333b413c8247bff8844496",
+    "app/page.tsx": "8bffa1b765a205244133de7878694e540ea1ffdd413046913468cc8b2aa8bda2",
+    "src/bad-boolean.ts": "cf9a95cd32a7145dd45ba4b6488826b48af50075c8b4f09a57c5de3123c12388",
+    "src/bad-call.ts": "99d7d941bca73f50655428d3a622ebb0d9a23defd0b285c973784d6714322541",
+    "src/bad-number.ts": "a17c86c4c526e2d451f823eb57121ddfe888f05c1fca4f58d04bfdac4637cbf0",
+    "src/index.ts": "2498c2f720d5084e23ed74c868f73c49426992e017877530240aac75a5c517d0",
+    "src/main.ts": "25d00a2d1d8073aa8d6c1df00d99e1d3b6810b0b056cdc6b235284cac55b6411",
+    "src/math.ts": "7fa627907ea1a61a7aba9c43809e0b5fd2075b8c992738156c411e583fa81f95"
+  },
+  "cases": [
+    {
+      "id": "def-alias",
+      "input": {
+        "kind": "definition",
+        "path": "src/main.ts",
+        "line": 3,
+        "column": 22
+      },
+      "expected": {
+        "status": "ok",
+        "mode": "configured",
+        "items": [
+          [
+            "src/math.ts",
+            1,
+            17,
+            "duplicate"
+          ]
+        ]
+      },
+      "rationale": "Volání aliasu twice ukazuje na původní funkci.",
+      "fixtureHash": "25d00a2d1d8073aa8d6c1df00d99e1d3b6810b0b056cdc6b235284cac55b6411"
+    },
+    {
+      "id": "def-generic",
+      "input": {
+        "kind": "definition",
+        "path": "src/main.ts",
+        "symbol": "identity"
+      },
+      "expected": {
+        "status": "ok",
+        "mode": "configured",
+        "items": [
+          [
+            "src/math.ts",
+            2,
+            17,
+            "identity"
+          ]
+        ]
+      },
+      "rationale": "Import generické funkce ukazuje na deklaraci v modulu math.",
+      "fixtureHash": "25d00a2d1d8073aa8d6c1df00d99e1d3b6810b0b056cdc6b235284cac55b6411"
+    },
+    {
+      "id": "def-value",
+      "input": {
+        "kind": "definition",
+        "path": "src/main.ts",
+        "line": 3,
+        "column": 28
+      },
+      "expected": {
+        "status": "ok",
+        "mode": "configured",
+        "items": [
+          [
+            "src/math.ts",
+            3,
+            14,
+            "price"
+          ]
+        ]
+      },
+      "rationale": "Argument price pochází z exportované konstanty.",
+      "fixtureHash": "25d00a2d1d8073aa8d6c1df00d99e1d3b6810b0b056cdc6b235284cac55b6411"
+    },
+    {
+      "id": "def-tsx",
+      "input": {
+        "kind": "definition",
+        "path": "app/page.tsx",
+        "line": 3,
+        "column": 49
+      },
+      "expected": {
+        "status": "ok",
+        "mode": "configured",
+        "items": [
+          [
+            "src/math.ts",
+            3,
+            14,
+            "price"
+          ]
+        ]
+      },
+      "rationale": "Výraz v JSX odkazuje na cenu z modulu math.",
+      "fixtureHash": "8bffa1b765a205244133de7878694e540ea1ffdd413046913468cc8b2aa8bda2"
+    },
+    {
+      "id": "refs-alias",
+      "input": {
+        "kind": "references",
+        "path": "src/main.ts",
+        "symbol": "twice"
+      },
+      "expected": {
+        "status": "ok",
+        "mode": "configured",
+        "items": [
+          [
+            "src/bad-call.ts",
+            1,
+            10
+          ],
+          [
+            "src/bad-call.ts",
+            2,
+            24
+          ],
+          [
+            "src/index.ts",
+            1,
+            10
+          ],
+          [
+            "src/main.ts",
+            1,
+            10
+          ],
+          [
+            "src/main.ts",
+            1,
+            23
+          ],
+          [
+            "src/main.ts",
+            3,
+            22
+          ],
+          [
+            "src/math.ts",
+            1,
+            17
+          ]
+        ]
+      },
+      "rationale": "Funkce je deklarovaná, importovaná, přejmenovaná, reexportovaná a použitá na dvou místech.",
+      "fixtureHash": "25d00a2d1d8073aa8d6c1df00d99e1d3b6810b0b056cdc6b235284cac55b6411"
+    },
+    {
+      "id": "refs-price",
+      "input": {
+        "kind": "references",
+        "path": "src/math.ts",
+        "symbol": "price"
+      },
+      "expected": {
+        "status": "ok",
+        "mode": "configured",
+        "items": [
+          [
+            "app/page.tsx",
+            1,
+            10
+          ],
+          [
+            "app/page.tsx",
+            3,
+            49
+          ],
+          [
+            "src/main.ts",
+            2,
+            20
+          ],
+          [
+            "src/main.ts",
+            3,
+            28
+          ],
+          [
+            "src/math.ts",
+            3,
+            14
+          ]
+        ]
+      },
+      "rationale": "Cena se používá ve dvou modulech a má jednu deklaraci.",
+      "fixtureHash": "7fa627907ea1a61a7aba9c43809e0b5fd2075b8c992738156c411e583fa81f95"
+    },
+    {
+      "id": "refs-heading",
+      "input": {
+        "kind": "references",
+        "path": "src/main.ts",
+        "symbol": "heading"
+      },
+      "expected": {
+        "status": "ok",
+        "mode": "configured",
+        "items": [
+          [
+            "src/main.ts",
+            4,
+            14
+          ]
+        ]
+      },
+      "rationale": "Konstanta heading je jen deklarovaná.",
+      "fixtureHash": "25d00a2d1d8073aa8d6c1df00d99e1d3b6810b0b056cdc6b235284cac55b6411"
+    },
+    {
+      "id": "refs-receipt-type",
+      "input": {
+        "kind": "references",
+        "path": "src/math.ts",
+        "symbol": "Receipt"
+      },
+      "expected": {
+        "status": "ok",
+        "mode": "configured",
+        "items": [
+          [
+            "src/math.ts",
+            4,
+            18
+          ],
+          [
+            "src/math.ts",
+            5,
+            23
+          ]
+        ]
+      },
+      "rationale": "Rozhraní Receipt má jednu deklaraci a jedno použití v anotaci.",
+      "fixtureHash": "7fa627907ea1a61a7aba9c43809e0b5fd2075b8c992738156c411e583fa81f95"
+    },
+    {
+      "id": "type-total",
+      "input": {
+        "kind": "type",
+        "path": "src/main.ts",
+        "symbol": "total"
+      },
+      "expected": {
+        "status": "ok",
+        "mode": "configured",
+        "items": [
+          [
+            "src/main.ts",
+            3,
+            14,
+            "number"
+          ]
+        ]
+      },
+      "rationale": "Návratový typ funkce duplicate je number.",
+      "fixtureHash": "25d00a2d1d8073aa8d6c1df00d99e1d3b6810b0b056cdc6b235284cac55b6411"
+    },
+    {
+      "id": "type-heading",
+      "input": {
+        "kind": "type",
+        "path": "src/main.ts",
+        "symbol": "heading"
+      },
+      "expected": {
+        "status": "ok",
+        "mode": "configured",
+        "items": [
+          [
+            "src/main.ts",
+            4,
+            14,
+            "\"Title\""
+          ]
+        ]
+      },
+      "rationale": "Generická identita vrátí literál Title.",
+      "fixtureHash": "25d00a2d1d8073aa8d6c1df00d99e1d3b6810b0b056cdc6b235284cac55b6411"
+    },
+    {
+      "id": "type-amount",
+      "input": {
+        "kind": "type",
+        "path": "src/main.ts",
+        "line": 5,
+        "column": 31
+      },
+      "expected": {
+        "status": "ok",
+        "mode": "configured",
+        "items": [
+          [
+            "src/main.ts",
+            5,
+            31,
+            "number"
+          ]
+        ]
+      },
+      "rationale": "Pole amount je v rozhraní deklarované jako number.",
+      "fixtureHash": "25d00a2d1d8073aa8d6c1df00d99e1d3b6810b0b056cdc6b235284cac55b6411"
+    },
+    {
+      "id": "sig-duplicate",
+      "input": {
+        "kind": "signature",
+        "path": "src/math.ts",
+        "symbol": "duplicate"
+      },
+      "expected": {
+        "status": "ok",
+        "mode": "configured",
+        "items": [
+          [
+            "src/math.ts",
+            1,
+            17,
+            "(n: number): number"
+          ]
+        ]
+      },
+      "rationale": "Funkce přijme a vrátí číslo.",
+      "fixtureHash": "7fa627907ea1a61a7aba9c43809e0b5fd2075b8c992738156c411e583fa81f95"
+    },
+    {
+      "id": "sig-identity",
+      "input": {
+        "kind": "signature",
+        "path": "src/math.ts",
+        "symbol": "identity"
+      },
+      "expected": {
+        "status": "ok",
+        "mode": "configured",
+        "items": [
+          [
+            "src/math.ts",
+            2,
+            17,
+            "<T>(value: T): T"
+          ]
+        ]
+      },
+      "rationale": "Generická funkce vrací stejný typ, jaký přijme.",
+      "fixtureHash": "7fa627907ea1a61a7aba9c43809e0b5fd2075b8c992738156c411e583fa81f95"
+    },
+    {
+      "id": "export-entry",
+      "input": {
+        "kind": "exports",
+        "path": "src/index.ts"
+      },
+      "expected": {
+        "status": "ok",
+        "mode": "configured",
+        "items": [
+          [
+            "src/index.ts",
+            1,
+            23,
+            "doubled"
+          ]
+        ]
+      },
+      "rationale": "Přejmenovaný reexport zveřejní název doubled.",
+      "fixtureHash": "2498c2f720d5084e23ed74c868f73c49426992e017877530240aac75a5c517d0"
+    },
+    {
+      "id": "import-main",
+      "input": {
+        "kind": "imports",
+        "path": "src/main.ts"
+      },
+      "expected": {
+        "status": "ok",
+        "mode": "configured",
+        "items": [
+          [
+            "src/main.ts",
+            1,
+            37,
+            "import",
+            "src/math.ts"
+          ],
+          [
+            "src/main.ts",
+            2,
+            43,
+            "import",
+            "src/math.ts"
+          ]
+        ]
+      },
+      "rationale": "Oba importy s příponou .js vedou ke zdrojovému souboru math.ts.",
+      "fixtureHash": "25d00a2d1d8073aa8d6c1df00d99e1d3b6810b0b056cdc6b235284cac55b6411"
+    },
+    {
+      "id": "reexport-entry",
+      "input": {
+        "kind": "imports",
+        "path": "src/index.ts"
+      },
+      "expected": {
+        "status": "ok",
+        "mode": "configured",
+        "items": [
+          [
+            "src/index.ts",
+            1,
+            39,
+            "re-export",
+            "src/math.ts"
+          ]
+        ]
+      },
+      "rationale": "Hrana reexportu vede ze vstupního modulu do math.ts.",
+      "fixtureHash": "2498c2f720d5084e23ed74c868f73c49426992e017877530240aac75a5c517d0"
+    },
+    {
+      "id": "diag-number",
+      "input": {
+        "kind": "diagnostics",
+        "path": "src/bad-number.ts"
+      },
+      "expected": {
+        "status": "ok",
+        "mode": "configured",
+        "items": [
+          [
+            "src/bad-number.ts",
+            1,
+            14,
+            2322,
+            "error"
+          ]
+        ]
+      },
+      "rationale": "Řetězec nelze přiřadit proměnné typu number.",
+      "fixtureHash": "a17c86c4c526e2d451f823eb57121ddfe888f05c1fca4f58d04bfdac4637cbf0"
+    },
+    {
+      "id": "diag-boolean",
+      "input": {
+        "kind": "diagnostics",
+        "path": "src/bad-boolean.ts"
+      },
+      "expected": {
+        "status": "ok",
+        "mode": "configured",
+        "items": [
+          [
+            "src/bad-boolean.ts",
+            1,
+            14,
+            2322,
+            "error"
+          ]
+        ]
+      },
+      "rationale": "Číslo nelze přiřadit proměnné typu boolean.",
+      "fixtureHash": "cf9a95cd32a7145dd45ba4b6488826b48af50075c8b4f09a57c5de3123c12388"
+    },
+    {
+      "id": "diag-call",
+      "input": {
+        "kind": "diagnostics",
+        "path": "src/bad-call.ts"
+      },
+      "expected": {
+        "status": "ok",
+        "mode": "configured",
+        "items": [
+          [
+            "src/bad-call.ts",
+            2,
+            34,
+            2345,
+            "error"
+          ]
+        ]
+      },
+      "rationale": "Řetězcový argument neodpovídá parametru number.",
+      "fixtureHash": "99d7d941bca73f50655428d3a622ebb0d9a23defd0b285c973784d6714322541"
+    },
+    {
+      "id": "diag-clean",
+      "input": {
+        "kind": "diagnostics",
+        "path": "src/math.ts"
+      },
+      "expected": {
+        "status": "ok",
+        "mode": "configured",
+        "items": []
+      },
+      "rationale": "Deklarace a hodnoty ve zdrojovém modulu se typově shodují.",
+      "fixtureHash": "7fa627907ea1a61a7aba9c43809e0b5fd2075b8c992738156c411e583fa81f95"
+    }
+  ]
+}
