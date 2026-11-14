@@ -1,0 +1,713 @@
+{
+  "schemaVersion": 1,
+  "sourceHash": "91e5ed6999e80804cdc3bf7566c921a38b1739bdde0c02cb7fea3cf6f95b8e69",
+  "workerHash": "ac9dff085d488b3daa31210c3ad122773aac62f5f349127332f0580b27aeb281",
+  "datasetHash": "0d8eaad6577b187b5b995be831844823e655f2e12a8a26cbcecd67a21df56aa8",
+  "typescriptVersion": "6.0.3",
+  "required": 18,
+  "total": 20,
+  "matches": 19,
+  "passed": true,
+  "mismatches": [
+    "refs-alias"
+  ],
+  "results": [
+    {
+      "id": "def-alias",
+      "expected": {
+        "status": "ok",
+        "mode": "configured",
+        "items": [
+          [
+            "src/math.ts",
+            1,
+            17,
+            "duplicate"
+          ]
+        ]
+      },
+      "observed": {
+        "status": "ok",
+        "mode": "configured",
+        "items": [
+          [
+            "src/math.ts",
+            1,
+            17,
+            "duplicate"
+          ]
+        ]
+      },
+      "match": true,
+      "reason": null
+    },
+    {
+      "id": "def-generic",
+      "expected": {
+        "status": "ok",
+        "mode": "configured",
+        "items": [
+          [
+            "src/math.ts",
+            2,
+            17,
+            "identity"
+          ]
+        ]
+      },
+      "observed": {
+        "status": "ok",
+        "mode": "configured",
+        "items": [
+          [
+            "src/math.ts",
+            2,
+            17,
+            "identity"
+          ]
+        ]
+      },
+      "match": true,
+      "reason": null
+    },
+    {
+      "id": "def-value",
+      "expected": {
+        "status": "ok",
+        "mode": "configured",
+        "items": [
+          [
+            "src/math.ts",
+            3,
+            14,
+            "price"
+          ]
+        ]
+      },
+      "observed": {
+        "status": "ok",
+        "mode": "configured",
+        "items": [
+          [
+            "src/math.ts",
+            3,
+            14,
+            "price"
+          ]
+        ]
+      },
+      "match": true,
+      "reason": null
+    },
+    {
+      "id": "def-tsx",
+      "expected": {
+        "status": "ok",
+        "mode": "configured",
+        "items": [
+          [
+            "src/math.ts",
+            3,
+            14,
+            "price"
+          ]
+        ]
+      },
+      "observed": {
+        "status": "ok",
+        "mode": "configured",
+        "items": [
+          [
+            "src/math.ts",
+            3,
+            14,
+            "price"
+          ]
+        ]
+      },
+      "match": true,
+      "reason": null
+    },
+    {
+      "id": "refs-alias",
+      "expected": {
+        "status": "ok",
+        "mode": "configured",
+        "items": [
+          [
+            "src/bad-call.ts",
+            1,
+            10
+          ],
+          [
+            "src/bad-call.ts",
+            2,
+            24
+          ],
+          [
+            "src/index.ts",
+            1,
+            10
+          ],
+          [
+            "src/main.ts",
+            1,
+            10
+          ],
+          [
+            "src/main.ts",
+            1,
+            23
+          ],
+          [
+            "src/main.ts",
+            3,
+            22
+          ],
+          [
+            "src/math.ts",
+            1,
+            17
+          ]
+        ]
+      },
+      "observed": {
+        "status": "ok",
+        "mode": "configured",
+        "items": [
+          [
+            "src/bad-call.ts",
+            1,
+            10
+          ],
+          [
+            "src/bad-call.ts",
+            2,
+            24
+          ],
+          [
+            "src/index.ts",
+            1,
+            10
+          ],
+          [
+            "src/index.ts",
+            1,
+            23
+          ],
+          [
+            "src/main.ts",
+            1,
+            10
+          ],
+          [
+            "src/main.ts",
+            1,
+            23
+          ],
+          [
+            "src/main.ts",
+            3,
+            22
+          ],
+          [
+            "src/math.ts",
+            1,
+            17
+          ]
+        ]
+      },
+      "match": false,
+      "reason": "different_output"
+    },
+    {
+      "id": "refs-price",
+      "expected": {
+        "status": "ok",
+        "mode": "configured",
+        "items": [
+          [
+            "app/page.tsx",
+            1,
+            10
+          ],
+          [
+            "app/page.tsx",
+            3,
+            49
+          ],
+          [
+            "src/main.ts",
+            2,
+            20
+          ],
+          [
+            "src/main.ts",
+            3,
+            28
+          ],
+          [
+            "src/math.ts",
+            3,
+            14
+          ]
+        ]
+      },
+      "observed": {
+        "status": "ok",
+        "mode": "configured",
+        "items": [
+          [
+            "app/page.tsx",
+            1,
+            10
+          ],
+          [
+            "app/page.tsx",
+            3,
+            49
+          ],
+          [
+            "src/main.ts",
+            2,
+            20
+          ],
+          [
+            "src/main.ts",
+            3,
+            28
+          ],
+          [
+            "src/math.ts",
+            3,
+            14
+          ]
+        ]
+      },
+      "match": true,
+      "reason": null
+    },
+    {
+      "id": "refs-heading",
+      "expected": {
+        "status": "ok",
+        "mode": "configured",
+        "items": [
+          [
+            "src/main.ts",
+            4,
+            14
+          ]
+        ]
+      },
+      "observed": {
+        "status": "ok",
+        "mode": "configured",
+        "items": [
+          [
+            "src/main.ts",
+            4,
+            14
+          ]
+        ]
+      },
+      "match": true,
+      "reason": null
+    },
+    {
+      "id": "refs-receipt-type",
+      "expected": {
+        "status": "ok",
+        "mode": "configured",
+        "items": [
+          [
+            "src/math.ts",
+            4,
+            18
+          ],
+          [
+            "src/math.ts",
+            5,
+            23
+          ]
+        ]
+      },
+      "observed": {
+        "status": "ok",
+        "mode": "configured",
+        "items": [
+          [
+            "src/math.ts",
+            4,
+            18
+          ],
+          [
+            "src/math.ts",
+            5,
+            23
+          ]
+        ]
+      },
+      "match": true,
+      "reason": null
+    },
+    {
+      "id": "type-total",
+      "expected": {
+        "status": "ok",
+        "mode": "configured",
+        "items": [
+          [
+            "src/main.ts",
+            3,
+            14,
+            "number"
+          ]
+        ]
+      },
+      "observed": {
+        "status": "ok",
+        "mode": "configured",
+        "items": [
+          [
+            "src/main.ts",
+            3,
+            14,
+            "number"
+          ]
+        ]
+      },
+      "match": true,
+      "reason": null
+    },
+    {
+      "id": "type-heading",
+      "expected": {
+        "status": "ok",
+        "mode": "configured",
+        "items": [
+          [
+            "src/main.ts",
+            4,
+            14,
+            "\"Title\""
+          ]
+        ]
+      },
+      "observed": {
+        "status": "ok",
+        "mode": "configured",
+        "items": [
+          [
+            "src/main.ts",
+            4,
+            14,
+            "\"Title\""
+          ]
+        ]
+      },
+      "match": true,
+      "reason": null
+    },
+    {
+      "id": "type-amount",
+      "expected": {
+        "status": "ok",
+        "mode": "configured",
+        "items": [
+          [
+            "src/main.ts",
+            5,
+            31,
+            "number"
+          ]
+        ]
+      },
+      "observed": {
+        "status": "ok",
+        "mode": "configured",
+        "items": [
+          [
+            "src/main.ts",
+            5,
+            31,
+            "number"
+          ]
+        ]
+      },
+      "match": true,
+      "reason": null
+    },
+    {
+      "id": "sig-duplicate",
+      "expected": {
+        "status": "ok",
+        "mode": "configured",
+        "items": [
+          [
+            "src/math.ts",
+            1,
+            17,
+            "(n: number): number"
+          ]
+        ]
+      },
+      "observed": {
+        "status": "ok",
+        "mode": "configured",
+        "items": [
+          [
+            "src/math.ts",
+            1,
+            17,
+            "(n: number): number"
+          ]
+        ]
+      },
+      "match": true,
+      "reason": null
+    },
+    {
+      "id": "sig-identity",
+      "expected": {
+        "status": "ok",
+        "mode": "configured",
+        "items": [
+          [
+            "src/math.ts",
+            2,
+            17,
+            "<T>(value: T): T"
+          ]
+        ]
+      },
+      "observed": {
+        "status": "ok",
+        "mode": "configured",
+        "items": [
+          [
+            "src/math.ts",
+            2,
+            17,
+            "<T>(value: T): T"
+          ]
+        ]
+      },
+      "match": true,
+      "reason": null
+    },
+    {
+      "id": "export-entry",
+      "expected": {
+        "status": "ok",
+        "mode": "configured",
+        "items": [
+          [
+            "src/index.ts",
+            1,
+            23,
+            "doubled"
+          ]
+        ]
+      },
+      "observed": {
+        "status": "ok",
+        "mode": "configured",
+        "items": [
+          [
+            "src/index.ts",
+            1,
+            23,
+            "doubled"
+          ]
+        ]
+      },
+      "match": true,
+      "reason": null
+    },
+    {
+      "id": "import-main",
+      "expected": {
+        "status": "ok",
+        "mode": "configured",
+        "items": [
+          [
+            "src/main.ts",
+            1,
+            37,
+            "import",
+            "src/math.ts"
+          ],
+          [
+            "src/main.ts",
+            2,
+            43,
+            "import",
+            "src/math.ts"
+          ]
+        ]
+      },
+      "observed": {
+        "status": "ok",
+        "mode": "configured",
+        "items": [
+          [
+            "src/main.ts",
+            1,
+            37,
+            "import",
+            "src/math.ts"
+          ],
+          [
+            "src/main.ts",
+            2,
+            43,
+            "import",
+            "src/math.ts"
+          ]
+        ]
+      },
+      "match": true,
+      "reason": null
+    },
+    {
+      "id": "reexport-entry",
+      "expected": {
+        "status": "ok",
+        "mode": "configured",
+        "items": [
+          [
+            "src/index.ts",
+            1,
+            39,
+            "re-export",
+            "src/math.ts"
+          ]
+        ]
+      },
+      "observed": {
+        "status": "ok",
+        "mode": "configured",
+        "items": [
+          [
+            "src/index.ts",
+            1,
+            39,
+            "re-export",
+            "src/math.ts"
+          ]
+        ]
+      },
+      "match": true,
+      "reason": null
+    },
+    {
+      "id": "diag-number",
+      "expected": {
+        "status": "ok",
+        "mode": "configured",
+        "items": [
+          [
+            "src/bad-number.ts",
+            1,
+            14,
+            2322,
+            "error"
+          ]
+        ]
+      },
+      "observed": {
+        "status": "ok",
+        "mode": "configured",
+        "items": [
+          [
+            "src/bad-number.ts",
+            1,
+            14,
+            2322,
+            "error"
+          ]
+        ]
+      },
+      "match": true,
+      "reason": null
+    },
+    {
+      "id": "diag-boolean",
+      "expected": {
+        "status": "ok",
+        "mode": "configured",
+        "items": [
+          [
+            "src/bad-boolean.ts",
+            1,
+            14,
+            2322,
+            "error"
+          ]
+        ]
+      },
+      "observed": {
+        "status": "ok",
+        "mode": "configured",
+        "items": [
+          [
+            "src/bad-boolean.ts",
+            1,
+            14,
+            2322,
+            "error"
+          ]
+        ]
+      },
+      "match": true,
+      "reason": null
+    },
+    {
+      "id": "diag-call",
+      "expected": {
+        "status": "ok",
+        "mode": "configured",
+        "items": [
+          [
+            "src/bad-call.ts",
+            2,
+            34,
+            2345,
+            "error"
+          ]
+        ]
+      },
+      "observed": {
+        "status": "ok",
+        "mode": "configured",
+        "items": [
+          [
+            "src/bad-call.ts",
+            2,
+            34,
+            2345,
+            "error"
+          ]
+        ]
+      },
+      "match": true,
+      "reason": null
+    },
+    {
+      "id": "diag-clean",
+      "expected": {
+        "status": "ok",
+        "mode": "configured",
+        "items": []
+      },
+      "observed": {
+        "status": "ok",
+        "mode": "configured",
+        "items": []
+      },
+      "match": true,
+      "reason": null
+    }
+  ]
+}
