@@ -20,3 +20,4 @@ export * from './r3-settings.js';
 export * from './r3-changes.js';
 export * from './r3-verification.js';
 export * from './r4-context.js';
+export * from './r4-project-checks.js';

@@ -15,6 +15,28 @@ const processResult: CommandResult = {
 };
 
 describe('verification', () => {
+  it.each([
+    ['node-tap', 'TAP version 13\n1..0\n# tests 0\n# suites 0\n# pass 0\n# fail 0\n', 'incomplete'],
+    ['node-tap', 'TAP version 13\n1..1\n# tests 1\n# suites 0\n# pass 1\n# fail 0\n', 'passed'],
+    ['vitest-json', '{"numTotalTests":0,"numPassedTests":0,"numFailedTests":0}', 'incomplete'],
+    ['vitest-json', '{"numTotalTests":1,"numPassedTests":1,"numFailedTests":0}', 'passed'],
+    [null, '', 'passed']
+  ] as const)('requires bounded %s evidence before recording a verified check', async (evidenceFormat, stdout, result) => {
+    const saved: unknown[] = [];
+    const service = new VerifyCommand({
+      runner: { run: async () => ({ ...processResult, stdout }) },
+      observer: { inspect: async () => before },
+      workspaces: { observe: async () => before, current: async () => before },
+      store: { append: async (record, evidence) => { saved.push({ record, evidence }); }, current: async () => null },
+      ids: { next: () => '54444444-4444-4444-8444-444444444444' }, clock: { now: () => '2026-09-06T10:30:00.000Z' },
+      classify: async () => ({
+        kind: evidenceFormat ? 'test' : 'typecheck', profileId: 'r4-ts-v1', coveredPaths: ['src/app.ts'],
+        inputHashes: { 'src/app.ts': 'a'.repeat(64) }, evidenceFormat
+      })
+    });
+    expect(await service.execute(command, actor, new AbortController().signal)).toMatchObject({ result, kind: evidenceFormat ? 'test' : 'typecheck' });
+    expect(saved[0]).toMatchObject({ evidence: { profileId: 'r4-ts-v1', coveredPaths: ['src/app.ts'] } });
+  });
   it('includes relevance inspection in the observed verification interval', async () => {
     let generation = '1';
     const service = new VerifyCommand({

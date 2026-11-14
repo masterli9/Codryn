@@ -1,13 +1,14 @@
 import { z } from 'zod';
 import { commandSpecSchema } from './r2-permission.js';
 import { uuidSchema } from './ids.js';
+import { projectCheckKindSchema } from './r4-project-checks.js';
 
 export const verificationRecordSchema = z.object({
   id: uuidSchema,
   runId: uuidSchema,
   callId: uuidSchema,
   projectId: uuidSchema,
-  kind: z.literal('test'),
+  kind: projectCheckKindSchema,
   command: commandSpecSchema,
   scope: z.literal('project'),
   revision: z.number().int().nonnegative(),

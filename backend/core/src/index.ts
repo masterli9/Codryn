@@ -142,3 +142,6 @@ export { StreamBatcher } from './desktop/stream-batcher.js';
 export { DesktopPermissionBroker } from './desktop/permission-broker.js';
 export type { ChatStore, DesktopProjectStore, DesktopRequestStore, DesktopActionStore, DesktopProjectionStore, DesktopRuntimeFactory, ConversationHistoryReader } from './desktop/ports.js';
 export type { SecretProtector, SecretStore, ProviderSettingsStore, ProviderAccessGate } from './secrets/ports.js';
+export { assessProjectChecks, isProjectCheckInput, sameCheckInputs } from './verification/project-check-policy.js';
+export type { ClassifiedCheck } from './verification/verify-command.js';
+export type { ProfiledVerificationRecord, VerificationCoverage } from './verification/verification-store.js';

@@ -15,8 +15,9 @@ const config: ForgeConfig = {
     executableName: 'Codryn',
     extraResource: [
       path.resolve(__dirname, '../../tests/support/fixtures/process'),
-      path.resolve(__dirname, '../../tests/support/fixtures/r2-project')
-      ,path.resolve(__dirname,'src/renderer/assets/instrument-sans-license.txt')
+      path.resolve(__dirname, '../../tests/support/fixtures/r2-project'),
+      path.resolve(__dirname, '../../node_modules/typescript'),
+      path.resolve(__dirname, 'src/renderer/assets/instrument-sans-license.txt')
     ]
   },
   makers: [
