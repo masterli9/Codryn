@@ -86,6 +86,7 @@ interface R4ContextInput {
   references: readonly R4ReferenceContent[];
   map: readonly R4Content[];
   mapOmissions: readonly R4ContextAuditSource[];
+  priorConversationAudit?: readonly R4ContextAuditSource[];
 }
 const explicitBytes = 64 * 1024;
 const excerptBytes = 16 * 1024;
@@ -95,8 +96,9 @@ const hashText = (text: string) => createHash('sha256').update(text).digest('hex
 export function assembleR4Context(input: R4ContextInput): { modelContent: ModelContextSource[]; audit: R4ContextAuditSource[] } {
   const modelContent: ModelContextSource[] = [];
   const taskBytes = Buffer.byteLength(input.task, 'utf8');
-  const audit: R4ContextAuditSource[] = [{ source: 'user_text', hash: hashText(input.task), bytes: taskBytes, status: 'used' }];
-  let remaining = MAX_CONTEXT_BYTES - taskBytes;
+  const priorAudit = input.priorConversationAudit ?? [];
+  const audit: R4ContextAuditSource[] = [{ source: 'user_text', hash: hashText(input.task), bytes: taskBytes, status: 'used' }, ...priorAudit];
+  let remaining = MAX_CONTEXT_BYTES - taskBytes - priorAudit.reduce((bytes, item) => bytes + item.bytes, 0);
 
   function add(value: R4Content, source: R4ContextAuditSource['source'], reason: ModelContextSource['reason'], budget: number) {
     const hash = value.hash ?? hashText(value.content);

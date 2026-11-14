@@ -1,5 +1,5 @@
 import { StringDecoder } from 'node:string_decoder';
-import { StreamBatcher,type DesktopRuntimeFactory,type ModelAdapter } from '@codryn/core';
+import { selectConversationContext,StreamBatcher,type DesktopRuntimeFactory,type ModelAdapter } from '@codryn/core';
 import type { ModelStreamEvent } from '@codryn/shared';
 import type { R3InfrastructureResources } from '../create-r3-infrastructure.js';
 import { createR2Infrastructure } from '../create-r2-infrastructure.js';
@@ -7,12 +7,17 @@ import { StreamRedactor } from '../logging/stream-redactor.js';
 import { createR3Provider } from './r3-provider-factory.js';
 import { safeProviderError } from './provider-connection-test.js';
 import { prepareDesktopContext } from '../context/prepare-desktop-context.js';
+import { SqliteConversationReader } from '../persistence/sqlite-conversation-reader.js';
 export function createDesktopRuntimeFactory(options:R3InfrastructureResources&{userDataPath:string;nodeExecutable:string|null;providerFactory?:typeof createR3Provider}):DesktopRuntimeFactory {
   return async input=>{
     const root=await options.projects.root(input.projectId),abort=new AbortController(),signal=AbortSignal.any([input.signal,abort.signal]);
     const keys:string[]=[];
     if(await options.secrets.state('openai')==='stored')keys.push(await options.secrets.read('openai'));
     const safe=(text:string)=>{const redact=new StreamRedactor({secrets:keys});const result=redact.push('model',text)+redact.finish('model');redact.dispose();return result;};
+    const candidates=await new SqliteConversationReader(options.database).readCandidates(input.request.chatId,input.request.requestId);
+    const priorConversation=selectConversationContext(candidates.map(pair=>({
+      user:{...pair.user,text:safe(pair.user.text)},assistant:{...pair.assistant,text:safe(pair.assistant.text)}
+    })));
     const provider=await (options.providerFactory??createR3Provider)({mode:input.request.mode,secrets:options.secrets,ids:options.ids,projectRoot:root,nodeExecutable:options.nodeExecutable});
     const streams=new Map<number,{redactor:StreamRedactor;batcher:StreamBatcher;sealed:boolean}>();
     const getStream=(step:number)=>{
@@ -42,7 +47,8 @@ export function createDesktopRuntimeFactory(options:R3InfrastructureResources&{u
     let runtime:Awaited<ReturnType<typeof createR2Infrastructure>>;
     try {
       runtime=await createR2Infrastructure({userDataPath:options.userDataPath,projectRoot:root,database:options.database,model,workspaceObserver:{inspect:async signal=>(await options.observer(input.projectId)).inspect(signal)},workspaceStore:options.workspace,allowReadOnlyCompletion:true,onRunCreated:input.onRunCreated,
-        prepareContext:(runId,signal)=>prepareDesktopContext(options,input.request,input.projectId,root,runId,safe,signal),
+        priorConversation,
+        prepareContext:(runId,signal)=>prepareDesktopContext(options,input.request,input.projectId,root,runId,safe,signal,priorConversation),
         trustedVerificationExecutable:options.nodeExecutable??'__unavailable_node__',filesystemEffect:effect=>options.filesystemEffect(input.projectId,effect),safeModelText:safe,safeToolInput:args=>!keys.some(key=>JSON.stringify(args).includes(key)),
         onModelEvent:async({step,event})=>{if(event.type==='text_delta'){const stream=getStream(step);await stream.batcher.push(stream.redactor.push('model',event.text));}},
         onModelTurnCompleted:async({step})=>{const stream=streams.get(step);if(stream){await stream.batcher.push(stream.redactor.finish('model'));await stream.batcher.close('complete');await options.projections.sealAssistant(input.request.requestId,step,'complete');stream.sealed=true;}},

@@ -77,6 +77,7 @@ export async function createR2Infrastructure(options: {
   readonly database?: DatabaseSync;
   readonly onRunCreated?: (runId: string) => Promise<void>;
   readonly prepareContext?: R2ExecutionOptions['prepareContext'];
+  readonly priorConversation?: R2ExecutionOptions['priorConversation'];
   readonly allowReadOnlyCompletion?: boolean;
   readonly onModelEvent?: R2ExecutionOptions['onModelEvent'];
   readonly onModelTurnCompleted?: R2ExecutionOptions['onModelTurnCompleted'];
@@ -268,6 +269,7 @@ export async function createR2Infrastructure(options: {
         const result = await loop.executeR2(request, signal, {
           ...(options.onRunCreated === undefined ? {} : { onRunCreated: options.onRunCreated }),
           ...(options.prepareContext === undefined ? {} : { prepareContext: options.prepareContext }),
+          ...(options.priorConversation === undefined ? {} : { priorConversation: options.priorConversation }),
           ...(options.allowReadOnlyCompletion === undefined ? {} : { allowReadOnlyCompletion: options.allowReadOnlyCompletion }),
           ...(options.onModelEvent === undefined ? {} : { onModelEvent: options.onModelEvent }),
           ...(options.onModelTurnCompleted === undefined ? {} : { onModelTurnCompleted: options.onModelTurnCompleted }),

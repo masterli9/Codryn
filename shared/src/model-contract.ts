@@ -38,6 +38,29 @@ export const modelToolDefinitionSchema = z.object({
   inputSchema: z.record(z.string(), jsonValueSchema)
 }).strict();
 
+export const maxPriorConversationMessages = 16;
+export const maxPriorConversationBytes = 32 * 1024;
+export const priorConversationSchema = z.array(z.object({
+  role: z.enum(['user', 'assistant']),
+  text: z.string().min(1)
+}).strict()).max(maxPriorConversationMessages)
+  .refine(messages => {
+    const encoder = new TextEncoder();
+    return messages.reduce((bytes, message) => bytes + encoder.encode(message.text).length, 0) <= maxPriorConversationBytes;
+  })
+  .refine(messages => messages.length % 2 === 0 && messages.every((message, index) => message.role === (index % 2 === 0 ? 'user' : 'assistant')));
+
+export const conversationContextEventSchema = z.object({
+  messageIds: z.array(uuidSchema).max(maxPriorConversationMessages),
+  messageCount: z.number().int().min(0).max(maxPriorConversationMessages),
+  byteLength: z.number().int().min(0).max(maxPriorConversationBytes),
+  truncated: z.boolean(),
+  reason: z.enum(['none', 'count_limit', 'byte_limit', 'oversized_latest'])
+}).strict().refine(event => event.messageIds.length === event.messageCount && event.messageCount % 2 === 0 &&
+  new Set(event.messageIds).size === event.messageCount && event.truncated === (event.reason !== 'none') &&
+  (event.messageCount === 0) === (event.byteLength === 0) &&
+  (event.reason !== 'oversized_latest' || event.messageCount === 0));
+
 export const modelRequestSchema = z.object({
   runId: uuidSchema,
   task: z.string().trim().min(1).max(16_384),
@@ -45,7 +68,8 @@ export const modelRequestSchema = z.object({
   context: z.array(modelContextSourceSchema).max(32),
   tools: z.array(modelToolDefinitionSchema),
   previousToolResults: z.array(toolResultSchema),
-  history: z.array(modelTurnSchema).max(64).optional()
+  history: z.array(modelTurnSchema).max(64).optional(),
+  priorConversation: priorConversationSchema.optional()
 }).strict();
 
 const modelErrorSchema = z.object({
@@ -71,4 +95,5 @@ export type ModelDescriptor = z.infer<typeof modelDescriptorSchema>;
 export type ModelContextSource = z.infer<typeof modelContextSourceSchema>;
 export type ModelToolDefinition = z.infer<typeof modelToolDefinitionSchema>;
 export type ModelRequest = z.infer<typeof modelRequestSchema>;
+export type PriorConversationMessage = z.infer<typeof priorConversationSchema>[number];
 export type ModelStreamEvent = z.infer<typeof modelStreamEventSchema>;

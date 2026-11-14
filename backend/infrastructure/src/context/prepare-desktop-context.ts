@@ -1,4 +1,6 @@
+import { createHash } from 'node:crypto';
 import { assembleR4Context } from '@codryn/core';
+import type { ConversationSelection } from '@codryn/core';
 import { r4ReferencePathSchema } from '@codryn/shared';
 import type { R3SubmitInput, R4ContextAuditSource } from '@codryn/shared';
 import type { R3InfrastructureResources } from '../create-r3-infrastructure.js';
@@ -7,7 +9,7 @@ import { requireReadyReferences } from './reference-resolver.js';
 
 type Resources = Pick<R3InfrastructureResources, 'references' | 'repoMap' | 'recordContextAudit'>;
 
-export async function prepareDesktopContext(options: Resources, input: R3SubmitInput, projectId: string, root: string, runId: string, safe: (text: string) => string, signal: AbortSignal) {
+export async function prepareDesktopContext(options: Resources, input: R3SubmitInput, projectId: string, root: string, runId: string, safe: (text: string) => string, signal: AbortSignal, prior: ConversationSelection) {
   const task = input.task;
   const selected = input.references ?? [];
   const paths = selected.map(item => item.path);
@@ -43,8 +45,13 @@ export async function prepareDesktopContext(options: Resources, input: R3SubmitI
       const reason = mapStatus?.state === 'indexing' ? 'map_building' : mapStatus?.reason ?? 'unavailable';
       if (!mapOmissions.some(item => item.reason === reason)) mapOmissions.push({ source: 'repo_map', bytes: 0, status: 'omitted', reason });
     }
+    const priorConversationAudit: R4ContextAuditSource[] = prior.messages.map(({ text }, index) => ({
+      source: 'chat_history', sourceId: prior.messageIds[index], hash: createHash('sha256').update(text).digest('hex'),
+      bytes: Buffer.byteLength(text), status: 'used'
+    }));
+    if (prior.truncated) priorConversationAudit.push({ source: 'chat_history', bytes: 0, status: 'omitted', reason: prior.reason });
     result = assembleR4Context({
-      task, history: [], mapOmissions,
+      task, history: [], mapOmissions, priorConversationAudit,
       projectRules: rules.filter(item => item.policyRevision === resolved.policyRevision && safePath(item.path))
         .map(item => ({ path: item.path, hash: item.contentHash, content: safe(item.text), truncated: item.truncated })),
       references: resolved.results.flatMap(item => {

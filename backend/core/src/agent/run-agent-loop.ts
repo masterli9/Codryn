@@ -1,4 +1,4 @@
-import { runAgentRequestSchema, r2RunResultSchema, uuidSchema, type AgentRunFailureCode, type EventEnvelope, type ModelRequest, type ModelStreamEvent, type ModelTurn, type R2RunResult, type RunAgentRequest, type RunAgentResult, type ToolResult, type Uuid } from '@codryn/shared';
+import { conversationContextEventSchema, priorConversationSchema, runAgentRequestSchema, r2RunResultSchema, uuidSchema, type AgentRunFailureCode, type EventEnvelope, type ModelRequest, type ModelStreamEvent, type ModelTurn, type R2RunResult, type RunAgentRequest, type RunAgentResult, type ToolResult, type Uuid } from '@codryn/shared';
 import type { Clock, DiagnosticLogger, EventStore, IdGenerator } from '../diagnostics/ports.js';
 import { collectModelResponse, ModelResponseFailure } from './model-response-collector.js';
 import type { ContextAssembler } from './context-assembler.js';
@@ -9,10 +9,12 @@ import type { ToolExecutionHarness } from '../tools/tool-execution-harness.js';
 import type { AgentRunState } from '../state/agent-run.js';
 import { appendAssistantTurn, appendToolTurn, toolResultsFromHistory } from './model-history.js';
 import { canComplete } from './r2-completion.js';
+import type { ConversationSelection } from '../desktop/conversation-context.js';
 
 export interface R2ExecutionOptions {
   readonly onRunCreated?: (runId: Uuid) => Promise<void>;
   readonly prepareContext?: (runId: Uuid, signal: AbortSignal) => Promise<readonly ModelRequest['context'][number][]>;
+  readonly priorConversation?: ConversationSelection;
   readonly allowReadOnlyCompletion?: boolean;
   readonly onModelEvent?: (input:{runId:Uuid;step:number;event:ModelStreamEvent})=>Promise<void>;
   readonly onModelTurnCompleted?: (input:{runId:Uuid;step:number})=>Promise<void>;
@@ -151,6 +153,14 @@ export class RunAgentLoop {
         : await this.dependencies.contextAssembler.assemble({ task: request.task, project: { id: projectId }, contextReferences: request.contextReferences }, signal);
       this.abort(signal);
       if ('sources' in context) await this.append(runId, request.requestId, 'context.assembled', { sources: context.sources.map((source) => ({ path: source.path, contentHash: source.contentHash, byteLength: source.byteLength, reason: source.reason })), totalBytes: context.totalBytes });
+      const selection = options.priorConversation;
+      const conversation = selection ? priorConversationSchema.parse(selection.messages) : undefined;
+      if (selection && conversation) {
+        await this.append(runId, request.requestId, 'conversation.context_selected', conversationContextEventSchema.parse({
+          messageIds: selection.messageIds, messageCount: conversation.length, byteLength: selection.byteLength,
+          truncated: selection.truncated, reason: selection.reason
+        }));
+      }
       if (this.dependencies.model.descriptor.capabilities.toolCalling !== 'supported') throw { code: 'R1_MODEL_CAPABILITY_MISSING' };
       while (true) {
         this.abort(signal);
@@ -159,7 +169,8 @@ export class RunAgentLoop {
         const previousToolResults = toolResultsFromHistory(history);
         const modelRequest: ModelRequest = {
           runId, task: request.task, project: { id: projectId }, context: [...context.modelContent],
-          tools: [...this.dependencies.registry.descriptors], previousToolResults, history: [...history]
+          tools: [...this.dependencies.registry.descriptors], previousToolResults, history: [...history],
+          ...(conversation?.length ? { priorConversation: conversation } : {})
         };
         await this.append(runId, request.requestId, 'model.requested', { step: steps + 1, profile: 'change', toolCount: modelRequest.tools.length, contextSourceCount: modelRequest.context.length, previousToolResultCount: previousToolResults.length });
         const onModelEvent = options.onModelEvent;
