@@ -1,0 +1,4 @@
+{
+  "compilerOptions": { "strict": true, "target": "es2022", "jsx": "preserve", "types": [] },
+  "include": ["src"]
+}

@@ -1,0 +1,6 @@
+{
+  "name": "r4-typescript-fixture",
+  "private": true,
+  "type": "module",
+  "scripts": { "test": "node --test" }
+}
