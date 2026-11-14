@@ -1,5 +1,4 @@
 import { createHash } from 'node:crypto';
-import { createRequire } from 'node:module';
 import { lstat, opendir, realpath } from 'node:fs/promises';
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import ts from 'typescript';
@@ -8,6 +7,7 @@ import { projectCheckCatalogSchema, r4ReferencePathSchema } from '@codryn/shared
 import type { ProjectCheckCandidate, ProjectCheckCatalog } from '@codryn/shared';
 import { ContextPathPolicy, ContextPathPolicyError } from '../filesystem/context-path-policy.js';
 import { readBoundedContextFile } from '../filesystem/read-bounded-context-file.js';
+import { developmentTypeScriptCli } from './typescript-installation.js';
 
 const maxConfigBytes = 64 * 1024;
 const maxEntries = 5000;
@@ -29,10 +29,6 @@ const vitestFile = /(?:^|\/)[^/]+\.(?:test|spec)\.[cm]?[jt]sx?$/iu;
 function relativePath(root: string, path: string): string | null {
   const parsed = r4ReferencePathSchema.safeParse(slash(relative(root, path)));
   return parsed.success ? parsed.data : null;
-}
-
-export function developmentTypeScriptCli(): string {
-  return createRequire(import.meta.url).resolve('typescript/bin/tsc');
 }
 
 async function regularPath(root: string, path: string) {
@@ -62,7 +58,7 @@ async function configTree(root: string, entry: string, policy: ContextPathPolicy
   if (!read) return false;
   files.set(entry, read.text);
   digests[read.rel] = hash(read.bytes);
-  const parsed = ts.parseConfigFileTextToJson(entry, read.text);
+  const parsed = ts.parseConfigFileTextToJson(slash(entry), read.text);
   if (parsed.error || !parsed.config || Array.isArray(parsed.config)) return false;
   const config = object(parsed.config);
   if (config.references !== undefined) return false;
@@ -107,6 +103,25 @@ async function allowedFiles(root: string, policy: ContextPathPolicy, signal: Abo
   return { directories, paths };
 }
 
+export async function readGuardedTypeScriptConfig(root: string, policy: ContextPathPolicy, revision: string, signal: AbortSignal) {
+  const entry = join(root, 'tsconfig.json'), configs = new Map<string, string>();
+  const hashes: Record<string, string> = Object.create(null) as Record<string, string>;
+  const complete = await configTree(root, entry, policy, revision, signal, configs, hashes);
+  if (!complete || !matchFiles) return { parsed: null, hashes, paths: new Set<string>() };
+  const { directories, paths } = await allowedFiles(root, policy, signal);
+  const absolute = (path: string) => resolve(root, path);
+  const host: ts.ParseConfigHost = {
+    useCaseSensitiveFileNames: process.platform !== 'win32',
+    fileExists: path => configs.has(absolute(path)) || paths.has(slash(relative(root, absolute(path)))),
+    readFile: path => configs.get(absolute(path)),
+    readDirectory: (path, extensions = [], excludes, includes, depth) =>
+      matchFiles(slash(path), extensions, excludes, includes, host.useCaseSensitiveFileNames, slash(root), depth,
+        folder => directories.get(slash(absolute(folder))) ?? { files: [], directories: [] }, folder => slash(absolute(folder)))
+  };
+  const parsed = ts.parseJsonConfigFileContent(ts.parseConfigFileTextToJson(slash(entry), configs.get(entry) ?? '').config, host, slash(root), undefined, slash(entry));
+  return { parsed, hashes, paths };
+}
+
 export interface ProjectCheckDiscovery {
   catalog: ProjectCheckCatalog;
   inputPaths: readonly string[];
@@ -146,23 +161,12 @@ export async function inspectProjectChecks(rootDirectory: string, nodeExecutable
     catch { reasons.push('Manifest package.json není platný JSON.'); return result(); }
     const dependencies = { ...object(manifest.dependencies), ...object(manifest.devDependencies), ...object(manifest.peerDependencies) };
     framework = 'next' in dependencies ? 'next' : 'react' in dependencies ? 'react' : 'node';
-    const configs = new Map<string, string>();
-    const parsedTree = await configTree(root, config, policy, revision, bounded, configs, digests);
-    configPaths = [...configs.keys()].map(path => slash(relative(root, path))).sort();
-    if (!parsedTree || !matchFiles) { reasons.push('Konfigurace TypeScriptu není platná nebo čitelná v hranicích projektu.'); return result(); }
-    const { directories, paths } = await allowedFiles(root, policy, bounded);
-    const absolute = (path: string) => resolve(root, path);
-    const host: ts.ParseConfigHost = {
-      useCaseSensitiveFileNames: process.platform !== 'win32',
-      fileExists: path => configs.has(absolute(path)) || paths.has(slash(relative(root, absolute(path)))),
-      readFile: path => configs.get(absolute(path)),
-      readDirectory: (path, extensions = [], excludes, includes, depth) =>
-        matchFiles(slash(path), extensions, excludes, includes, host.useCaseSensitiveFileNames, slash(root), depth,
-          folder => directories.get(slash(absolute(folder))) ?? { files: [], directories: [] }, folder => slash(absolute(folder)))
-    };
-    const parsed = ts.parseJsonConfigFileContent(ts.parseConfigFileTextToJson(config, configs.get(config) ?? '').config, host, root, undefined, config);
+    const { parsed, hashes, paths } = await readGuardedTypeScriptConfig(root, policy, revision, bounded);
+    Object.assign(digests, hashes);
+    configPaths = Object.keys(hashes).sort();
+    if (!parsed) { reasons.push('Konfigurace TypeScriptu není platná nebo čitelná v hranicích projektu.'); return result(); }
     const unsafeFlags = parsed.options.incremental || parsed.options.composite || parsed.options.watch || parsed.options.tsBuildInfoFile !== undefined;
-    const included = parsed.fileNames.map(path => relativePath(root, absolute(path)));
+    const included = parsed.fileNames.map(path => relativePath(root, resolve(root, path)));
     if (parsed.errors.length || unsafeFlags || !included.length || included.some(path => path === null || !paths.has(path))) {
       reasons.push('Konfiguraci TypeScriptu nelze použít k omezené kontrole bez zápisu.'); return result();
     }
