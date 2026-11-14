@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import { readFile, realpath, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { createDesktopTypeScriptQueryClient } from '../composition-root.js';
@@ -11,7 +12,11 @@ export async function runR4TypeScriptSmoke(profile: string, fixture: string, res
     const result = await client.query(root, { kind: 'definition', path: 'src/main.ts', symbol: 'twice', maxResults: 20 }, 7, AbortSignal.timeout(7500));
     const targetHash = hash(await readFile(join(root, 'src', 'main.ts')));
     const workerHash = hash(await readFile(join(resources, 'app.asar.unpacked', '.webpack', 'main', 'typescript-query-worker.js')));
-    const asarHash = hash(await readFile(join(resources, 'app.asar')));
+    const previousNoAsar = process.noAsar;
+    let asarHash: string;
+    process.noAsar = true;
+    try { asarHash = hash(readFileSync(join(resources, 'app.asar'))); }
+    finally { process.noAsar = previousNoAsar; }
     const passed = result.status === 'ok' && result.revision === 7 && result.targetHash === targetHash &&
       result.items.length === 1 && result.items[0]?.path === 'src/math.ts' && result.items[0]?.line === 1 &&
       result.items[0]?.column === 17 && result.items[0]?.name === 'duplicate';
