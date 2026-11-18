@@ -89,7 +89,7 @@ it('preserves an earlier patch across restart and still requires command approva
     for(let count=0;count<100&&!pending.permissions.length;count++){await new Promise(resolve=>setTimeout(resolve,30));pending=await host.snapshot(chat.id);}
     expect(pending.permissions).toHaveLength(1);
     expect(pending.changes?.setId).toBe(before.changes?.setId);
-    expect(pending.commands.every(command=>command.state!=='running')).toBe(true);
+    expect(pending.commands.every(command=>command.status!=='running')).toBe(true);
     const permission=pending.permissions[0];if(!permission)throw new Error('Missing separate permission.');
     await host.answerPermission(chat.id,project.id,{id:permission.id,digest:permission.digest,decision:'allow_once'});
     const completed=await host.manager.wait(accepted.jobId);

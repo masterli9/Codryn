@@ -149,7 +149,8 @@ export class RunAgentLoop {
     let history: ModelTurn[] = resumed?.history.map(turn => turn.kind === 'tool' && turn.result.ok && typeof turn.result.output === 'object'
       ? { ...turn, result: { ...turn.result, output: { status: 'stale', reason: 'Prior tool output requires a fresh read after a user decision.' } } } : turn) ?? [];
     // Preserve the accepted question result while marking earlier file/tool data stale.
-    if (resumed?.history.at(-1)) history[history.length - 1] = resumed.history.at(-1)!;
+    const acceptedAnswer = resumed?.history.at(-1);
+    if (acceptedAnswer) history[history.length - 1] = acceptedAnswer;
     const observedCallIds = new Set<Uuid>();
     let failedTool = resumed?.failedTool ?? false;
     for (const turn of history) if (turn.kind === 'assistant') for (const call of turn.calls) observedCallIds.add(call.callId);
