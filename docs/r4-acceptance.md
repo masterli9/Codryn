@@ -32,3 +32,15 @@ Otisky SHA-256 finálního balíčku
 - Zdroj `91e5ed6999e80804cdc3bf7566c921a38b1739bdde0c02cb7fea3cf6f95b8e69`
 - Archiv ASAR `58b599a1251bc4bd09397e9021a2287f70e407e4aea8851302c275da4d5d2279`
 - Worker `9830cdd07335b07f314f311bc946990e17834fc68f981beec6ffa4ca0a810d19`
+
+## Revize pracovního prostoru a lokální Git
+
+Implementace je v commitech `2d8c168` a `e5782eb`. Cílené kontroly proběhly offline nad dočasnými projekty.
+
+- `npx.cmd vitest run --project host-integration backend/infrastructure/test/git-workflow.test.ts` prošel 4/4. Testy ověřily hranice projektu v podadresáři většího pracovního stromu, rozlišení změn v indexu a na disku, přidání a odebrání souboru z indexu, zobrazení historie a přepnutí čisté lokální větve. Desktopový backend s testovacím modelem dostal jen změny z indexu. Test doložil zachování původního commitu po externí změně indexu, samostatné potvrzení upravené zprávy a odmítnutí repozitáře s externím Git filtrem.
+- Testy revize pracovního prostoru a zámku prošly 2/2. Ověřily původ změny, odmítnutí staré revize, opakování stejné mutace po novém otevření úložiště, souběh různých klíčů a uvolnění fronty po zrušení nebo chybě. Testy klasifikace a aktuálnosti ověření prošly 5/5. Změna nebo doplnění souboru s testovacími daty v pozorovaném rozsahu zneplatní dřívější výsledek bez ohledu na příponu.
+- Samostatný test panelu prošel 1/1. Scénář zabalené aplikace je v `tests/desktop/r4-git.test.ts` a má vlastní ověření proti sestavené aplikaci.
+
+Přepnutí větve používá ochrany Gitu při zápisu do pracovního stromu. Vyžaduje znovu potvrzený čistý stav celého stromu a existující podporovanou lokální větev. Souběžný externí proces přesto může posunout referenci nebo upravit pracovní strom mezi poslední kontrolou a příkazem. Commit používá zámek indexu a porovnání očekávaného hashe reference přímo při zápisu. [Kontrakt lokálního Gitu](superpowers/specs/r4-local-git.md)
+
+Obecný test může číst i vstupy mimo pozorované cesty, například soubory vynechané pravidly projektu. Důkaz platnosti se vztahuje k pozorovaným vstupům. Otevřené zůstávají úplná matice `AC-O1-22/24`, zámek pro budoucí balíčkovací mutace a ověření souběžných migrací. Desktop při aktivním běhu blokuje lokální Git mutace globálně. Sestavený kontext ze začátku běhu se při externí úpravě souboru před dalším voláním modelu samostatně neobnovuje.
