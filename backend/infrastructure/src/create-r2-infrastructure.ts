@@ -213,7 +213,10 @@ export async function createR2Infrastructure(options: {
           hash: (bytes) => createHash('sha256').update(bytes).digest('hex')
         }).execute(parsed.data, actor, signal);
         const key = resolve(canonicalRoot, path);
-        const result = await resourceLocks.withKey(`file:${process.platform === 'win32' ? key.toLowerCase() : key}`, signal, apply);
+        const applyWithFileLock = () => resourceLocks.withKey(`file:${process.platform === 'win32' ? key.toLowerCase() : key}`, signal, apply);
+        // The desktop observer opens files while scanning. Keep it out of the
+        // native guard's exclusive file-access window.
+        const result = await (options.filesystemEffect ? options.filesystemEffect(applyWithFileLock) : applyWithFileLock());
         if(result.status==='rejected'&&result.code==='R2_PATCH_STALE')await eventStore.append({
           eventId:ids.next(),eventType:'change.mutation_stale',eventVersion:1,correlationId:actor.callId,occurredAt:clock.now(),source:'core',
           sessionId:actor.runId,payload:{path,errorCode:result.code,revision:(await workspaces.current(actor.projectId)).revision}
