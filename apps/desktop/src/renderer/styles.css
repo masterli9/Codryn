@@ -79,3 +79,6 @@ dialog h2{font-size:19px}
   .header-actions button{font-size:11px;padding:4px 6px}
   .detail-open .detail{right:10px;top:10px;bottom:10px;width:min(360px,calc(100vw - 24px))}
 }
+.git-paths{margin:0;padding:0;list-style:none}
+.git-paths>li{display:flex;align-items:baseline;justify-content:space-between;gap:8px;border-bottom:1px solid var(--border);overflow-wrap:anywhere}
+.git-paths>li button{max-width:100%;overflow-wrap:anywhere}

@@ -1,13 +1,9 @@
 import { createHash } from 'node:crypto';
-import { execFile } from 'node:child_process';
-import { readFile, realpath } from 'node:fs/promises';
-import { isAbsolute, resolve } from 'node:path';
-import { promisify } from 'node:util';
+import { lstat, realpath } from 'node:fs/promises';
+import { isAbsolute, relative, resolve } from 'node:path';
 import type { ProjectBaseline, ProjectGitState as ProjectGitStatePort } from '@codryn/core';
-
-const execFileAsync = promisify(execFile);
-const maxOutputBytes = 1024 * 1024;
-const queryTimeoutMs = 5_000;
+import { gitExecutable, GitFailure, requirePassiveGitFilters, runLocalGit } from './local-git-command.js';
+import { readBoundedContextFile } from '../filesystem/read-bounded-context-file.js';
 
 interface ProjectGitStateOptions {
   readonly gitExecutable?: string;
@@ -25,14 +21,14 @@ interface GitCommandResult {
 }
 
 function isNotRepository(error: GitCommandError): boolean {
-  return error.code === 128 && /not a git repository/i.test(error.stderr ?? '');
+  return error instanceof GitFailure ? error.reason === 'non-git' : error.code === 128 && /not a git repository/i.test(error.stderr ?? '');
 }
 
 function isMissingExecutable(error: GitCommandError): boolean {
-  return error.code === 'ENOENT';
+  return error instanceof GitFailure ? error.reason === 'unavailable' : error.code === 'ENOENT';
 }
 
-function digest(bytes: Uint8Array): string {
+function digest(bytes: Uint8Array | string): string {
   return createHash('sha256').update(bytes).digest('hex');
 }
 
@@ -67,12 +63,13 @@ function parseStatus(raw: string): {
 
 export class ProjectGitState implements ProjectGitStatePort {
   private readonly rootReady: Promise<string>;
-  private readonly gitExecutable: string;
+  private readonly executable: Promise<string>;
 
   constructor(rootDirectory: string, options: ProjectGitStateOptions = {}) {
     if (!isAbsolute(rootDirectory)) throw new Error('R2_GIT_ROOT_NOT_ABSOLUTE');
     this.rootReady = realpath(rootDirectory);
-    this.gitExecutable = options.gitExecutable ?? 'git';
+    this.executable = gitExecutable(options.gitExecutable);
+    void this.executable.catch(() => undefined);
   }
 
   async inspect(signal: AbortSignal): Promise<ProjectBaseline> {
@@ -81,6 +78,9 @@ export class ProjectGitState implements ProjectGitStatePort {
     try {
       return await this.inspectOnce(root, signal);
     } catch (error) {
+      if (error instanceof Error && error.message === 'R4_GIT_UNSAFE') {
+        return { mode: 'non-git', reason: 'git_unavailable' };
+      }
       if (error instanceof Error && error.message === 'R2_GIT_SNAPSHOT_UNSTABLE') {
         return this.inspectOnce(root, signal);
       }
@@ -98,15 +98,18 @@ export class ProjectGitState implements ProjectGitStatePort {
     const gitRoot = await realpath(resolve(root, topLevel.result.stdout.trim())).catch(() => {
       throw new Error('R2_GIT_ROOT_INVALID');
     });
-    if (gitRoot.toLowerCase() !== root.toLowerCase()) throw new Error('R2_GIT_ROOT_MISMATCH');
+    const prefix = relative(gitRoot, root).replaceAll('\\', '/');
+    if (isAbsolute(prefix) || prefix === '..' || prefix.startsWith('../')) throw new Error('R2_GIT_ROOT_MISMATCH');
 
     const firstIndexHash = await this.indexHash(root, signal);
     const head = await this.optionalRevision(root, ['rev-parse', '--verify', 'HEAD'], signal, true);
     const branch = await this.optionalRevision(root, ['symbolic-ref', '--quiet', '--short', 'HEAD'], signal, false);
-    const statusResult = await this.requiredCommand(root, ['status', '--porcelain=v1', '-z', '--untracked-files=all'], signal);
+    await requirePassiveGitFilters(await this.executable, root, signal);
+    const statusResult = await this.requiredCommand(root, ['status', '--porcelain=v1', '-z', '--untracked-files=all', '--ignore-submodules=all'], signal);
     const secondIndexHash = await this.indexHash(root, signal);
     const secondHead = await this.optionalRevision(root, ['rev-parse', '--verify', 'HEAD'], signal, true);
-    if (firstIndexHash !== secondIndexHash || head !== secondHead) {
+    const secondBranch = await this.optionalRevision(root, ['symbolic-ref', '--quiet', '--short', 'HEAD'], signal, false);
+    if (firstIndexHash !== secondIndexHash || head !== secondHead || branch !== secondBranch) {
       throw new Error('R2_GIT_SNAPSHOT_UNSTABLE');
     }
     const parsed = parseStatus(statusResult.stdout);
@@ -115,18 +118,24 @@ export class ProjectGitState implements ProjectGitStatePort {
       head,
       branch,
       indexHash: firstIndexHash,
-      status: parsed.status,
-      conflicts: parsed.conflicts,
+      status: parsed.status.filter(item => !prefix || item.path.startsWith(`${prefix}/`)).map(item => ({ ...item, path: prefix ? item.path.slice(prefix.length + 1) : item.path })),
+      conflicts: parsed.conflicts.filter(item => !prefix || item.startsWith(`${prefix}/`)).map(item => prefix ? item.slice(prefix.length + 1) : item),
       worktreeIdentity: gitRoot
     };
   }
 
   private async indexHash(root: string, signal: AbortSignal): Promise<string> {
     const index = await this.requiredCommand(root, ['rev-parse', '--git-path', 'index'], signal);
-    const indexPath = await realpath(resolve(root, index.stdout.trim())).catch(() => {
+    const indexPath = resolve(root, index.stdout.trim());
+    const info = await lstat(indexPath).catch((error: unknown) => {
+      if (error instanceof Error && Reflect.get(error,'code') === 'ENOENT') return null;
       throw new Error('R2_GIT_INDEX_UNAVAILABLE');
     });
-    return digest(await readFile(indexPath));
+    if (!info) return digest('absent');
+    if (info.isSymbolicLink() || await realpath(indexPath) !== indexPath) throw new Error('R2_GIT_INDEX_UNAVAILABLE');
+    const bytes = await readBoundedContextFile(indexPath, 32 * 1024 * 1024, info);
+    if (!bytes) throw new Error('R2_GIT_INDEX_UNAVAILABLE');
+    return digest(bytes);
   }
 
   private async optionalRevision(
@@ -141,7 +150,8 @@ export class ProjectGitState implements ProjectGitStatePort {
       if (value.length === 0) throw new Error('R2_GIT_REVISION_INVALID');
       return value;
     }
-    if (result.error.code === 1 || (allowUnborn && result.error.code === 128)) return null;
+    const code = result.error instanceof GitFailure ? result.error.exitCode : result.error.code;
+    if (code === 1 || (allowUnborn && code === 128)) return null;
     throw commandError('R2_GIT_QUERY_FAILED', result.error);
   }
 
@@ -158,26 +168,8 @@ export class ProjectGitState implements ProjectGitStatePort {
   ): Promise<{ readonly ok: true; readonly result: GitCommandResult } | { readonly ok: false; readonly error: GitCommandError }> {
     if (signal.aborted) throw abortError();
     try {
-      const result = await execFileAsync(this.gitExecutable, [...args], {
-        cwd,
-        shell: false,
-        windowsHide: true,
-        timeout: queryTimeoutMs,
-        maxBuffer: maxOutputBytes,
-        signal,
-        env: {
-          ...process.env,
-          GIT_CONFIG_NOSYSTEM: '1',
-          GIT_OPTIONAL_LOCKS: '0',
-          GIT_TERMINAL_PROMPT: '0',
-          // A non-Git project nested in another checkout must not inherit the
-          // parent repository or its ownership policy. Point Git at this
-          // root's own metadata; a missing directory is a normal non-Git root.
-          GIT_DIR: resolve(cwd, '.git'),
-          GIT_WORK_TREE: cwd
-        }
-      });
-      return { ok: true, result: { stdout: result.stdout, stderr: result.stderr } };
+      const stdout = await runLocalGit(await this.executable, cwd, args, signal);
+      return { ok: true, result: { stdout, stderr: '' } };
     } catch (error) {
       if (signal.aborted) throw abortError();
       return { ok: false, error: error as GitCommandError };

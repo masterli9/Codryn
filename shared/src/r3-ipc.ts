@@ -8,13 +8,23 @@ import { r3ActivityViewSchema, r3ChangeViewSchema, r3OutputPageSchema, r3RevertI
 import { permissionDecisionInputSchema } from './r2-permission.js';
 import { r4RepoMapStatusSchema } from './r4-repo-map.js';
 import { r4ReferenceSchema, r4ReferencePermitInputSchema, r4ReferenceSearchPageSchema, r4ReferenceSearchSchema } from './r4-context.js';
+import { gitBranchSchema, gitCommitFilesSchema, gitDiffSchema, gitHistorySchema, gitMessageSchema, gitObjectIdSchema, gitPathSchema, gitSideSchema, gitSnapshotIdSchema, gitSnapshotSchema, gitSuggestionSchema } from './r4-git.js';
 const request = { requestId: uuidSchema };
 const chat = { ...request, chatId: uuidSchema };
 const owned = { ...chat, projectId: uuidSchema };
 const before = z.number().int().nonnegative().nullable();
+const gitProject = { projectId: uuidSchema };
+const gitView = { ...gitProject, snapshotId: gitSnapshotIdSchema };
 const operation = <O extends string, S extends z.ZodRawShape>(name: O, shape: S) => z.object({ operation: z.literal(name), ...request, ...shape }).strict();
 export const r3IpcRequestSchema = z.discriminatedUnion('operation', [
   operation('project.open', {}), operation('project.list', {}),
+  operation('git.status', gitProject),
+  operation('git.diff', { ...gitView, path: gitPathSchema, side: gitSideSchema }),
+  operation('git.history', { ...gitView, cursor: z.number().int().min(0).max(5000) }),
+  operation('git.commitFiles', { ...gitView, hash: gitObjectIdSchema }),
+  operation('git.stage', { ...gitView, path: gitPathSchema }), operation('git.unstage', { ...gitView, path: gitPathSchema }),
+  operation('git.switchBranch', { ...gitView, branch: gitBranchSchema }),
+  operation('git.suggestMessage', gitView), operation('git.commit', { ...gitView, message: gitMessageSchema }),
   operation('context.map.activate', { projectId: uuidSchema }), operation('context.map.status', { projectId: uuidSchema }),
   operation('context.map.init', { projectId: uuidSchema }), operation('context.map.cancel', { projectId: uuidSchema }),
   operation('context.reference.search', { ...owned, ...r4ReferenceSearchSchema.shape }),
@@ -32,6 +42,9 @@ const pageLimit = (value: object) => new TextEncoder().encode(JSON.stringify(val
 export const r3ResponseSchemas = {
   'run.active': response(z.object({projectId:uuidSchema,chatId:uuidSchema,jobId:uuidSchema}).strict().nullable()),
   'project.open': response(z.union([z.object({ cancelled: z.literal(true) }).strict(), r3ProjectSchema])), 'project.list': response(z.array(r3ProjectSchema)),
+  'git.status': response(gitSnapshotSchema), 'git.diff': response(gitDiffSchema), 'git.history': response(gitHistorySchema),
+  'git.commitFiles': response(gitCommitFilesSchema), 'git.stage': response(gitSnapshotSchema), 'git.unstage': response(gitSnapshotSchema),
+  'git.switchBranch': response(gitSnapshotSchema), 'git.suggestMessage': response(gitSuggestionSchema), 'git.commit': response(gitSnapshotSchema),
   'context.map.activate': response(r4RepoMapStatusSchema), 'context.map.status': response(r4RepoMapStatusSchema),
   'context.map.init': response(r4RepoMapStatusSchema), 'context.map.cancel': response(r4RepoMapStatusSchema),
   'context.reference.search': response(r4ReferenceSearchPageSchema),

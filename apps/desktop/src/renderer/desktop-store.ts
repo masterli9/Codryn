@@ -12,6 +12,7 @@ export class DesktopStore {
   subscribe=(listener:()=>void)=>{this.listeners.add(listener);return ()=>this.listeners.delete(listener);};
   private publish(value:Partial<State>){this.state={...this.state,...value};for(const listener of this.listeners)listener();}
   private detach(id:string){void Promise.resolve(this.client.detach(id)).catch(()=>undefined);}
+  clear():void{if(this.disposed)return;++this.epoch;if(this.subscription)this.detach(this.subscription);this.subscription=undefined;this.early=[];this.confirmedCursor=0;this.publish({selectedChatId:null,snapshot:null,connection:'loading',error:null});}
   async select(chatId:string):Promise<void>{
     if(this.disposed)return;const epoch=++this.epoch;if(this.subscription)this.detach(this.subscription);this.subscription=undefined;this.early=[];this.confirmedCursor=0;this.publish({selectedChatId:chatId,snapshot:null,connection:'loading',error:null});
     try{const attached=await this.client.attach(chatId);if(this.disposed||epoch!==this.epoch){this.detach(attached.subscriptionId);return;}this.subscription=attached.subscriptionId;this.confirmedCursor=attached.snapshot.cursor;this.publish({snapshot:attached.snapshot,connection:'connected'});const early=this.early;this.early=[];for(const update of early)this.update(update);}

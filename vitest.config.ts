@@ -8,6 +8,7 @@ const allTests = [
 ];
 
 const hostIntegrationTests = [
+  'backend/infrastructure/test/git-workflow.test.ts',
   'backend/infrastructure/test/r3-runtime-flow.test.ts',
   'backend/infrastructure/test/r4-ts-workflow.test.ts',
   'backend/infrastructure/test/r3-command-stream.test.ts',

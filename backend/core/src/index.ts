@@ -147,3 +147,5 @@ export type { ClassifiedCheck } from './verification/verify-command.js';
 export type { ProfiledVerificationRecord, VerificationCoverage } from './verification/verification-store.js';
 export { typescriptQueryTool } from './tools/typescript-query-tool.js';
 export { ResourceLocks } from './workspace/resource-locks.js';
+export { LocalGitService } from './git/local-git-service.js';
+export type { LocalGitDiffInput } from './git/local-git-service.js';

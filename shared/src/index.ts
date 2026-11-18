@@ -23,3 +23,4 @@ export * from './r4-context.js';
 export * from './r4-project-checks.js';
 export * from './r4-typescript.js';
 export * from './r4-workspace.js';
+export * from './r4-git.js';

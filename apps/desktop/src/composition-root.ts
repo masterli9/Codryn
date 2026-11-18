@@ -1,4 +1,4 @@
-import { RunR0Diagnostics } from '@codryn/core';
+import { collectModelResponse, RunR0Diagnostics } from '@codryn/core';
 import { createR0Infrastructure,createR3Infrastructure,createDesktopRuntimeFactory,createR3Provider } from '@codryn/infrastructure';
 import { app, safeStorage } from 'electron';
 import { randomUUID } from 'node:crypto';
@@ -34,6 +34,14 @@ export async function createDesktopApplicationServices(userDataPath:string,testS
         ...(testScenario?{providerFactory:desktopTestProvider(testScenario)}:{})})(input);
       return { ...run, close: () => { void client.close(); run.close(); } };
     } catch (error) { await client.close(); throw error; }
+  },commitSuggestion:async(task,mode,projectRoot,secrets,signal)=>{
+    if(mode!=='openai')throw new Error('R4_GIT_SUGGESTION_UNAVAILABLE');
+    const provider=await createR3Provider({mode,projectRoot,secrets,ids:{next:randomUUID}});
+    try {
+      const result=await collectModelResponse(provider.model.stream({runId:randomUUID(),task,project:{id:'staged-changes'},context:[],tools:[],previousToolResults:[]},signal),signal);
+      if(result.kind!=='final')throw new Error('R4_GIT_SUGGESTION_UNAVAILABLE');
+      return result.text;
+    } finally {provider.dispose();}
   },preflight:async(mode,root)=>{if(mode==='demo'){const runtime=await resolveNodeRuntime(AbortSignal.timeout(6000),root);if(!runtime.available)throw new Error('R3_RUNTIME_UNAVAILABLE');try{const provider=await createR3Provider({mode,projectRoot:root,nodeExecutable:runtime.executable,ids:{next:randomUUID},secrets:{state:async()=> 'missing',read:async()=>{throw new Error('R3_SECRET_UNAVAILABLE');},save:async()=>undefined,remove:async()=>undefined}});provider.dispose();}catch{throw new Error('R3_INPUT_INVALID');}}}});
 }
 

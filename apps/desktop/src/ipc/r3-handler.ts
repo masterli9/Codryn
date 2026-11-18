@@ -3,12 +3,15 @@ import type { R3IpcResponse,R3ErrorCode } from '@codryn/shared';
 import type { R3Infrastructure } from '@codryn/infrastructure';
 export interface R3Sender {readonly id:number;readonly mainFrame:{readonly url:string};isDestroyed():boolean;send(channel:string,value:unknown):void}
 export interface R3SenderEvent {readonly sender:R3Sender;readonly senderFrame:{readonly url:string}|null}
-export type R3Services=Pick<R3Infrastructure,'projects'|'chats'|'manager'|'snapshot'|'history'|'inspectRun'|'activity'|'diff'|'revert'|'output'|'answerPermission'|'settings'|'stop'|'contextMap'|'referenceSearch'|'referencePermit'>;
+export type R3Services=Pick<R3Infrastructure,'projects'|'chats'|'manager'|'snapshot'|'history'|'inspectRun'|'activity'|'diff'|'revert'|'output'|'answerPermission'|'settings'|'stop'|'contextMap'|'referenceSearch'|'referencePermit'|'localGit'>;
 export function assertR3Sender(event:{sender:Pick<R3Sender,'id'|'isDestroyed'>;senderFrame:{url:string}|null},main:Pick<R3Sender,'id'|'mainFrame'|'isDestroyed'>,entry:string):void {
   if(main.isDestroyed()||event.sender.isDestroyed()||event.sender.id!==main.id||event.senderFrame!==main.mainFrame||event.senderFrame.url!==new URL(entry).href)throw new Error('R3_SENDER_REJECTED');
 }
 const messages:Record<R3ErrorCode,string>={R3_INPUT_INVALID:'Požadavek je neplatný. Demo vyžaduje referenční projekt sum.mjs a sum.test.mjs.',R3_NOT_FOUND:'Požadovaná položka nebyla nalezena.',R3_CHAT_PROJECT_MISMATCH:'Položka nepatří k vybranému chatu nebo projektu.',R3_PROJECT_BUSY:'Probíhá běh nebo jiná operace. Nejprve jej dokončete nebo zastavte.',R3_RECOVERY_REQUIRED:'Nejistá operace vyžaduje bezpečnou obnovu. Nic se automaticky neopakuje.',R3_SECRET_UNAVAILABLE:'Chráněný klíč není dostupný. Zkontrolujte nastavení.',R3_CONSENT_REQUIRED:'Před odesláním projektových dat potvrďte aktuální upozornění v nastavení.',R3_RUNTIME_UNAVAILABLE:'Referenční kontrola vyžaduje systémový Node 24.19.0.',R3_PROJECT_UNAVAILABLE:'Složka projektu není dostupná. Historie zůstává zachována.',R3_STALE_VIEW:'Projekt nebo sada se změnily. Načtěte nový detail a znovu potvrďte rozsah.',R3_REQUEST_MISMATCH:'Stejné ID požadavku už označuje jiný obsah.',R3_SENDER_REJECTED:'Tento zdroj nemá přístup k desktopovým službám.',R4_REFERENCE_UNAVAILABLE:'Vyberte referenci znovu nebo ji odeberte.',R4_REFERENCE_PERMIT_INVALID:'Výjimku nelze udělit. Zkontrolujte přesnou cestu, typ souboru a důvod ochrany.',R4_POLICY_INVALID:'Opravte pravidla .codrynignore.',R3_INTERNAL:'Operaci se nepodařilo dokončit. Data se automaticky nemažou.'};
 export function r3SafeError(error:unknown):R3IpcResponse {
+  if(error instanceof Error&&error.message==='R4_GIT_UNSAFE')return {ok:false,error:{code:'R3_INPUT_INVALID',message:'Git akce není v aktuálním stavu bezpečná. Zkontrolujte změny, konflikty a rozsah projektu.'}};
+  if(error instanceof Error&&error.message==='R4_GIT_IDENTITY')return {ok:false,error:{code:'R3_INPUT_INVALID',message:'Git nemohl vytvořit commit. Zkontrolujte jméno a e-mail v konfiguraci Gitu.'}};
+  if(error instanceof Error&&error.message==='R4_GIT_SUGGESTION_UNAVAILABLE')return {ok:false,error:{code:'R3_INPUT_INVALID',message:'Návrh zprávy není v tomto režimu dostupný.'}};
   if(error instanceof Error&&error.name==='ReferencePreparationFailure')return {ok:false,error:{code:'R4_REFERENCE_UNAVAILABLE',message:error.message}};
   if(error instanceof Error&&error.name==='ContextPathPolicyError')return {ok:false,error:{code:'R4_POLICY_INVALID',message:error.message}};
   const parsed=r3ErrorCodeSchema.safeParse(error instanceof Error?error.message:undefined),code=parsed.success?parsed.data:'R3_INTERNAL';return {ok:false,error:{code,message:messages[code]}};
@@ -20,6 +23,14 @@ export function createR3Handler(dependencies:{services:R3Services|undefined;asse
       switch(request.operation){
         case 'project.open':{const root=await dependencies.chooseDirectory();value=root===null?{cancelled:true}:await services.projects.open(root,AbortSignal.timeout(10000));break;}
         case 'project.list':value=await services.projects.list();break;
+        case 'git.status':value=await services.localGit.status(request.projectId,signal);break;
+        case 'git.diff':value=await services.localGit.diff(request.projectId,request.snapshotId,request.path,request.side,signal);break;
+        case 'git.history':value=await services.localGit.history(request.projectId,request.snapshotId,request.cursor,signal);break;
+        case 'git.commitFiles':value=await services.localGit.files(request.projectId,request.snapshotId,request.hash,signal);break;
+        case 'git.stage':case 'git.unstage':value=await services.localGit.mutate(request.projectId,request.requestId,request.operation==='git.stage'?'stage':'unstage',request.snapshotId,request.path,signal);break;
+        case 'git.switchBranch':value=await services.localGit.mutate(request.projectId,request.requestId,'switch',request.snapshotId,request.branch,signal);break;
+        case 'git.commit':value=await services.localGit.mutate(request.projectId,request.requestId,'commit',request.snapshotId,request.message,signal);break;
+        case 'git.suggestMessage':value=await services.localGit.suggest(request.projectId,request.snapshotId,AbortSignal.timeout(30000));break;
         case 'context.reference.search':{const {projectId,chatId,query,offset,limit}=request;value=await services.referenceSearch(projectId,chatId,{query,offset,limit},signal);break;}
         case 'context.reference.permit':{const {projectId,chatId,requestId,path,kind}=request;value=await services.referencePermit(projectId,chatId,requestId,{path,kind},signal);break;}
         case 'context.map.activate':value=await services.contextMap.activate(request.projectId);break;
