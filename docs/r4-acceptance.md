@@ -39,7 +39,16 @@ Implementace je v commitech `2d8c168` a `e5782eb`. Cílené kontroly proběhly o
 
 - `npx.cmd vitest run --project host-integration backend/infrastructure/test/git-workflow.test.ts` prošel 4/4. Testy ověřily hranice projektu v podadresáři většího pracovního stromu, rozlišení změn v indexu a na disku, přidání a odebrání souboru z indexu, zobrazení historie a přepnutí čisté lokální větve. Desktopový backend s testovacím modelem dostal jen změny z indexu. Test doložil zachování původního commitu po externí změně indexu, samostatné potvrzení upravené zprávy a odmítnutí repozitáře s externím Git filtrem.
 - Testy revize pracovního prostoru a zámku prošly 2/2. Ověřily původ změny, odmítnutí staré revize, opakování stejné mutace po novém otevření úložiště, souběh různých klíčů a uvolnění fronty po zrušení nebo chybě. Testy klasifikace a aktuálnosti ověření prošly 5/5. Změna nebo doplnění souboru s testovacími daty v pozorovaném rozsahu zneplatní dřívější výsledek bez ohledu na příponu.
-- Samostatný test panelu prošel 1/1. Scénář zabalené aplikace je v `tests/desktop/r4-git.test.ts` a má vlastní ověření proti sestavené aplikaci.
+- Samostatný test panelu prošel 1/1. Test zabalené aplikace `tests/desktop/r4-git.test.ts` prošel 1/1 na finálním balíčku. Ověřil přidání do indexu, náhled změn a místní commit až po výslovném potvrzení.
+
+V původním balíčku opakovaně selhal chráněný zápis ve scénáři R3 s Gitem. Zápis skončil chybou `R2_GUARD_OPERATION_FAILED` ještě před vytvořením záznamu o připravované změně a scénář nedošel ke schválení příkazu. Oprava `5ef7d18` vrátila sdílenou koordinaci zápisu a pozorování disku. Po ní znovu platí, že desktop provádí chráněné zápisy v témže projektu postupně. Test výchozího Git stavu v `94ac652` ověřuje rozpoznání nadřazeného pracovního stromu i omezení zobrazených změn na otevřený podadresář.
+
+Finální kontrola typů, lint a kontrola hranic závislostí prošly. Graf závislostí měl 379 modulů a 1 263 hran. Úplná sada měla 760 úspěšných a dva přeskočené testy, včetně scénářů R0 a R2 s čerstvě sestavenou aplikací. Na témže balíčku prošlo všech osm ověřovacích scénářů R3 a ověření strukturního dotazu TypeScriptu. Lokální záznamy jsou v `.r3-artifacts/packaged-EQClVN/r3-report.json` a `.r3-artifacts/r4-ts-worker-Lf7gFs/r4-typescript-worker-smoke.json`.
+
+Otisky SHA-256 ověřeného balíčku
+
+- Zdroj `ee457ff6c52a3d481b472991435ebd431212f1a69b2c1bc65d7a7ac1fdc8a401`
+- Archiv ASAR `25fe75bfb9ba8d0d9318062578da05934e2f547f8bbb4fc1e51cd08f960eb0d8`
 
 Přepnutí větve používá ochrany Gitu při zápisu do pracovního stromu. Vyžaduje znovu potvrzený čistý stav celého stromu a existující podporovanou lokální větev. Souběžný externí proces přesto může posunout referenci nebo upravit pracovní strom mezi poslední kontrolou a příkazem. Commit používá zámek indexu a porovnání očekávaného hashe reference přímo při zápisu. [Kontrakt lokálního Gitu](superpowers/specs/r4-local-git.md)
 
