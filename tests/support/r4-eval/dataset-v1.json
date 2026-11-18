@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "id": "r4-user-task-v1",
+  "model": "gpt-6-luna",
+  "frozenBeforeLive": true,
+  "maxSteps": 12,
+  "cases": [
+    {"id":"counter-git","mode":"git","variant":"change","prompt":"Oprav výpočet další hodnoty čítače a ověř změnu.","expected":"nextCount(1) returns 2, actual check passes"},
+    {"id":"counter-non-git","mode":"non-git","variant":"change","prompt":"Oprav výpočet další hodnoty čítače a ověř změnu.","expected":"nextCount(1) returns 2, actual check passes"},
+    {"id":"continuation","mode":"non-git","variant":"continuation","prompt":"Zjisti současnou hodnotu. V navazujícím zadání pokračuj z předchozího chatu.","expected":"same chat prior completed exchange and fresh file read"},
+    {"id":"ignored-reference","mode":"non-git","variant":"ignored","prompt":"Prohlédni složku private a vysvětli bezpečně nedostupný obsah.","expected":"ignored file stays absent from automatic context and tool output"},
+    {"id":"stale-patch","mode":"git","variant":"stale","prompt":"Oprav čítač a zachovej případné novější ruční změny.","expected":"stale patch rejected, new read precedes corrected patch"},
+    {"id":"question","mode":"non-git","variant":"question","prompt":"Přidej ukládání hodnoty. Nejdřív upřesni, zda má být lokální nebo sdílené.","expected":"durable question resumes same run and command permission remains separate"},
+    {"id":"repair-after-error","mode":"non-git","variant":"repair","prompt":"Spusť test čítače, oprav nalezenou chybu a test zopakuj.","expected":"initial check fails, corrected check passes"},
+    {"id":"planning","mode":"git","variant":"planning","workflow":"planning@1.0.0","prompt":"Navrhni kroky pro bezpečnou úpravu komponenty čítače.","expected":"read-only bounded plan with workflow audit"},
+    {"id":"verification","mode":"non-git","variant":"verification","workflow":"verification@1.0.0","prompt":"Ověř čítač dostupnými kontrolami a uveď skutečný výsledek.","expected":"separately approved existing check, actual verification result"}
+  ]
+}
