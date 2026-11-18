@@ -41,7 +41,7 @@ it('dismisses the picker with Escape and ignores delayed results from the previo
   await waitFor(() => expect(searchReferences).toHaveBeenCalled());
   view.rerender(<Composer chatId="b" {...props} />);
   await act(async () => resolve(page));
-  expect(screen.queryByRole('option')).toBeNull();
+  expect(screen.queryByRole('listbox', { name: 'Soubory a složky projektu' })).toBeNull();
   const input = enterReference('@src');
   await screen.findByRole('option', { name: /App.tsx/ });
   fireEvent.keyDown(input, { key: 'Escape' });
