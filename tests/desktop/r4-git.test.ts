@@ -19,6 +19,10 @@ it('stages and reviews a file, then creates an explicitly confirmed local commit
     });
     const page = desktop.window;
     await page.getByRole('button', { name: 'Otevřít projekt', exact: true }).click();
+    const newChat = page.getByRole('dialog', { name: 'Nový chat' });
+    await newChat.getByRole('textbox', { name: 'Název chatu' }).fill('Git zkouška');
+    await newChat.getByRole('button', { name: 'Uložit chat', exact: true }).click();
+    await newChat.waitFor({ state: 'hidden' });
     await page.getByRole('button', { name: 'Lokální Git', exact: true }).click();
     const panel = page.getByRole('dialog', { name: 'Lokální Git' });
     await panel.getByRole('button', { name: 'Přidat do indexu desktop-proof.txt' }).click();
