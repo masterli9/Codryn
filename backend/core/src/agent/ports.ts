@@ -26,6 +26,8 @@ export interface ToolCallBinding {
 
 export interface ModelAdapter {
   readonly descriptor: ModelDescriptor;
+  saveContinuation?(history: NonNullable<ModelRequest['history']>): JsonValue;
+  restoreContinuation?(value: JsonValue): void;
   stream(request: ModelRequest, signal: AbortSignal): AsyncIterable<ModelStreamEvent>;
 }
 

@@ -24,6 +24,7 @@ describe('R3 boundary contracts', () => {
       'run.active', 'run.submit', 'run.stop', 'run.inspect', 'run.activity', 'permission.answer', 'changes.diff', 'changes.revert', 'command.output',
       'settings.get', 'settings.saveKey', 'settings.removeKey', 'settings.testKey', 'settings.select', 'settings.consent', 'stream.attach', 'stream.detach',
       'git.status', 'git.diff', 'git.history', 'git.commitFiles', 'git.stage', 'git.unstage', 'git.switchBranch', 'git.suggestMessage', 'git.commit',
+      'question.current', 'question.answer', 'question.decline',
       'context.map.activate', 'context.map.status', 'context.map.init', 'context.map.cancel', 'context.reference.search', 'context.reference.permit'
     ].sort());
     expect(r3ResponseSchemas['chat.archive'].safeParse({ ok: true, value: { archived: true, key: 'secret' } }).success).toBe(false);

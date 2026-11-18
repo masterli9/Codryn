@@ -12,8 +12,12 @@ import { canComplete } from './r2-completion.js';
 import type { ConversationSelection } from '../desktop/conversation-context.js';
 import { projectChecksDiscoveredSchema } from '@codryn/shared';
 import type { ProjectCheckCatalog } from '@codryn/shared';
+import { questionTool, QuestionSuspended, validateQuestion } from '../desktop/question-service.js';
+import type { QuestionBoundary } from '../desktop/question-service.js';
 
 export interface R2ExecutionOptions {
+  readonly workflow?: { selection: string; instructions: string; toolIds: readonly string[] };
+  readonly questions?: QuestionBoundary;
   readonly onRunCreated?: (runId: Uuid) => Promise<void>;
   readonly prepareContext?: (runId: Uuid, signal: AbortSignal) => Promise<readonly ModelRequest['context'][number][]>;
   readonly priorConversation?: ConversationSelection;
@@ -135,18 +139,23 @@ export class RunAgentLoop {
   async executeR2(input: RunAgentRequest, signal: AbortSignal, options: R2ExecutionOptions): Promise<R2RunResult> {
     const parsed = runAgentRequestSchema.safeParse(input);
     const projectId = (() => { try { return uuidSchema.parse(options.projectId); } catch { return null; } })();
-    const runId = this.dependencies.ids.next();
+    const resumed = options.questions?.resume;
+    const runId = resumed?.runId ?? this.dependencies.ids.next();
     if (!parsed.success || projectId === null) return this.r2Failure(runId, 0, 'unverified', null, 'R2 input or project identity is invalid.', false);
     const request = parsed.data;
-    let state: AgentRunState = 'idle';
-    let steps = 0;
-    let activeChangeSetId = options.changeSetId;
-    let history: ModelTurn[] = [];
+    let state: AgentRunState = resumed ? 'waiting_for_user_input' : 'idle';
+    let steps = resumed?.stepCount ?? 0;
+    let activeChangeSetId = resumed?.changeSetId ?? options.changeSetId;
+    let history: ModelTurn[] = resumed?.history.map(turn => turn.kind === 'tool' && turn.result.ok && typeof turn.result.output === 'object'
+      ? { ...turn, result: { ...turn.result, output: { status: 'stale', reason: 'Prior tool output requires a fresh read after a user decision.' } } } : turn) ?? [];
+    // Preserve the accepted question result while marking earlier file/tool data stale.
+    if (resumed?.history.at(-1)) history[history.length - 1] = resumed.history.at(-1)!;
     const observedCallIds = new Set<Uuid>();
-    let failedTool = false;
+    let failedTool = resumed?.failedTool ?? false;
+    for (const turn of history) if (turn.kind === 'assistant') for (const call of turn.calls) observedCallIds.add(call.callId);
     try {
       const timestamp = this.timestamp();
-      await this.dependencies.agentRunStore.createWithInitialEvent({ runId, requestId: request.requestId, state, task: request.task, maxSteps: request.maxSteps, stepCount: 0, adapterId: this.dependencies.model.descriptor.adapterId, modelId: this.dependencies.model.descriptor.modelId, createdAt: timestamp, updatedAt: timestamp }, this.event(runId, request.requestId, 'agent_run.created', { runId, maxSteps: request.maxSteps, profile: 'change' }));
+      if (!resumed) await this.dependencies.agentRunStore.createWithInitialEvent({ runId, requestId: request.requestId, state, task: request.task, maxSteps: request.maxSteps, stepCount: 0, adapterId: this.dependencies.model.descriptor.adapterId, modelId: this.dependencies.model.descriptor.modelId, createdAt: timestamp, updatedAt: timestamp }, this.event(runId, request.requestId, 'agent_run.created', { runId, maxSteps: request.maxSteps, profile: 'change' }));
       await options.onRunCreated?.(runId);
       if (activeChangeSetId === null && options.openChangeSet !== undefined) activeChangeSetId = await options.openChangeSet(runId);
       state = await this.transition(runId, request.requestId, state, 'preparing_context', steps);
@@ -157,6 +166,7 @@ export class RunAgentLoop {
       this.abort(signal);
       if ('sources' in context) await this.append(runId, request.requestId, 'context.assembled', { sources: context.sources.map((source) => ({ path: source.path, contentHash: source.contentHash, byteLength: source.byteLength, reason: source.reason })), totalBytes: context.totalBytes });
       const projectChecks = options.projectChecks;
+      if(options.workflow)await this.append(runId,request.requestId,'workflow.selected',{selection:options.workflow.selection});
       if (projectChecks && projectChecks.level !== 'unsupported') {
         const { level, framework, typescriptVersion, reasons, checks } = projectChecks;
         await this.append(runId, request.requestId, 'project.checks_discovered', projectChecksDiscoveredSchema.parse({
@@ -179,7 +189,8 @@ export class RunAgentLoop {
         const previousToolResults = toolResultsFromHistory(history);
         const modelRequest: ModelRequest = {
           runId, task: request.task, project: { id: projectId }, context: [...context.modelContent],
-          tools: [...this.dependencies.registry.descriptors], previousToolResults, history: [...history],
+          tools: [...this.dependencies.registry.descriptors.filter(tool=>!options.workflow||options.workflow.toolIds.includes(tool.toolId)), ...(options.questions ? [questionTool] : [])], previousToolResults, history: [...history],
+          ...(options.workflow?{workflowInstructions:options.workflow.instructions}:{}),
           ...(conversation?.length ? { priorConversation: conversation } : {}),
           ...(projectChecks?.checks.length ? { recommendedChecks: projectChecks.checks } : {})
         };
@@ -199,9 +210,19 @@ export class RunAgentLoop {
           state = await this.transition(runId, request.requestId, state, allowed ? 'completed' : 'failed', steps, allowed ? undefined : 'R1_TOOL_EXECUTION_FAILED');
           return result;
         }
+        if (response.calls.some(call => call.toolId === 'ask_user')) {
+          const call = response.calls[0];
+          if (!options.questions || response.calls.length !== 1 || !call || call.toolVersion !== 1) throw { code: 'R1_MODEL_RESPONSE_UNSUPPORTED' };
+          const safe = this.dependencies.safeModelText ?? (text => text);
+          const question = validateQuestion(call.arguments, safe);
+          history = appendAssistantTurn(history, safe(response.text ?? ''), response.calls);
+          await options.questions.save(question, { runId, stepCount: steps, changeSetId: activeChangeSetId, history, failedTool });
+          throw new QuestionSuspended();
+        }
         history = appendAssistantTurn(history, response.text ?? '', response.calls);
         state = await this.transition(runId, request.requestId, state, 'executing_tool', steps);
         for (const toolCall of response.calls) {
+          if(options.workflow&&!options.workflow.toolIds.includes(toolCall.toolId))throw {code:'R1_TOOL_PERMISSION_DENIED'};
           if (observedCallIds.has(toolCall.callId)) throw { code: 'R1_MODEL_RESPONSE_UNSUPPORTED' };
           observedCallIds.add(toolCall.callId);
           this.abort(signal);
@@ -212,6 +233,7 @@ export class RunAgentLoop {
         }
       }
     } catch (error) {
+      if (error instanceof QuestionSuspended) throw error;
       const cancelled = signal.aborted || code(error) === 'R1_CANCELLED';
       const failureCode = cancelled ? 'R1_CANCELLED' : code(error);
       let recoveryRequired = true;

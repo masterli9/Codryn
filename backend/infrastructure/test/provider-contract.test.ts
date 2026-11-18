@@ -62,6 +62,23 @@ function geminiContents(sent: readonly unknown[], index: number): readonly Gemin
 }
 
 describe('R2 provider adapters', () => {
+  it('restores confirmed OpenAI tool identities in a fresh adapter without sending a tool again', async () => {
+    const transport:ProviderTransport={async *stream(){
+      yield {type:'response.output_item.added',item:{type:'function_call',id:'restore-item',call_id:'restore-call',name:'codryn_file_read_v1'}};
+      yield {type:'response.function_call_arguments.done',item_id:'restore-item',arguments:'{"path":"README.md"}'};
+      yield {type:'response.completed'};
+    }};
+    const adapter=new OpenAIResponsesAdapter({modelId:'fixture',key:()=> 'TEST',transport,ids});
+    const first=await collectModelResponse(adapter.stream(request,AbortSignal.timeout(1000)),AbortSignal.timeout(1000));
+    if(first.kind!=='tool_calls'||!first.calls[0])throw new Error('Missing tool.');
+    const history:NonNullable<ModelRequest['history']>=[{kind:'assistant',text:'',calls:[...first.calls]},{kind:'tool',result:{ok:true,callId:first.calls[0].callId,output:{status:'stale'}}}];
+    const sent:unknown[]=[];
+    const fresh=new OpenAIResponsesAdapter({modelId:'fixture',key:()=> 'TEST',ids,transport:{async *stream(input){sent.push(input.body);yield {type:'response.output_text.delta',delta:'done'};yield {type:'response.completed'};}}});
+    fresh.restoreContinuation(adapter.saveContinuation(history));
+    expect(await collectModelResponse(fresh.stream({...request,history},AbortSignal.timeout(1000)),AbortSignal.timeout(1000))).toMatchObject({kind:'final',text:'done'});
+    expect(JSON.stringify(sent)).toContain('restore-call');
+    expect(JSON.stringify(sent)).toContain('function_call_output');
+  });
   it('preserves OpenAI external call_id across a tool result turn', async () => {
     const sent: unknown[] = [];
     let turn = 0;

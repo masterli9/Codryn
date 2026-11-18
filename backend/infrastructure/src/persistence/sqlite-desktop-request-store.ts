@@ -5,7 +5,7 @@ import { modelDescriptorSchema, r2RunResultSchema, r3AcceptedSchema, r3JobStateS
 import type { ModelDescriptor, R2RunResult, R3Accepted, R3JobState, R3RunView, R3SubmitInput, Uuid } from '@codryn/shared';
 import { desktopPhase, parseJson, text, transaction } from './r3-sqlite-helpers.js';
 export function desktopRequestDigest(input: R3SubmitInput, projectId: Uuid): string {
-  return createHash('sha256').update(JSON.stringify({ projectId, chatId: input.chatId, task: input.task, mode: input.mode, maxSteps: input.maxSteps, retryOfRequestId: input.retryOfRequestId ?? null, ...(input.references?.length ? { references: input.references } : {}) })).digest('hex');
+  return createHash('sha256').update(JSON.stringify({ projectId, chatId: input.chatId, task: input.task, mode: input.mode, maxSteps: input.maxSteps, retryOfRequestId: input.retryOfRequestId ?? null, ...(input.references?.length ? { references: input.references } : {}),...(input.workflow?{workflow:input.workflow}:{}) })).digest('hex');
 }
 export class SqliteDesktopRequestStore implements DesktopRequestStore {
   constructor(private readonly database: DatabaseSync, private readonly clock: Clock, private readonly ids: IdGenerator) {}
@@ -78,13 +78,16 @@ export class SqliteDesktopRequestStore implements DesktopRequestStore {
   }
   async interruptUnfinished(projectId: Uuid): Promise<void> {
     transaction(this.database, () => {
-      const jobs = this.database.prepare("SELECT request_id FROM desktop_jobs WHERE project_id=? AND state IN ('queued','running','stopping')").all(uuidSchema.parse(projectId));
+      const jobs = this.database.prepare("SELECT request_id FROM desktop_jobs j WHERE project_id=? AND state IN ('queued','running','stopping') AND NOT EXISTS(SELECT 1 FROM r4_questions q WHERE q.run_id=j.run_id AND q.status='waiting' AND q.resume_state='ready')").all(uuidSchema.parse(projectId));
       for (const job of jobs) {
         const runs = this.database.prepare('SELECT run_id FROM agent_runs WHERE request_id=?').all(text(job.request_id));
         if (runs.length > 1) throw new Error('R3_RECOVERY_REQUIRED');
         const runId = runs[0]?.run_id ?? null;
         this.database.prepare("UPDATE chat_messages SET state=CASE WHEN state='streaming' THEN 'interrupted' ELSE state END, run_id=COALESCE(run_id,?) WHERE request_id=?").run(runId, text(job.request_id));
         this.database.prepare("UPDATE desktop_jobs SET state='interrupted',ended_at=?,run_id=COALESCE(run_id,?) WHERE request_id=?").run(this.clock.now(), runId, text(job.request_id));
+        if(runId&&this.database.prepare("SELECT 1 FROM r4_questions WHERE run_id=? AND status='answered'").get(runId)){
+          this.database.prepare('UPDATE desktop_jobs SET failure_json=? WHERE request_id=?').run(JSON.stringify({code:'R3_RECOVERY_REQUIRED',message:'Pokračování bylo přerušeno mimo bezpečný bod. Nástroje se automaticky neopakují.'}),text(job.request_id));
+        }
       }
     });
   }

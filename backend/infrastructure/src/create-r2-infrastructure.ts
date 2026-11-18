@@ -91,6 +91,8 @@ export async function createR2Infrastructure(options: {
   readonly allowReadOnlyCompletion?: boolean;
   readonly onModelEvent?: R2ExecutionOptions['onModelEvent'];
   readonly onModelTurnCompleted?: R2ExecutionOptions['onModelTurnCompleted'];
+  readonly questions?: R2ExecutionOptions['questions'];
+  readonly workflow?: R2ExecutionOptions['workflow'];
   readonly safeToolInput?: (input:unknown)=>boolean;
   readonly commandHooks?: { owned(actor:ChangeActor,evidence:CommandOwnership):Promise<void>;output(actor:ChangeActor,output:CommandOutput):void;result(actor:ChangeActor,result:CommandResult):Promise<CommandResult> };
   readonly safeModelText?: (text:string)=>string;
@@ -290,9 +292,11 @@ export async function createR2Infrastructure(options: {
     });
     const agentLoop: R2Infrastructure['agentLoop'] = {
       executeR2: async (request, signal) => {
-        let runSetId: string | null = null;
-        let runId: string | null = null;
+        let runSetId: string | null = options.questions?.resume?.changeSetId ?? null;
+        let runId: string | null = options.questions?.resume?.runId ?? null;
         const result = await loop.executeR2(request, signal, {
+          ...(options.questions ? { questions: options.questions } : {}),
+          ...(options.workflow ? { workflow: options.workflow } : {}),
           ...(options.onRunCreated === undefined ? {} : { onRunCreated: options.onRunCreated }),
           ...(options.prepareContext === undefined ? {} : { prepareContext: options.prepareContext }),
           ...(options.priorConversation === undefined ? {} : { priorConversation: options.priorConversation }),

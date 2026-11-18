@@ -8,6 +8,7 @@ import { SqliteDesktopProjectStore } from './sqlite-desktop-project-store.js';
 import { SqliteVerificationStore } from './sqlite-verification-store.js';
 import { assessCurrentProjectChecks } from '../typescript/current-project-checks.js';
 import { insertEvent, validateEvent } from './sqlite-event-store.js';
+import { SqliteQuestionStore } from './sqlite-question-store.js';
 
 type Row = Record<string, SQLOutputValue>;
 function object(value: unknown): Record<string, unknown> { return typeof value==='object' && value!==null && !Array.isArray(value) ? value as Record<string, unknown> : {}; }
@@ -159,7 +160,7 @@ export class SqliteDesktopProjectionStore implements DesktopProjectionStore {
       const permissions=job?.run_id?this.database.prepare("SELECT p.* FROM permission_requests p JOIN tool_calls t ON t.call_id=p.call_id WHERE t.run_id=? AND p.state='pending' ORDER BY p.created_at,p.id").all(text(job.run_id)).map(row=>{const input=object(parseJson(row.safe_input_json));return permissionViewSchema.parse({id:row.id,callId:row.call_id,digest:row.digest,command:input.command,reason:input.reason,impact:input.impact,state:row.state});}):[];
       const first=messages[0]?.sequence;const snapshot={project,chat:{id:chat.id,projectId:chat.project_id,title:chat.title,archived:chat.archived===1,createdAt:chat.created_at},cursor:this.cursor(chatId),messages,beforeMessageSequence:first&&this.database.prepare('SELECT 1 FROM chat_messages WHERE chat_id=? AND sequence<? LIMIT 1').get(chatId,first)?first:null,run:detail?.run??null,permissions,activity:detail?.activity??[],changes:detail?.changes??null,commands:detail?.commands??[],verification:detail?.verification??null,beforeActivitySequence:detail?.beforeActivitySequence??null,contextAudit:detail?.contextAudit??null};
       while(Buffer.byteLength(JSON.stringify(snapshot))>1024*1024&&snapshot.messages.length>1){snapshot.messages.shift();snapshot.beforeMessageSequence=snapshot.messages[0]?.sequence??null;}
-      const result=r3SnapshotSchema.parse(snapshot);this.database.exec('COMMIT');return result;
+      const result=r3SnapshotSchema.parse({...snapshot,question:new SqliteQuestionStore(this.database).current(chatId)});this.database.exec('COMMIT');return result;
     }catch(error){if(this.database.isTransaction)this.database.exec('ROLLBACK');throw error;}
   }
   async inspectRun(chatId: Uuid,targetRequestId: Uuid): Promise<R3RunDetail> {const job=this.job(chatId,targetRequestId),project=await new SqliteDesktopProjectStore(this.database,this.clock).get(text(job.project_id));return this.detail(chatId,job,project?.available??false);}

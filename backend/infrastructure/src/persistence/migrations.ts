@@ -9,6 +9,7 @@ import { r3ChatSql } from './r3-chat-migration.js';
 import { r3ProjectionSql } from './r3-projection-migration.js';
 import { r3ProviderSettingsSql } from './r3-provider-settings-migration.js';
 import { r4RepoMapSql } from './r4-repo-map-migration.js';
+import { r4QuestionSql } from './r4-question-migration.js';
 
 const r4CheckInputsSql = `CREATE TABLE r4_verification_inputs (
   record_id TEXT PRIMARY KEY REFERENCES verification_records(id),
@@ -243,5 +244,6 @@ export const migrations: readonly Migration[] = [
   { version: 12, name: 'r3_provider_settings', sql: r3ProviderSettingsSql, checksum: sha256(r3ProviderSettingsSql) },
   { version: 13, name: 'r4_repo_map', sql: r4RepoMapSql, checksum: sha256(r4RepoMapSql) },
   { version: 14, name: 'r4_check_inputs', sql: r4CheckInputsSql, checksum: sha256(r4CheckInputsSql) },
-  { version: 15, name: 'r4_workspace_git', sql: r4WorkspaceSql, checksum: sha256(r4WorkspaceSql) }
+  { version: 15, name: 'r4_workspace_git', sql: r4WorkspaceSql, checksum: sha256(r4WorkspaceSql) },
+  { version: 16, name: 'r4_durable_questions', sql: r4QuestionSql, checksum: sha256(r4QuestionSql) }
 ];

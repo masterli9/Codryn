@@ -11,18 +11,31 @@ import { SqliteConversationReader } from '../persistence/sqlite-conversation-rea
 import { inspectProjectChecks } from '../typescript/project-check-discovery.js';
 import { createProjectCheckClassifier } from '../typescript/project-check-classifier.js';
 import type { TypeScriptQueryRunner } from '../typescript/typescript-query-client.js';
+import { questionCheckpointSchema } from '@codryn/shared';
+import { prepareBuiltinWorkflow } from '../extensions/builtin-catalog.js';
 export function createDesktopRuntimeFactory(options:R3InfrastructureResources&{userDataPath:string;nodeExecutable:string|null;typescriptCli?:string;typescriptQueries?:TypeScriptQueryRunner;providerFactory?:typeof createR3Provider}):DesktopRuntimeFactory {
   return async input=>{
     const root=await options.projects.root(input.projectId),abort=new AbortController(),signal=AbortSignal.any([input.signal,abort.signal]);
     const keys:string[]=[];
     if(await options.secrets.state('openai')==='stored')keys.push(await options.secrets.read('openai'));
     const safe=(text:string)=>{const redact=new StreamRedactor({secrets:keys});const result=redact.push('model',text)+redact.finish('model');redact.dispose();return result;};
+    const resume = options.questions.claim(input.request.requestId);
+    const safeCheckpoint = (value: unknown): unknown => {
+      if (typeof value === 'string') return safe(value);
+      if (Array.isArray(value)) return value.map(safeCheckpoint);
+      if (value !== null && typeof value === 'object') return Object.fromEntries(Object.entries(value).map(([name, item]) => [name, safeCheckpoint(item)]));
+      return value;
+    };
     const candidates=await new SqliteConversationReader(options.database).readCandidates(input.request.chatId,input.request.requestId);
     const priorConversation=selectConversationContext(candidates.map(pair=>({
       user:{...pair.user,text:safe(pair.user.text)},assistant:{...pair.assistant,text:safe(pair.assistant.text)}
     })));
     const projectChecks=await inspectProjectChecks(root,options.nodeExecutable,signal,options.typescriptCli);
     const provider=await (options.providerFactory??createR3Provider)({mode:input.request.mode,secrets:options.secrets,ids:options.ids,projectRoot:root,nodeExecutable:options.nodeExecutable});
+    if(resume?.providerState!==undefined){
+      if(!provider.model.restoreContinuation){provider.dispose();throw new Error('R3_RECOVERY_REQUIRED');}
+      provider.model.restoreContinuation(resume.providerState);
+    }
     const streams=new Map<number,{redactor:StreamRedactor;batcher:StreamBatcher;sealed:boolean}>();
     const getStream=(step:number)=>{
       let value=streams.get(step);if(!value){value={redactor:new StreamRedactor({secrets:keys}),sealed:false,batcher:new StreamBatcher({flushBytes:4096,flushMs:50,write:(sequence,text)=>options.projections.appendAssistant(input.request.requestId,step,sequence,text),onError:()=>abort.abort()})};streams.set(step,value);}return value;
@@ -51,11 +64,19 @@ export function createDesktopRuntimeFactory(options:R3InfrastructureResources&{u
     let runtime:Awaited<ReturnType<typeof createR2Infrastructure>>;
     try {
       runtime=await createR2Infrastructure({userDataPath:options.userDataPath,projectRoot:root,database:options.database,model,workspaceObserver:{inspect:async signal=>(await options.observer(input.projectId)).inspect(signal)},workspaceStore:options.workspace,allowReadOnlyCompletion:true,onRunCreated:input.onRunCreated,
+        questions: {
+          ...(resume ? { resume } : {}),
+          save: async (question, checkpoint) => {
+            const providerState=provider.model.saveContinuation?.(checkpoint.history);
+            await options.questions.create(input.request.chatId,input.request.requestId,question,questionCheckpointSchema.parse(safeCheckpoint({...checkpoint,...(providerState===undefined?{}:{providerState})})));
+          }
+        },
+        ...(input.request.workflow ? {workflow:{selection:input.request.workflow,...prepareBuiltinWorkflow(input.request.workflow)}} : {}),
         priorConversation,
         projectChecks:projectChecks.catalog,
         classifyCheck:createProjectCheckClassifier(root,projectChecks,options.nodeExecutable,options.typescriptCli),
         ...(options.typescriptQueries ? { typescriptQueries: options.typescriptQueries } : {}),
-        prepareContext:(runId,signal)=>prepareDesktopContext(options,input.request,input.projectId,root,runId,safe,signal,priorConversation),
+        prepareContext:(runId,signal)=>prepareDesktopContext(resume ? {...options,recordContextAudit:async()=>undefined} : options,input.request,input.projectId,root,runId,safe,signal,priorConversation),
         trustedVerificationExecutable:options.nodeExecutable??'__unavailable_node__',filesystemEffect:effect=>options.filesystemEffect(input.projectId,effect),safeModelText:safe,safeToolInput:args=>!keys.some(key=>JSON.stringify(args).includes(key)),
         onModelEvent:async({step,event})=>{if(event.type==='text_delta'){const stream=getStream(step);await stream.batcher.push(stream.redactor.push('model',event.text));}},
         onModelTurnCompleted:async({step})=>{const stream=streams.get(step);if(stream){await stream.batcher.push(stream.redactor.finish('model'));await stream.batcher.close('complete');await options.projections.sealAssistant(input.request.requestId,step,'complete');stream.sealed=true;}},

@@ -3,7 +3,7 @@ import type { R3IpcResponse,R3ErrorCode } from '@codryn/shared';
 import type { R3Infrastructure } from '@codryn/infrastructure';
 export interface R3Sender {readonly id:number;readonly mainFrame:{readonly url:string};isDestroyed():boolean;send(channel:string,value:unknown):void}
 export interface R3SenderEvent {readonly sender:R3Sender;readonly senderFrame:{readonly url:string}|null}
-export type R3Services=Pick<R3Infrastructure,'projects'|'chats'|'manager'|'snapshot'|'history'|'inspectRun'|'activity'|'diff'|'revert'|'output'|'answerPermission'|'settings'|'stop'|'contextMap'|'referenceSearch'|'referencePermit'|'localGit'>;
+export type R3Services=Pick<R3Infrastructure,'projects'|'chats'|'manager'|'snapshot'|'history'|'inspectRun'|'activity'|'diff'|'revert'|'output'|'answerPermission'|'settings'|'stop'|'contextMap'|'referenceSearch'|'referencePermit'|'localGit'|'questionCurrent'|'answerQuestion'>;
 export function assertR3Sender(event:{sender:Pick<R3Sender,'id'|'isDestroyed'>;senderFrame:{url:string}|null},main:Pick<R3Sender,'id'|'mainFrame'|'isDestroyed'>,entry:string):void {
   if(main.isDestroyed()||event.sender.isDestroyed()||event.sender.id!==main.id||event.senderFrame!==main.mainFrame||event.senderFrame.url!==new URL(entry).href)throw new Error('R3_SENDER_REJECTED');
 }
@@ -21,6 +21,9 @@ export function createR3Handler(dependencies:{services:R3Services|undefined;asse
     try{
       dependencies.assertSender(event);const parsed=r3IpcRequestSchema.safeParse(raw);if(!parsed.success)throw new Error('R3_INPUT_INVALID');const request=parsed.data,services=dependencies.services;if(!services)throw new Error('R3_RECOVERY_REQUIRED');const signal=AbortSignal.timeout(10000);let value:unknown;
       switch(request.operation){
+        case 'question.current':value=await services.questionCurrent(request.chatId,request.projectId);break;
+        case 'question.answer':value=await services.answerQuestion(request.chatId,request.projectId,request.runId,request.questionId,request.requestId,request.answer);break;
+        case 'question.decline':value=await services.answerQuestion(request.chatId,request.projectId,request.runId,request.questionId,request.requestId,{kind:'declined'});break;
         case 'project.open':{const root=await dependencies.chooseDirectory();value=root===null?{cancelled:true}:await services.projects.open(root,AbortSignal.timeout(10000));break;}
         case 'project.list':value=await services.projects.list();break;
         case 'git.status':value=await services.localGit.status(request.projectId,signal);break;

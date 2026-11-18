@@ -38,12 +38,15 @@ import { UuidGenerator } from './system/uuid-generator.js';
 import { RepoMapBuilder } from './context/repo-map-builder.js';
 import type { MapWorker } from './context/repo-map-builder.js';
 import { RepoMapStore } from './context/repo-map-store.js';
+import { SqliteQuestionStore } from './persistence/sqlite-question-store.js';
+import type { QuestionAnswer } from '@codryn/shared';
 export interface R3InfrastructureResources {
   database:DatabaseSync;projects:R3ProjectService;projections:DesktopProjectionStore;providerAccess:ProviderAccessGate;
   secrets:SecretStore;settings:ProviderSettingsService;ownedCommands:OwnedCommandStore;permissionBroker:DesktopPermissionBroker;
   filesystemEffect:<T>(projectId:string,effect:()=>Promise<T>)=>Promise<T>;workspace:WorkspaceStore;observer:(projectId:string)=>Promise<WorkspaceObserver>;ids:IdGenerator;
   repoMap:RepoMapBuilder;
   references:ReferenceResolver;
+  questions:SqliteQuestionStore;
   recordContextAudit:SqliteDesktopProjectionStore['recordContextAudit'];
 }
 const unavailableProtector:SecretProtector={available:async()=>false,encrypt:async()=>{throw new Error('R3_SECRET_UNAVAILABLE');},decrypt:async()=>{throw new Error('R3_SECRET_UNAVAILABLE');}};
@@ -56,6 +59,8 @@ export async function createR3Infrastructure(options:{userDataPath:string;runtim
   let periodic:ReturnType<typeof setInterval>|undefined,closed=false;
   const repoMap = new RepoMapBuilder(new RepoMapStore(database), options.repoMapWorker ?? (async () => { throw new Error('R4_REPO_MAP_WORKER_UNAVAILABLE'); }));
   const references = new ReferenceResolver();
+  const questions = new SqliteQuestionStore(database);
+  const questionResumes = new Map<string, Promise<void>>();
   let mapProject: string | null = null, mapSelection = 0;
   const mapLifetime = new AbortController();
   const activateMap = (id: string, root: string) => {
@@ -88,7 +93,7 @@ export async function createR3Infrastructure(options:{userDataPath:string;runtim
       cancel: (id: string) => { requireMapProject(id); return repoMap.cancel(id); }
     };
     const chats=new ChatService({chats:chatsStore,projects}),secrets=new EncryptedSecretStore(options.userDataPath,options.secretProtector??unavailableProtector);
-    const activeJob=()=>database.prepare("SELECT 1 FROM desktop_jobs WHERE state IN ('queued','running','stopping') LIMIT 1").get()!==undefined;
+    const activeJob=()=>database.prepare("SELECT 1 FROM desktop_jobs j WHERE state IN ('queued','running','stopping') AND NOT EXISTS(SELECT 1 FROM r4_questions q WHERE q.run_id=j.run_id AND q.status IN ('waiting','answered') AND q.resume_state='ready') LIMIT 1").get()!==undefined;
     const settings=new ProviderSettingsService({secrets,settings:new SqliteProviderSettingsStore(database),access:providerAccess,assertIdle:async()=>{if(activeJob())throw new Error('R3_PROJECT_BUSY');},clock,testConnection:testProviderConnection});
     const observer=async(projectId:string):Promise<WorkspaceObserver>=>{
       if(closed)throw new Error('R3_PROJECT_BUSY');opened.add(projectId);const root=await projects.root(projectId);if(closed)throw new Error('R3_PROJECT_BUSY');
@@ -122,6 +127,7 @@ export async function createR3Infrastructure(options:{userDataPath:string;runtim
       actions.interruptUnfinished();await recoverOwnedCommands(ownedCommands);
       for(const project of await store.list()) {
         await requests.interruptUnfinished(project.id);
+        if(database.prepare("SELECT 1 FROM r4_questions q JOIN desktop_jobs j ON j.run_id=q.run_id WHERE j.project_id=? AND j.state='running' AND q.resume_state='ready' AND q.status='waiting'").get(project.id))continue;
         for(const permission of await permissionStore.listPending(project.id))await permissionStore.closePending(permission.id,'expired');
         await permissionStore.expireAllowedUnclaimed(project.id);
         if((await projects.get(project.id))?.available){
@@ -131,7 +137,7 @@ export async function createR3Infrastructure(options:{userDataPath:string;runtim
       }
     };
     await recover();
-    const resources:R3InfrastructureResources={database,projects,projections,providerAccess,secrets,settings,ownedCommands,permissionBroker,workspace,observer,ids,filesystemEffect,repoMap,references,recordContextAudit:projections.recordContextAudit.bind(projections)};
+    const resources:R3InfrastructureResources={database,projects,projections,providerAccess,secrets,settings,ownedCommands,permissionBroker,workspace,observer,ids,filesystemEffect,repoMap,references,questions,recordContextAudit:projections.recordContextAudit.bind(projections)};
     const manager=new DesktopRunManager({requests,chats:chatsStore,projections,projects,providerAccess,operationLease:lease,createRun:options.runtimeFactory(resources),beforeAccept:async(input)=>{
       const chat=await chatsStore.get(input.chatId);if(!chat)throw new Error('R3_NOT_FOUND');
       if((await ownedCommands.pending(chat.projectId)).length||(await journal.pending(chat.projectId)).length)throw new Error('R3_RECOVERY_REQUIRED');
@@ -155,7 +161,38 @@ export async function createR3Infrastructure(options:{userDataPath:string;runtim
       return references.grant(await projects.root(projectId),{...input,chatId,requestId},signal);
     };
     const history=async(chatId:string,before:number|null)=>{await chatOwner(chatId);const messages=await projections.messages(chatId,before),first=messages[0]?.sequence;const older=first!==undefined&&database.prepare('SELECT 1 FROM chat_messages WHERE chat_id=? AND sequence<? LIMIT 1').get(chatId,first)!==undefined;return {messages,beforeMessageSequence:older&&first!==undefined?first:null};};
-    const stop=async(chatId:string,projectId:string,jobId:string)=>{await chatOwner(chatId,projectId);const job=database.prepare('SELECT chat_id FROM desktop_jobs WHERE id=?').get(uuidSchema.parse(jobId));if(!job)throw new Error('R3_NOT_FOUND');if(job.chat_id!==chatId)throw new Error('R3_CHAT_PROJECT_MISMATCH');return manager.stop(projectId,jobId);};
+    const stop=async(chatId:string,projectId:string,jobId:string)=>{
+      await chatOwner(chatId,projectId);
+      const job=database.prepare('SELECT chat_id,run_id,state FROM desktop_jobs WHERE id=?').get(uuidSchema.parse(jobId));
+      if(!job)throw new Error('R3_NOT_FOUND');if(job.chat_id!==chatId)throw new Error('R3_CHAT_PROJECT_MISMATCH');
+      if(job.run_id&&questions.current(chatId)?.runId===job.run_id){
+        await manager.wait(jobId);
+        questions.cancel(String(job.run_id));
+        database.prepare("UPDATE agent_runs SET state='cancelled' WHERE run_id=?").run(job.run_id);
+        await requests.setState(jobId,'interrupted',{code:'R1_CANCELLED',message:'Běh byl zastaven.'});
+        return 'requested' as const;
+      }
+      return manager.stop(projectId,jobId);
+    };
+    const questionCurrent=async(chatId:string,projectId:string)=>{await chatOwner(chatId,projectId);return questions.current(chatId);};
+    const answerQuestion=async(chatId:string,projectId:string,runId:string,questionId:string,requestId:string,answer:QuestionAnswer)=>{
+      await chatOwner(chatId,projectId);
+      const safe=await safeText();
+      if(safe(JSON.stringify(answer))!==JSON.stringify(answer))throw new Error('R3_INPUT_INVALID');
+      const status=questions.answer(chatId,runId,questionId,requestId,answer);
+      if(status!=='rejected'&&!(status==='duplicate'&&manager.active(projectId))&&database.prepare("SELECT 1 FROM r4_questions WHERE id=? AND status='answered' AND resume_state='ready'").get(questionId)){
+        const job=database.prepare("SELECT id,request_id FROM desktop_jobs WHERE run_id=? AND chat_id=? AND state='running'").get(runId,chatId);
+        if(job){
+          let starting=questionResumes.get(runId);
+          if(!starting){
+            starting=manager.wait(String(job.id)).then(()=>manager.resume(String(job.request_id))).finally(()=>questionResumes.delete(runId));
+            questionResumes.set(runId,starting);
+          }
+          await starting;
+        }
+      }
+      return {status};
+    };
     const snapshot=async(chatId:string,signal:AbortSignal=AbortSignal.timeout(6000))=>{const chat=await chatOwner(chatId);await refresh(chat.projectId,signal);const result=await projections.snapshot(chatId);return {...result,project:await projects.get(chat.projectId,signal)??result.project};};
     const inspectRun=async(chatId:string,targetRequestId:string,signal:AbortSignal=AbortSignal.timeout(6000))=>{const chat=await chatOwner(chatId);await refresh(chat.projectId,signal);return projections.inspectRun(chatId,targetRequestId);};
     const subscriptions=new SubscriptionService({snapshot,updates:(...args)=>projections.updates(...args)},ids);
@@ -240,7 +277,7 @@ export async function createR3Infrastructure(options:{userDataPath:string;runtim
     };
     periodic=setInterval(()=>{for(const project of opened)void refresh(project,AbortSignal.timeout(6000)).catch(()=>undefined);},1000);periodic.unref();
     const shutdown=async(signal:AbortSignal)=>{providerAccess.beginShutdown();if(periodic)clearInterval(periodic);mapLifetime.abort();repoMap.closeAll();const result=await manager.shutdown(signal);await repoMap.drain(signal);while((!providerAccess.idle()||refreshes.size||scans.size||filesystemTails.size||reverts.size)&&!signal.aborted)await new Promise(resolve=>setTimeout(resolve,25));return {stopped:!signal.aborted&&result.stopped&&providerAccess.idle()&&(await ownedCommands.pending()).length===0&&reverts.size===0&&refreshes.size===0&&scans.size===0&&filesystemTails.size===0};};
-    return {projects,chats,requests,projections,manager,subscriptions,settings,resources,recover,snapshot,history,stop,inspectRun,diff,revert,answerPermission,shutdown,contextMap,referenceSearch,referencePermit,localGit,
+    return {projects,chats,requests,projections,manager,subscriptions,settings,resources,recover,snapshot,history,stop,inspectRun,diff,revert,answerPermission,answerQuestion,questionCurrent,shutdown,contextMap,referenceSearch,referencePermit,localGit,
       activity:(chatId:string,target:string,before:number|null)=>projections.activity(chatId,target,before),output:(chatId:string,callId:string,after:number|null)=>projections.output(chatId,callId,after),
       close:()=>{if(activeJob()||!providerAccess.idle()||reverts.size)throw new Error('R3_PROJECT_BUSY');closed=true;if(periodic)clearInterval(periodic);mapLifetime.abort();repoMap.closeAll();subscriptions.close();for(const scanner of observers.values())scanner.close();handle.close();}
     };

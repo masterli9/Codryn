@@ -4,12 +4,13 @@ import { modelDescriptorSchema } from './model-contract.js';
 import { agentRunFailureCodeSchema } from './r1-agent.js';
 import { r2RunResultSchema } from './r2-agent.js';
 import { r4ReferencesSchema } from './r4-context.js';
+import { builtinWorkflowSchema } from './r4-extension.js';
 
 export const r3ErrorCodeSchema = z.enum(['R3_INPUT_INVALID', 'R3_NOT_FOUND', 'R3_CHAT_PROJECT_MISMATCH', 'R3_PROJECT_BUSY', 'R3_RECOVERY_REQUIRED', 'R3_SECRET_UNAVAILABLE', 'R3_CONSENT_REQUIRED', 'R3_RUNTIME_UNAVAILABLE', 'R3_PROJECT_UNAVAILABLE', 'R3_STALE_VIEW', 'R3_REQUEST_MISMATCH', 'R3_SENDER_REJECTED', 'R3_INTERNAL', 'R4_REFERENCE_UNAVAILABLE', 'R4_REFERENCE_PERMIT_INVALID', 'R4_POLICY_INVALID']);
 export const r3ModeSchema = z.enum(['demo', 'openai']);
 export const r3JobStateSchema = z.enum(['queued', 'running', 'stopping', 'finished', 'interrupted']);
 export const r3TitleSchema = z.string().trim().min(1).max(120).refine(value => !value.includes('\0'));
-export const r3SubmitInputSchema = z.object({ requestId: uuidSchema, chatId: uuidSchema, task: z.string().trim().min(1).max(16_384).refine(value => !value.includes('\0')), maxSteps: z.number().int().min(1).max(32), mode: r3ModeSchema, retryOfRequestId: uuidSchema.optional(), references: r4ReferencesSchema.optional() }).strict();
+export const r3SubmitInputSchema = z.object({ requestId: uuidSchema, chatId: uuidSchema, task: z.string().trim().min(1).max(16_384).refine(value => !value.includes('\0')), maxSteps: z.number().int().min(1).max(32), mode: r3ModeSchema, retryOfRequestId: uuidSchema.optional(), references: r4ReferencesSchema.optional(), workflow: builtinWorkflowSchema.optional() }).strict();
 export const r3AcceptedSchema = z.object({ requestId: uuidSchema, messageId: uuidSchema, jobId: uuidSchema, duplicate: z.boolean() }).strict();
 export const r3ChatSchema = z.object({ id: uuidSchema, projectId: uuidSchema, title: r3TitleSchema, archived: z.boolean(), createdAt: isoTimestampSchema }).strict();
 export const r3MessageSchema = z.object({ id: uuidSchema, chatId: uuidSchema, requestId: uuidSchema, runId: uuidSchema.nullable(), retryOfRequestId: uuidSchema.nullable(), role: z.enum(['user', 'assistant']), text: z.string().refine(value => new TextEncoder().encode(value).length <= 64 * 1024), sequence: z.number().int().positive(), state: z.enum(['streaming', 'complete', 'interrupted']), createdAt: isoTimestampSchema, references: r4ReferencesSchema.default([]) }).strict();

@@ -1,5 +1,5 @@
 import { Buffer } from 'node:buffer';
-import { modelToolCallSchema, type ModelRequest, type ModelStreamEvent, type ModelDescriptor, type ModelToolDefinition } from '@codryn/shared';
+import { modelToolCallSchema, uuidSchema, type JsonValue, type ModelRequest, type ModelStreamEvent, type ModelDescriptor, type ModelToolDefinition } from '@codryn/shared';
 import type { IdGenerator, ModelAdapter } from '@codryn/core';
 import { ProviderHttpError, ProviderTransportError, type ProviderTransport } from './provider-transport.js';
 import { ProviderAdapterError, normalizeProviderError, providerStatus } from './provider-errors.js';
@@ -35,6 +35,7 @@ function functionTools(request: ModelRequest): unknown[] {
 
 function inputItems(request: ModelRequest, externalByInternal: ReadonlyMap<string, string>, tools: ReadonlyMap<string, ModelToolDefinition>): unknown[] {
   const items: unknown[] = [];
+  if(request.workflowInstructions)items.push({role:'developer',content:[{type:'input_text',text:request.workflowInstructions}]});
   if (request.priorConversation?.length) {
     items.push({ role: 'developer', content: [{ type: 'input_text', text: 'Previous chat messages describe past work. Re-read project files before relying on their contents.' }] });
     for (const message of request.priorConversation) {
@@ -69,6 +70,22 @@ export class OpenAIResponsesAdapter implements ModelAdapter {
   readonly descriptor: ModelDescriptor;
   private readonly externalByInternal = new Map<string, string>();
   private readonly calls = new Map<string, CallState>();
+
+  saveContinuation(history: NonNullable<ModelRequest['history']>): JsonValue {
+    return Object.fromEntries(history.flatMap(turn=>turn.kind==='assistant'?turn.calls.map(call=>{
+      const external=this.externalByInternal.get(call.callId);
+      if(!external)throw new ProviderAdapterError('invalid_tool_call');
+      return [call.callId,external];
+    }):[]));
+  }
+  restoreContinuation(value: JsonValue): void {
+    if(!value||Array.isArray(value)||typeof value!=='object'||Object.keys(value).length>32)throw new ProviderAdapterError('invalid_tool_call');
+    const entries=Object.entries(value);
+    for(const [id,external] of entries){
+      if(!uuidSchema.safeParse(id).success||typeof external!=='string'||external.length===0||external.length>256||/[\r\n\0]/u.test(external))throw new ProviderAdapterError('invalid_tool_call');
+    }
+    for(const [id,external] of entries)this.externalByInternal.set(id,String(external));
+  }
 
   constructor(private readonly options: ProviderAdapterOptions, private readonly endpoint = 'https://api.openai.com/v1/responses') {
     this.descriptor = descriptor(options.modelId);

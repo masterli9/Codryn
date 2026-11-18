@@ -71,7 +71,8 @@ export const modelRequestSchema = z.object({
   previousToolResults: z.array(toolResultSchema),
   history: z.array(modelTurnSchema).max(64).optional(),
   priorConversation: priorConversationSchema.optional(),
-  recommendedChecks: z.array(projectCheckCandidateSchema).max(2).optional()
+  recommendedChecks: z.array(projectCheckCandidateSchema).max(2).optional(),
+  workflowInstructions:z.string().min(1).max(4000).optional()
 }).strict();
 
 const modelErrorSchema = z.object({

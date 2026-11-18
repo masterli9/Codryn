@@ -5,7 +5,7 @@ import type { R3ProjectService } from './project-service.js';
 import type { ProviderAccessGate } from '../secrets/ports.js';
 import { r3ModelDescriptor } from './model-catalog.js';
 interface Active {chatId:Uuid;view:R3RunView;controller:AbortController;done:Promise<void>}
-function sameInput(a:R3SubmitInput,b:R3SubmitInput):boolean{return a.chatId===b.chatId&&a.task===b.task&&a.maxSteps===b.maxSteps&&a.mode===b.mode&&a.retryOfRequestId===b.retryOfRequestId&&JSON.stringify(a.references??[])===JSON.stringify(b.references??[]);}
+function sameInput(a:R3SubmitInput,b:R3SubmitInput):boolean{return a.chatId===b.chatId&&a.task===b.task&&a.maxSteps===b.maxSteps&&a.mode===b.mode&&a.retryOfRequestId===b.retryOfRequestId&&a.workflow===b.workflow&&JSON.stringify(a.references??[])===JSON.stringify(b.references??[]);}
 export class DesktopRunManager {
   private readonly running=new Map<Uuid,Active>();private readonly jobs=new Map<Uuid,Promise<void>>();private closing=false;
   constructor(private readonly dependencies:{requests:DesktopRequestStore;chats:ChatStore;projections:DesktopProjectionStore;projects:R3ProjectService;createRun:DesktopRuntimeFactory;providerAccess:ProviderAccessGate;beforeAccept?:(input:R3SubmitInput)=>Promise<void>;operationLease?:(projectId:Uuid)=>()=>void}){}
@@ -17,22 +17,39 @@ export class DesktopRunManager {
     try{await this.dependencies.beforeAccept?.(input);if(this.closing)throw new Error('R3_PROJECT_BUSY');accepted=await this.dependencies.requests.accept(input,chat.projectId,r3ModelDescriptor(input.mode));if(accepted.duplicate){release();return accepted;}}
     catch(error){release();throw error;}
     const view=await this.dependencies.requests.get(accepted.jobId);if(!view){release();throw new Error('R3_INTERNAL');}
-    const controller=new AbortController();const active:Active={chatId:chat.id,view,controller,done:Promise.resolve()};this.running.set(chat.projectId,active);
+    this.launch(chat.projectId,chat.id,input,accepted,view,release);
+    return accepted;}finally{releaseOperation();}
+  }
+  async resume(requestId: Uuid): Promise<void> {
+    if(this.closing)throw new Error('R3_PROJECT_BUSY');
+    const record=await this.dependencies.requests.getByRequestId(requestId);
+    if(!record||record.view.state!=='running'||record.view.phase!=='waiting_for_user_input')throw new Error('R3_RECOVERY_REQUIRED');
+    if(this.running.has(record.projectId))return;
+    const release=await this.dependencies.providerAccess.acquireRunLease();
+    if(this.running.has(record.projectId)){release();return;}
+    this.launch(record.projectId,record.input.chatId,record.input,record.accepted,record.view,release);
+  }
+  private launch(projectId:Uuid,chatId:Uuid,input:R3SubmitInput,accepted:R3Accepted,view:R3RunView,release:()=>void) {
+    const controller=new AbortController();const active:Active={chatId,view,controller,done:Promise.resolve()};this.running.set(projectId,active);
     active.done=Promise.resolve().then(async()=>{
       let runtime:Awaited<ReturnType<DesktopRuntimeFactory>>|undefined;
       try{
         if(controller.signal.aborted){await this.dependencies.requests.setState(accepted.jobId,'interrupted');return;}
-        runtime=await this.dependencies.createRun({projectId:chat.projectId,request:input,signal:controller.signal,onRunCreated:async runId=>{await this.dependencies.requests.attachRun(input.requestId,runId);const linked=await this.dependencies.requests.get(accepted.jobId);if(linked)active.view=linked;}});
+        runtime=await this.dependencies.createRun({projectId,request:input,signal:controller.signal,onRunCreated:async runId=>{await this.dependencies.requests.attachRun(input.requestId,runId);const linked=await this.dependencies.requests.get(accepted.jobId);if(linked)active.view=linked;}});
         const result=await runtime.execute();await this.dependencies.requests.finish(accepted.jobId,result);
       }catch(error){
+        if(error instanceof Error&&error.message==='R4_QUESTION_SUSPENDED'){
+          if(controller.signal.aborted)await this.dependencies.requests.setState(accepted.jobId,'interrupted',{code:'R1_CANCELLED',message:'Běh byl zastaven.'});
+          return;
+        }
         const parsed=r3ErrorCodeSchema.safeParse(error instanceof Error?error.message:undefined);
         await this.dependencies.requests.setState(accepted.jobId,'interrupted',controller.signal.aborted
           ? {code:'R1_CANCELLED',message:'Běh byl zastaven.'}
           : {code:parsed.success?parsed.data:'R3_INTERNAL',message:'Běh se nepodařilo spustit nebo dokončit.'});
       }
-      finally{runtime?.close();release();this.running.delete(chat.projectId);this.jobs.delete(accepted.jobId);}
+      finally{runtime?.close();release();this.running.delete(projectId);this.jobs.delete(accepted.jobId);}
     });
-    this.jobs.set(accepted.jobId,active.done);return accepted;}finally{releaseOperation();}
+    this.jobs.set(accepted.jobId,active.done);
   }
   async stop(projectId:Uuid,jobId:Uuid):Promise<'requested'|'already_terminal'>{const record=await this.dependencies.requests.getByRequestId((await this.dependencies.requests.get(jobId))?.requestId??jobId);if(!record)throw new Error('R3_NOT_FOUND');if(record.projectId!==projectId)throw new Error('R3_CHAT_PROJECT_MISMATCH');if(['finished','interrupted'].includes(record.view.state))return 'already_terminal';const active=this.running.get(projectId);if(!active||active.view.jobId!==jobId)throw new Error('R3_RECOVERY_REQUIRED');await this.dependencies.requests.setState(jobId,'stopping');active.view={...active.view,state:'stopping'};active.controller.abort();return 'requested';}
   async wait(jobId:Uuid):Promise<R3RunView>{await this.jobs.get(jobId);const view=await this.dependencies.requests.get(jobId);if(!view)throw new Error('R3_NOT_FOUND');return view;}

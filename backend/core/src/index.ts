@@ -149,3 +149,6 @@ export { typescriptQueryTool } from './tools/typescript-query-tool.js';
 export { ResourceLocks } from './workspace/resource-locks.js';
 export { LocalGitService } from './git/local-git-service.js';
 export type { LocalGitDiffInput } from './git/local-git-service.js';
+export { QuestionSuspended, questionTool, validateQuestion } from './desktop/question-service.js';
+export type { QuestionBoundary } from './desktop/question-service.js';
+export { ExtensionRegistry } from './extensions/extension-registry.js';

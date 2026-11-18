@@ -9,6 +9,7 @@ import { permissionDecisionInputSchema } from './r2-permission.js';
 import { r4RepoMapStatusSchema } from './r4-repo-map.js';
 import { r4ReferenceSchema, r4ReferencePermitInputSchema, r4ReferenceSearchPageSchema, r4ReferenceSearchSchema } from './r4-context.js';
 import { gitBranchSchema, gitCommitFilesSchema, gitDiffSchema, gitHistorySchema, gitMessageSchema, gitObjectIdSchema, gitPathSchema, gitSideSchema, gitSnapshotIdSchema, gitSnapshotSchema, gitSuggestionSchema } from './r4-git.js';
+import { questionSchema, questionAnswerSchema } from './r4-question.js';
 const request = { requestId: uuidSchema };
 const chat = { ...request, chatId: uuidSchema };
 const owned = { ...chat, projectId: uuidSchema };
@@ -18,6 +19,9 @@ const gitView = { ...gitProject, snapshotId: gitSnapshotIdSchema };
 const operation = <O extends string, S extends z.ZodRawShape>(name: O, shape: S) => z.object({ operation: z.literal(name), ...request, ...shape }).strict();
 export const r3IpcRequestSchema = z.discriminatedUnion('operation', [
   operation('project.open', {}), operation('project.list', {}),
+  operation('question.current', owned),
+  operation('question.answer', { ...owned, runId: uuidSchema, questionId: uuidSchema, answer: questionAnswerSchema }),
+  operation('question.decline', { ...owned, runId: uuidSchema, questionId: uuidSchema }),
   operation('git.status', gitProject),
   operation('git.diff', { ...gitView, path: gitPathSchema, side: gitSideSchema }),
   operation('git.history', { ...gitView, cursor: z.number().int().min(0).max(5000) }),
@@ -40,6 +44,9 @@ const error = z.object({ ok: z.literal(false), error: z.object({ code: r3ErrorCo
 const response = <T extends z.ZodType>(value: T) => z.union([z.object({ ok: z.literal(true), value }).strict(), error]);
 const pageLimit = (value: object) => new TextEncoder().encode(JSON.stringify(value)).length <= 1024 * 1024;
 export const r3ResponseSchemas = {
+  'question.current': response(questionSchema.nullable()),
+  'question.answer': response(z.object({status:z.enum(['accepted','duplicate','rejected'])}).strict()),
+  'question.decline': response(z.object({status:z.enum(['accepted','duplicate','rejected'])}).strict()),
   'run.active': response(z.object({projectId:uuidSchema,chatId:uuidSchema,jobId:uuidSchema}).strict().nullable()),
   'project.open': response(z.union([z.object({ cancelled: z.literal(true) }).strict(), r3ProjectSchema])), 'project.list': response(z.array(r3ProjectSchema)),
   'git.status': response(gitSnapshotSchema), 'git.diff': response(gitDiffSchema), 'git.history': response(gitHistorySchema),

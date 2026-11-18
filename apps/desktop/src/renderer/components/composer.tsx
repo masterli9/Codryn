@@ -1,6 +1,7 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import type { KeyboardEvent } from 'react';
-import { maxR4References } from '@codryn/shared';
+import { maxR4References, builtinWorkflowSchema } from '@codryn/shared';
+import type { BuiltinWorkflow } from '@codryn/shared';
 import type { R4Reference, R4ReferencePermitInput, R4ReferenceSearchPage } from '@codryn/shared';
 import { Icon } from './icon.js';
 
@@ -13,6 +14,7 @@ export interface RetryDraft {
 }
 interface Draft {
   text: string;
+  workflow?: BuiltinWorkflow | undefined;
   references: R4Reference[];
   retryOfRequestId?: string;
   permitRequestId?: string;
@@ -22,7 +24,7 @@ interface ComposerProps {
   chatId: string;
   busy: boolean;
   archived: boolean;
-  send: (text: string, requestId: string, retryOfRequestId?: string, references?: R4Reference[]) => Promise<unknown>;
+  send: (text: string, requestId: string, retryOfRequestId?: string, references?: R4Reference[], workflow?: BuiltinWorkflow) => Promise<unknown>;
   retryDraft?: RetryDraft | null;
   searchReferences?: ((chatId: string, query: string, offset: number) => Promise<R4ReferenceSearchPage>) | undefined;
   permitReference?: (chatId: string, requestId: string, input: R4ReferencePermitInput) => Promise<R4Reference>;
@@ -134,7 +136,7 @@ export function Composer({ chatId, busy, archived, send, retryDraft, searchRefer
   async function submit() {
     if (locked.current || busy || archived || authorizing || !draft.text.trim()) return;
     const owner = chatId, task = draft.text.trim(), { retryOfRequestId, references } = draft;
-    const identity = JSON.stringify([task, retryOfRequestId, references]);
+    const identity = JSON.stringify([task, retryOfRequestId, references, draft.workflow]);
     let attempt = attempts.current.get(owner);
     if (!attempt || attempt.identity !== identity) {
       attempt = { identity, requestId: attempt ? crypto.randomUUID() : draft.permitRequestId ?? crypto.randomUUID() };
@@ -145,7 +147,8 @@ export function Composer({ chatId, busy, archived, send, retryDraft, searchRefer
     setError(null);
     setPicker(null);
     try {
-      if (references.length) await send(task, attempt.requestId, retryOfRequestId, references);
+      if (draft.workflow) await send(task, attempt.requestId, retryOfRequestId, references, draft.workflow);
+      else if (references.length) await send(task, attempt.requestId, retryOfRequestId, references);
       else await send(task, attempt.requestId, retryOfRequestId);
       if (attempts.current.get(owner) === attempt) attempts.current.delete(owner);
       if (drafts.current.get(owner) === draft) {
@@ -245,6 +248,10 @@ export function Composer({ chatId, busy, archived, send, retryDraft, searchRefer
         </div>}
       </div>}
       <div className="composer-footer">
+        <label>Pracovní postup<select aria-label="Pracovní postup" disabled={sending||busy||archived} value={draft.workflow??''} onChange={event=>{
+          const next={...draft,workflow:event.target.value?builtinWorkflowSchema.parse(event.target.value):undefined};
+          setDraft(next);drafts.current.set(chatId,next);
+        }}><option value="">Běžný úkol</option><option value="planning@1.0.0">Plán · čtení projektu</option><option value="verification@1.0.0">Ověření · čtení a povolené příkazy</option></select></label>
         <span className="meta">{archived ? 'Archivovaný chat' : busy ? 'Běh nebo načítání chatu' : picker ? 'Šipky a Enter vyberou · Esc zavře' : searchReferences ? '@ hledá v projektu · Enter odešle · Shift+Enter nový řádek' : 'Enter odešle · Shift+Enter nový řádek'}</span>
         <button className="primary" type="submit" disabled={sending || authorizing || busy || archived || !draft.text.trim()} aria-label="Odeslat úkol"><Icon name="send" />{sending ? 'Odesílání…' : 'Odeslat'}</button>
       </div>

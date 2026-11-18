@@ -5,11 +5,23 @@ import { r3ModelDescriptor } from '@codryn/core';
 import { ScriptedModelAdapter,changeVerifyReturnScenario } from '@codryn/infrastructure';
 import type { createR3Provider } from '@codryn/infrastructure';
 import type { ModelStreamEvent } from '@codryn/shared';
-export type DesktopTestScenario='stream'|'truncated-stream'|'long-activity'|'two-patches'|'interrupted-model';
+export type DesktopTestScenario='stream'|'truncated-stream'|'long-activity'|'two-patches'|'interrupted-model'|'question';
 // Main-only, fixed fixtures. No renderer hook, arbitrary code or paid provider is accepted.
 export function desktopTestProvider(scenario:DesktopTestScenario):typeof createR3Provider {
   return async options=>{
     if(options.mode!=='demo')throw new Error('R3_INPUT_INVALID');const descriptor=r3ModelDescriptor('demo');
+    if(scenario==='question')return {model:{descriptor,async *stream(request){
+      const calls=request.history?.flatMap(turn=>turn.kind==='assistant'?turn.calls:[])??[];
+      if(!calls.some(call=>call.toolId==='ask_user'))yield {type:'tool_call',call:{callId:randomUUID(),toolId:'ask_user',toolVersion:1,arguments:{
+        reason:'Ukládání mění rozsah řešení.',prompt:'Kam se mají ukládat data?',options:[{id:'local',label:'Lokálně'},{id:'shared',label:'Sdíleně'}]
+      }}};
+      else if(!calls.some(call=>call.toolId==='command.run'))yield {type:'tool_call',call:{callId:randomUUID(),toolId:'command.run',toolVersion:1,arguments:{
+        command:{executable:options.nodeExecutable??'',args:['--version'],cwd:options.projectRoot,timeoutMs:10000,maxOutputBytes:4096},
+        reason:'Zjistit verzi testovacího runtime.',impact:'Vypíše verzi runtime bez změny souborů.'
+      }}};
+      else yield {type:'text_delta',text:'Odpověď přijata a samostatně povolená kontrola dokončena.'};
+      yield {type:'completed'};
+    }},dispose(){}};
     if(scenario==='two-patches'){
       const original=await readFile(join(options.projectRoot,'sum.mjs'),'utf8'),other=await readFile(join(options.projectRoot,'other.ts'),'utf8'),reference=changeVerifyReturnScenario({projectRoot:options.projectRoot,originalContent:original,expectedHash:createHash('sha256').update(original).digest('hex'),runtimeExecutable:options.nodeExecutable??'',callIds:{search:randomUUID(),read:randomUUID(),patch:randomUUID(),command:randomUUID()}});
       const extra:{events:ModelStreamEvent[];assertRequest:()=>void}={assertRequest:()=>undefined,events:[{type:'tool_call',call:{callId:randomUUID(),toolId:'file.patch',toolVersion:1,arguments:{path:'other.ts',expectedHash:createHash('sha256').update(other).digest('hex'),edits:[{oldText:other,newText:other.replace('1','2')}]}}},{type:'completed'}]};
