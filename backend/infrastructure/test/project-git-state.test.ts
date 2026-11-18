@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process';
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
-import { join, resolve } from 'node:path';
+import { mkdir, readFile, realpath, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { createR2Project } from '@codryn/test-support';
 import { ProjectGitState } from '../src/git/project-git-state.js';
@@ -45,14 +45,22 @@ describe('ProjectGitState', () => {
     }
   }, 30_000);
 
-  it('does not inherit a parent repository for a nested non-Git root', async () => {
-    const root = await mkdtemp(join(resolve('.'), '.codryn-git-state-'));
+  it('recognizes the enclosing worktree and scopes status to the opened subdirectory', async () => {
+    const fixture = await createR2Project('git');
     try {
-      await mkdir(join(root, 'nested'));
-      await expect(new ProjectGitState(join(root, 'nested')).inspect(new AbortController().signal))
-        .resolves.toEqual({ mode: 'non-git', reason: 'not_repository' });
+      const nested = join(fixture.root, 'nested');
+      await mkdir(nested);
+      await writeFile(join(nested, 'inside.txt'), 'inside\n');
+      await writeFile(join(fixture.root, 'outside.txt'), 'outside\n');
+      const baseline = await new ProjectGitState(nested).inspect(AbortSignal.timeout(10_000));
+      expect(baseline).toMatchObject({
+        mode: 'git',
+        worktreeIdentity: await realpath(fixture.root),
+        status: [{ path: 'inside.txt', xy: '??' }],
+        conflicts: []
+      });
     } finally {
-      await rm(root, { recursive: true, force: true });
+      await fixture.close();
     }
   }, 30_000);
 });
