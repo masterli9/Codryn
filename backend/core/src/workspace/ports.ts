@@ -1,3 +1,5 @@
+import type { WorkspaceChangeSource } from '@codryn/shared';
+
 export interface WorkspaceObservation {
   fingerprint: string;
   gitIdentity: string | null;
@@ -11,6 +13,8 @@ export interface WorkspaceObservation {
 
 export interface WorkspaceSnapshot extends WorkspaceObservation {
   revision: number;
+  observedAt?: string | null;
+  changeSource?: WorkspaceChangeSource;
 }
 
 export interface WorkspaceObserver {
@@ -20,6 +24,7 @@ export interface WorkspaceObserver {
 export interface WorkspaceStore {
   observe(projectId: string, observation: WorkspaceObservation): Promise<WorkspaceSnapshot>;
   current(projectId: string): Promise<WorkspaceSnapshot>;
+  advance?(projectId: string, source: { changeSource: 'patch' | 'revert' | 'git'; mutationId: string }, expectedRevision?: number, observation?: WorkspaceObservation): Promise<WorkspaceSnapshot>;
 }
 
 export interface Lease {

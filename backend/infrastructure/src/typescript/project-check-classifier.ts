@@ -76,7 +76,7 @@ function equalCommand(a: CommandSpec, b: CommandSpec): boolean {
 export function createProjectCheckClassifier(root: string, initial: ProjectCheckDiscovery, node: string | null, tsc?: string) {
   const tools = projectCheckToolPaths(initial);
   return async (command: CommandSpec, snapshot: WorkspaceSnapshot, signal: AbortSignal): Promise<ClassifiedCheck | null> => {
-    if (!snapshot.complete || !snapshot.inputHashes || !initial.catalog.checks.some(candidate => candidate.command && equalCommand(command, candidate.command))) return null;
+    if (!snapshot.complete || !snapshot.inputHashes?.['@scope'] || !initial.catalog.checks.some(candidate => candidate.command && equalCommand(command, candidate.command))) return null;
     const discovery = await inspectProjectChecks(root, node, signal, tsc);
     const { catalog, configHashes, inputPaths, policyRevision, testFormat, testFiles } = discovery;
     if (catalog.digest !== initial.catalog.digest || policyRevision !== snapshot.inputHashes['@policy']) return null;
@@ -84,15 +84,11 @@ export function createProjectCheckClassifier(root: string, initial: ProjectCheck
     if (!candidate || !catalog.includedFiles.length || (candidate.kind === 'test' && (!testFormat || !testFiles.length))) return null;
     if (inputPaths.some(path => !Object.hasOwn(snapshot.inputHashes ?? {}, path)) ||
       Object.entries(configHashes).some(([path, hash]) => snapshot.inputHashes?.[path] !== hash)) return null;
-    const observedInputs = Object.keys(snapshot.inputHashes).filter(path => path !== '@policy' && inputPaths.includes(path));
-    if (observedInputs.length !== inputPaths.length) return null;
     const toolHashes = await readCheckToolHashes(tools);
     if (Object.keys(toolHashes).length !== Object.keys(tools).length) return null;
     return {
       kind: candidate.kind, profileId: 'r4-ts-v1', coveredPaths: catalog.includedFiles.filter(path => /\.tsx?$/iu.test(path)),
-      inputHashes: Object.fromEntries([
-        ['@policy', policyRevision], ...Object.entries(toolHashes), ...inputPaths.map(path => [path, snapshot.inputHashes?.[path]])
-      ]) as Record<string, string>,
+      inputHashes: { ...snapshot.inputHashes, ...toolHashes },
       toolPaths: tools, evidenceFormat: candidate.kind === 'test' ? testFormat : null
     };
   };

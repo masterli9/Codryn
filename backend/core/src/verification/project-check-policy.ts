@@ -7,7 +7,7 @@ export const isProjectCheckInput = (path: string): boolean => /\.(?:[cm]?[jt]sx?
 
 export function sameCheckInputs(recorded: Readonly<Record<string, string>>, current: Readonly<Record<string, string>>): boolean {
   const entries = Object.entries(recorded);
-  const paths = Object.keys(current).filter(isProjectCheckInput);
+  const paths = Object.keys(current).filter(path => !/^@(node|tsc|tsc-runtime|tsc-libs|vitest)$/u.test(path));
   return entries.length > 0 && paths.every(path => Object.hasOwn(recorded, path))
     && entries.every(([path, expected]) => Object.hasOwn(current, path) && current[path] === expected);
 }

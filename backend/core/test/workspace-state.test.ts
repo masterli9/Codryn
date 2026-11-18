@@ -1,18 +1,21 @@
-import { describe, expect, it } from 'vitest';
-import { shouldAdvance } from '../src/workspace/observe-workspace.js';
+import { expect, it } from 'vitest';
+import { ResourceLocks } from '../src/workspace/resource-locks.js';
 
-describe('workspace observation state', () => {
-  it('invalidates confidence when an observation becomes incomplete', () => {
-    expect(shouldAdvance(
-      { fingerprint: 'x', gitIdentity: null, complete: true },
-      { fingerprint: 'x', gitIdentity: null, complete: false }
-    )).toBe(true);
-  });
-
-  it('keeps a stable complete observation at the same revision input', () => {
-    expect(shouldAdvance(
-      { fingerprint: 'x', gitIdentity: 'git-root', complete: true },
-      { fingerprint: 'x', gitIdentity: 'git-root', complete: true }
-    )).toBe(false);
-  });
+it('serializes the same key, runs independent keys and releases the queue on abort or failure', async () => {
+  const locks = new ResourceLocks(), order: string[] = [];
+  const signal = new AbortController().signal, abort = new AbortController();
+  let release: () => void = () => undefined;
+  const gate = new Promise<void>(done => { release = done; });
+  const first = locks.withKey('a', signal, async () => { order.push('first'); await gate; throw new Error('failure'); });
+  const interrupted = locks.withKey('a', abort.signal, async () => { order.push('unexpected'); });
+  const last = locks.withKey('a', signal, async () => { order.push('last'); });
+  await locks.withKey('b', signal, async () => { order.push('independent'); });
+  abort.abort();
+  await expect(interrupted).rejects.toThrow();
+  expect(order).toEqual(['first', 'independent']);
+  const failed = expect(first).rejects.toThrow('failure');
+  release();
+  await failed;
+  await last;
+  expect(order).toEqual(['first', 'independent', 'last']);
 });

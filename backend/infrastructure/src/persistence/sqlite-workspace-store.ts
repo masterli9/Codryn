@@ -1,6 +1,7 @@
 import type { DatabaseSync, SQLOutputValue } from 'node:sqlite';
 import type { WorkspaceObservation, WorkspaceSnapshot, WorkspaceStore } from '@codryn/core';
-import { uuidSchema } from '@codryn/shared';
+import { uuidSchema, workspaceChangeSourceSchema } from '@codryn/shared';
+import { transaction } from './r3-sqlite-helpers.js';
 
 interface WorkspaceRow {
   readonly id: SQLOutputValue;
@@ -8,6 +9,8 @@ interface WorkspaceRow {
   readonly fingerprint: SQLOutputValue;
   readonly git_identity: SQLOutputValue;
   readonly observation_complete: SQLOutputValue;
+  readonly observed_at: SQLOutputValue;
+  readonly change_source: SQLOutputValue;
 }
 
 function requireText(value: SQLOutputValue | undefined, code: string): string {
@@ -29,7 +32,9 @@ function snapshotFromRow(row: WorkspaceRow): WorkspaceSnapshot {
     revision: requireNumber(row.revision, 'R2_WORKSPACE_ROW_INVALID'),
     fingerprint: requireText(row.fingerprint, 'R2_WORKSPACE_ROW_INVALID'),
     gitIdentity,
-    complete: complete === 1
+    complete: complete === 1,
+    observedAt: row.observed_at === null ? null : requireText(row.observed_at, 'R2_WORKSPACE_ROW_INVALID'),
+    changeSource: workspaceChangeSourceSchema.parse(row.change_source)
   };
 }
 
@@ -45,7 +50,7 @@ function validateObservation(input: WorkspaceObservation): WorkspaceObservation 
 
 export class SqliteWorkspaceStore implements WorkspaceStore {
   private readonly watcherGenerations = new Map<string, string>();
-  constructor(private readonly database: DatabaseSync) {}
+  constructor(private readonly database: DatabaseSync, private readonly now: () => string = () => new Date().toISOString()) {}
 
   open(rootIdentity: string, proposedId: string): string {
     const id = uuidSchema.parse(proposedId);
@@ -64,44 +69,49 @@ export class SqliteWorkspaceStore implements WorkspaceStore {
       this.database.exec('BEGIN IMMEDIATE;');
       transactionStarted = true;
       const existing = this.database.prepare(`SELECT
-        id, revision, fingerprint, git_identity, observation_complete
+        id, revision, fingerprint, git_identity, observation_complete, observed_at, change_source
         FROM workspaces WHERE id = ?`).get(projectId) as WorkspaceRow | undefined;
       if (existing === undefined) {
+        const observedAt = this.now();
         this.database.prepare(`INSERT INTO workspaces (
-          id, root_identity, revision, fingerprint, git_identity, observation_complete
-        ) VALUES (?, ?, ?, ?, ?, ?)`).run(
+          id, root_identity, revision, fingerprint, git_identity, observation_complete, observed_at, change_source
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, 'opened')`).run(
           projectId,
           projectId,
           0,
           observation.fingerprint,
           observation.gitIdentity,
-          observation.complete ? 1 : 0
+          observation.complete ? 1 : 0, observedAt
         );
         this.database.exec('COMMIT;');
         transactionStarted = false;
         if (observation.watcherGeneration !== undefined) this.watcherGenerations.set(projectId, observation.watcherGeneration);
-        return { ...observation, revision: 0 };
+        return { ...observation, revision: 0, observedAt, changeSource: 'opened' };
       }
 
       const current = snapshotFromRow(existing);
       const changed = current.fingerprint !== observation.fingerprint
         || current.gitIdentity !== observation.gitIdentity
         || current.complete !== observation.complete
-        || (observation.watcherGeneration !== undefined && this.watcherGenerations.get(projectId) !== observation.watcherGeneration);
+        || (observation.watcherGeneration !== undefined && this.watcherGenerations.has(projectId) && this.watcherGenerations.get(projectId) !== observation.watcherGeneration);
       const revision = current.revision + (changed ? 1 : 0);
+      const observedAt = this.now();
+      const pendingMutation = !current.complete && current.gitIdentity === observation.gitIdentity && ['patch', 'revert', 'git'].includes(current.changeSource ?? '');
+      const changeSource = current.fingerprint === 'unobserved' ? 'opened' : pendingMutation ? current.changeSource ?? 'unknown'
+        : changed ? current.gitIdentity !== observation.gitIdentity ? 'git_external' : 'external' : current.changeSource ?? 'unknown';
       this.database.prepare(`UPDATE workspaces SET
-        revision = ?, fingerprint = ?, git_identity = ?, observation_complete = ?
+        revision = ?, fingerprint = ?, git_identity = ?, observation_complete = ?, observed_at=?, change_source=?
         WHERE id = ?`).run(
-        revision,
+        pendingMutation ? current.revision : revision,
         observation.fingerprint,
         observation.gitIdentity,
-        observation.complete ? 1 : 0,
+        observation.complete ? 1 : 0, observedAt, changeSource,
         projectId
       );
       this.database.exec('COMMIT;');
       transactionStarted = false;
       if (observation.watcherGeneration !== undefined) this.watcherGenerations.set(projectId, observation.watcherGeneration);
-      return { ...observation, revision };
+      return { ...observation, revision: pendingMutation ? current.revision : revision, observedAt, changeSource };
     } catch (error) {
       if (transactionStarted) {
         try {
@@ -117,9 +127,32 @@ export class SqliteWorkspaceStore implements WorkspaceStore {
   async current(projectIdInput: string): Promise<WorkspaceSnapshot> {
     const projectId = uuidSchema.parse(projectIdInput);
     const row = this.database.prepare(`SELECT
-      id, revision, fingerprint, git_identity, observation_complete
+      id, revision, fingerprint, git_identity, observation_complete, observed_at, change_source
       FROM workspaces WHERE id = ?`).get(projectId) as WorkspaceRow | undefined;
     if (row === undefined) throw new Error('R2_WORKSPACE_NOT_FOUND');
     return snapshotFromRow(row);
+  }
+
+  async advance(projectId: string, source: { changeSource: 'git' | 'patch' | 'revert'; mutationId: string }, expectedRevision?: number, observation?: WorkspaceObservation): Promise<WorkspaceSnapshot> {
+    uuidSchema.parse(projectId);
+    uuidSchema.parse(source.mutationId);
+    workspaceChangeSourceSchema.parse(source.changeSource);
+    return transaction(this.database, () => {
+      const row = this.database.prepare('SELECT * FROM workspaces WHERE id=?').get(projectId) as WorkspaceRow | undefined;
+      if (!row) throw new Error('R2_WORKSPACE_NOT_FOUND');
+      const current = snapshotFromRow(row);
+      const done = this.database.prepare('SELECT revision, change_source, occurred_at FROM workspace_mutations WHERE project_id=? AND mutation_id=?').get(projectId, source.mutationId);
+      if (done) {
+        if (done.change_source !== source.changeSource) throw new Error('R3_REQUEST_MISMATCH');
+        return { ...current, revision: requireNumber(done.revision, 'R2_WORKSPACE_ROW_INVALID'), observedAt: requireText(done.occurred_at, 'R2_WORKSPACE_ROW_INVALID'), changeSource: source.changeSource, complete: false };
+      }
+      if (expectedRevision !== undefined && current.revision !== expectedRevision) throw new Error('R3_STALE_VIEW');
+      const next = observation ? validateObservation(observation) : { ...current, complete: false };
+      const revision = current.revision + 1, observedAt = this.now();
+      this.database.prepare('UPDATE workspaces SET revision=?, observation_complete=?, fingerprint=?, git_identity=?, observed_at=?, change_source=? WHERE id=?')
+        .run(revision, next.complete ? 1 : 0, next.fingerprint, next.gitIdentity, observedAt, source.changeSource, projectId);
+      this.database.prepare('INSERT INTO workspace_mutations VALUES (?,?,?,?,?)').run(projectId, source.mutationId, revision, source.changeSource, observedAt);
+      return { ...next, revision, observedAt, changeSource: source.changeSource };
+    });
   }
 }

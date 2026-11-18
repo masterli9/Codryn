@@ -11,6 +11,7 @@ import {
   type EventStore, type IdGenerator, type ModelAdapter, type PermissionResponder, type ToolCallRecord, type CommandResult, type CommandRunner, type CommandOutput, type CommandOwnership, type ChangeActor
 } from '@codryn/core';
 import type { R2RunResult, RunAgentRequest } from '@codryn/shared';
+import { patchInputSchema } from '@codryn/shared';
 import type { FakeScenario } from './model/scripted-model-adapter.js';
 import { ProjectFilesystem, ProjectFilesystemFailure } from './filesystem/project-filesystem.js';
 import { ContextPathPolicy } from './filesystem/context-path-policy.js';
@@ -23,7 +24,7 @@ import { R2CommandRunner } from './process/r2-command-runner.js';
 import { VerifyingCommandExecutor } from './process/verifying-command-executor.js';
 import type { VerifyingCommandExecutorDependencies } from './process/verifying-command-executor.js';
 import { assessCurrentProjectChecks, currentCheckInputs } from './typescript/current-project-checks.js';
-import { typescriptQueryTool } from '@codryn/core';
+import { ResourceLocks, typescriptQueryTool } from '@codryn/core';
 import { freshTypeScriptQuery } from './typescript/fresh-typescript-query.js';
 import type { TypeScriptQueryRunner } from './typescript/typescript-query-client.js';
 import { ScriptedModelAdapter } from './model/scripted-model-adapter.js';
@@ -42,6 +43,7 @@ import { SqliteWorkspaceStore } from './persistence/sqlite-workspace-store.js';
 import { SystemClock } from './system/system-clock.js';
 import { UuidGenerator } from './system/uuid-generator.js';
 import { StreamRedactor } from './logging/stream-redactor.js';
+const resourceLocks = new ResourceLocks();
 
 export interface R2Infrastructure {
   readonly projectId: string;
@@ -139,6 +141,8 @@ export async function createR2Infrastructure(options: {
     const diskWriter = new WindowsGuardedWriter(projectRoot);
     const guardedWriter = {
       open: async (path: string, expectedHash: string, signal: AbortSignal) => {
+        await contextPolicy.refresh();
+        if (!contextPolicy.decide(path, 'explicit_file', { kind: 'file' }).allowed) throw new Error('R2_PATH_SENSITIVE');
         const state = await git.inspect(signal);
         const target = resolve(projectRoot, path).toLowerCase();
         if (state.mode === 'git' && state.conflicts.some((conflict) => resolve(projectRoot, conflict).toLowerCase() === target)) {
@@ -199,13 +203,21 @@ export async function createR2Infrastructure(options: {
       }),
       textSearchTool(async (input, signal) => { readCalls += 1; return filesystem.searchText(input, signal); }),
       filePatchTool({ execute: async (input, actor, signal) => {
+        const parsed = patchInputSchema.safeParse(input);
+        if (!parsed.success) return { status: 'rejected', code: 'R2_PATCH_INPUT_INVALID' };
+        const { path } = parsed.data;
         const setId = await changeSets.open(actor.projectId, actor.runId);
         const apply = () => new ApplyPatch({
           writer: guardedWriter, blobs, journal, ids, setId,
           nextSequence: () => changeSets.reserveSequence(setId),
           hash: (bytes) => createHash('sha256').update(bytes).digest('hex')
-        }).execute(input, actor, signal);
-        const result = options.filesystemEffect ? await options.filesystemEffect(apply) : await apply();
+        }).execute(parsed.data, actor, signal);
+        const key = resolve(canonicalRoot, path);
+        const result = await resourceLocks.withKey(`file:${process.platform === 'win32' ? key.toLowerCase() : key}`, signal, apply);
+        if(result.status==='rejected'&&result.code==='R2_PATCH_STALE')await eventStore.append({
+          eventId:ids.next(),eventType:'change.mutation_stale',eventVersion:1,correlationId:actor.callId,occurredAt:clock.now(),source:'core',
+          sessionId:actor.runId,payload:{path,errorCode:result.code,revision:(await workspaces.current(actor.projectId)).revision}
+        });
         if (result.status === 'applied' && options.onPatch !== undefined) await options.onPatch(result.entry.path);
         return result;
       } }),

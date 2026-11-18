@@ -120,8 +120,8 @@ function validateEvidence(evidence: VerificationCoverage): void {
   if (!hashes || !tools) return invalid();
   const inputs = Object.keys(hashes), covered = evidence.coveredPaths;
   const toolName = /^@(node|tsc|tsc-runtime|tsc-libs|vitest)$/u;
-  if (!Object.hasOwn(hashes, '@policy') || !Object.hasOwn(tools, '@node') || inputs.length > 5006 ||
-    !inputs.every(path => (path === '@policy' || (toolName.test(path) && Object.hasOwn(tools, path)) || r4ReferencePathSchema.safeParse(path).success)
+  if (!Object.hasOwn(hashes, '@policy') || !Object.hasOwn(tools, '@node') || inputs.length > 5007 ||
+    !inputs.every(path => (path === '@policy' || path === '@scope' || (toolName.test(path) && Object.hasOwn(tools, path)) || r4ReferencePathSchema.safeParse(path).success)
       && /^[a-f0-9]{64}$/u.test(hashes[path] ?? '')) ||
     !Object.entries(tools).every(([name, path]) => toolName.test(name) && isAbsolute(path) && path.length <= 4096 && Object.hasOwn(hashes, name)) ||
     covered.length > 5000 || new Set(covered).size !== covered.length ||

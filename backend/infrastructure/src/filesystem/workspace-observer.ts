@@ -52,11 +52,12 @@ export class FileWorkspaceObserver implements WorkspaceObserver {
     let totalBytes = 0;
     let complete = this.watcherHealthy;
     let policyChanged = false;
+    let verificationScopeComplete = true;
     const visit = async (current: string): Promise<void> => {
       cancelled(signal);
       if (policyChanged || Date.now() - startedAt > maxDurationMs) { complete = false; return; }
       const info = await lstat(current);
-      if (info.isSymbolicLink() || (!info.isDirectory() && !info.isFile())) return;
+      if (info.isSymbolicLink() || (!info.isDirectory() && !info.isFile())) { verificationScopeComplete = false; return; }
       const rel = relative(root, current).replaceAll('\\', '/') || '.';
       if (!policy.decide(rel, 'crawl', { kind: info.isDirectory() ? 'directory' : 'file' }).allowed) return;
       if (await realpath(current) !== current) { complete = false; return; }
@@ -68,7 +69,7 @@ export class FileWorkspaceObserver implements WorkspaceObserver {
         }
         return;
       }
-      if (!policy.decide(rel, 'crawl', { kind: 'file', size: info.size }).allowed) return;
+      if (!policy.decide(rel, 'crawl', { kind: 'file', size: info.size }).allowed) { verificationScopeComplete = false; return; }
       if (entries.length >= maxFiles || totalBytes + info.size > maxBytes) { complete = false; return; }
       if (await policy.refresh() !== revision) { policyChanged = true; complete = false; return; }
       if (!policy.decide(rel, 'crawl', { kind: 'file' }).allowed) return;
@@ -77,7 +78,7 @@ export class FileWorkspaceObserver implements WorkspaceObserver {
       if (bytes === null || after === null || !after.isFile() || after.ino !== info.ino || after.dev !== info.dev
         || after.size !== info.size || after.mtimeMs !== info.mtimeMs || await realpath(current) !== current) { complete = false; return; }
       totalBytes += bytes.length;
-      if (!policy.decide(rel, 'crawl', { kind: 'file', bytes }).allowed) return;
+      if (!policy.decide(rel, 'crawl', { kind: 'file', bytes }).allowed) { verificationScopeComplete = false; return; }
       const digest = createHash('sha256').update(bytes).digest('hex');
       entries.push(`${rel}\0${digest}\0${bytes.length}`);
       inputHashes[rel] = digest;
@@ -108,6 +109,7 @@ export class FileWorkspaceObserver implements WorkspaceObserver {
     cancelled(signal);
     const fingerprint = createHash('sha256').update(revision).update('\0').update(policyChanged ? '' : entries.join('\n'), 'utf8').digest('hex');
     if (!policyChanged) inputHashes['@policy'] = revision;
+    if (verificationScopeComplete && !policyChanged) inputHashes['@scope'] = createHash('sha256').update('bounded-project-inputs-v2').digest('hex');
     return { fingerprint, gitIdentity, complete: complete && !policyChanged, observedPaths: policyChanged ? [] : observedPaths,
       inputHashes: policyChanged ? {} : inputHashes, watcherGeneration: `${this.watcherId}:${this.generation}` };
   }

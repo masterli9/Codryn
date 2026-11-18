@@ -86,9 +86,11 @@ for (const mode of ['git', 'non-git'] as const) it(`approves, retries, invalidat
     expect(detail.verification?.status).toBe('verified');
     expect(detail.verification?.checks.map(check => check.record.kind)).toEqual(['typecheck', 'test', 'typecheck', 'test', 'typecheck']);
     expect(detail.verification?.checks.some(check => check.record.result === 'failed')).toBe(true);
-    await writeFile(join(root, 'notes.md'), 'Independent edit.');
+    await writeFile(join(handle, 'notes.md'), 'Independent edit outside the opened project.');
     detail = await desktop.inspectRun(chat.id, accepted.requestId, signal);
     expect(detail.verification?.status).toBe('verified');
+    await writeFile(join(root, 'test-data.txt'), 'A generic test may read this new input.');
+    expect((await desktop.inspectRun(chat.id, accepted.requestId, signal)).verification?.status).toBe('stale');
     const setId = detail.changes?.setId;
     if (!setId) throw new Error('Missing change set.');
     const diff = await desktop.diff(chat.id, setId, signal);

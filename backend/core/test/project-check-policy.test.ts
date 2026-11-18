@@ -18,7 +18,7 @@ it('requires both passing current checks and all changed paths', () => {
 });
 
 it('retains verification after an unrelated edit but refuses changed, absent or incompletely observed inputs', () => {
-  expect(assessProjectChecks({ ...input, currentInputHashes: { ...inputs, [other]: 'edited' } }).status).toBe('verified');
+  expect(assessProjectChecks({ ...input, currentInputHashes: { ...inputs, '@node': 'independent-tool' } }).status).toBe('verified');
   expect(assessProjectChecks({ ...input, currentInputHashes: { ...inputs, [config]: 'edited' } }).status).toBe('stale');
   expect(assessProjectChecks({ ...input, currentInputHashes: { [ts]: inputs[ts] } }).status).toBe('stale');
   expect(assessProjectChecks({ ...input, snapshot: { ...input.snapshot, complete: false } }).status).toBe('stale');

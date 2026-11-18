@@ -241,8 +241,8 @@ export class SqliteMutationJournal implements MutationJournal {
       if (intent.state !== 'prepared') throw new Error('R2_MUTATION_NOT_PREPARED');
 
       const update = this.database.prepare(
-        'UPDATE workspaces SET revision = revision + 1 WHERE id = ?'
-      ).run(intent.entry.projectId);
+        'UPDATE workspaces SET revision=revision+1, observation_complete=0, observed_at=?, change_source=? WHERE id=?'
+      ).run(this.clock.now(), intent.entry.kind, intent.entry.projectId);
       if (update.changes !== 1) throw new Error('R2_WORKSPACE_NOT_FOUND');
       const workspace = this.database.prepare(
         'SELECT revision FROM workspaces WHERE id = ?'

@@ -16,6 +16,20 @@ const r4CheckInputsSql = `CREATE TABLE r4_verification_inputs (
   tool_paths_json TEXT NOT NULL CHECK(json_valid(tool_paths_json))
 ) STRICT;`;
 
+const r4WorkspaceSql = `
+ALTER TABLE workspaces ADD COLUMN observed_at TEXT;
+ALTER TABLE workspaces ADD COLUMN change_source TEXT NOT NULL DEFAULT 'unknown';
+CREATE TABLE workspace_mutations (
+  project_id TEXT NOT NULL REFERENCES workspaces(id), mutation_id TEXT NOT NULL, revision INTEGER NOT NULL,
+  change_source TEXT NOT NULL, occurred_at TEXT NOT NULL,
+  PRIMARY KEY(project_id, mutation_id)
+) STRICT;
+CREATE TABLE local_git_actions (
+  project_id TEXT NOT NULL REFERENCES workspaces(id), request_id TEXT NOT NULL, action TEXT NOT NULL,
+  snapshot_id TEXT NOT NULL, status TEXT NOT NULL, occurred_at TEXT NOT NULL,
+  PRIMARY KEY(project_id, request_id)
+) STRICT;`;
+
 export interface Migration {
   readonly version: number;
   readonly name: string;
@@ -228,5 +242,6 @@ export const migrations: readonly Migration[] = [
   { version: 11, name: 'r3_desktop_projections', sql: r3ProjectionSql, checksum: sha256(r3ProjectionSql) },
   { version: 12, name: 'r3_provider_settings', sql: r3ProviderSettingsSql, checksum: sha256(r3ProviderSettingsSql) },
   { version: 13, name: 'r4_repo_map', sql: r4RepoMapSql, checksum: sha256(r4RepoMapSql) },
-  { version: 14, name: 'r4_check_inputs', sql: r4CheckInputsSql, checksum: sha256(r4CheckInputsSql) }
+  { version: 14, name: 'r4_check_inputs', sql: r4CheckInputsSql, checksum: sha256(r4CheckInputsSql) },
+  { version: 15, name: 'r4_workspace_git', sql: r4WorkspaceSql, checksum: sha256(r4WorkspaceSql) }
 ];
