@@ -1,5 +1,5 @@
 import type { DatabaseSync, SQLOutputValue } from 'node:sqlite';
-import { r4ReferencePathSchema, verificationRecordSchema, uuidSchema, type VerificationRecord } from '@codryn/shared';
+import { hasProjectCheckScope, r4ReferencePathSchema, verificationRecordSchema, uuidSchema, type VerificationRecord } from '@codryn/shared';
 import { sameCheckInputs } from '@codryn/core';
 import type { ProfiledVerificationRecord, VerificationCoverage, VerificationStore, WorkspaceSnapshot } from '@codryn/core';
 import { isAbsolute } from 'node:path';
@@ -34,7 +34,7 @@ export class SqliteVerificationStore implements VerificationStore {
         if (coverage.profileId === 'r2-sum-v1') {
           if (record.kind !== 'test' || coverage.coveredPaths.some(path => path !== 'sum.mjs')) throw new TypeError('R3_COVERAGE_INVALID');
         } else if (coverage.profileId === 'r4-ts-v1') {
-          validateEvidence(coverage);
+          validateEvidence(coverage,true);
           this.database.prepare('INSERT INTO r4_verification_inputs VALUES(?,?,?)').run(record.id, JSON.stringify(coverage.inputHashes), JSON.stringify(coverage.toolPaths));
         } else throw new TypeError('R3_COVERAGE_INVALID');
         this.database.prepare('INSERT INTO desktop_verification_coverage VALUES(?,?,?)').run(record.id,coverage.profileId,JSON.stringify(coverage.coveredPaths));
@@ -93,7 +93,8 @@ export class SqliteVerificationStore implements VerificationStore {
         const evidence = { profileId, coveredPaths: paths as string[],
           inputHashes: parseStringRecord(row.input_hashes_json), toolPaths: parseStringRecord(row.tool_paths_json) };
         validateEvidence(evidence);
-        const stale = record.stale || !snapshot.complete || !sameCheckInputs(evidence.inputHashes, currentInputs);
+        const stale = record.stale || !snapshot.complete || !hasProjectCheckScope(evidence.inputHashes)
+          || !hasProjectCheckScope(currentInputs) || !sameCheckInputs(evidence.inputHashes, currentInputs);
         return { ...evidence, record: { ...record, stale } };
       }
       const stale = record.stale || !snapshot.complete || record.revision !== snapshot.revision || record.fingerprint !== snapshot.fingerprint;
@@ -114,10 +115,10 @@ function parseStringRecord(raw: SQLOutputValue | undefined): Record<string, stri
   return value as Record<string, string>;
 }
 
-function validateEvidence(evidence: VerificationCoverage): void {
+function validateEvidence(evidence: VerificationCoverage, requireCurrentScope=false): void {
   const hashes = evidence.inputHashes, tools = evidence.toolPaths;
   const invalid = () => { throw new TypeError('R3_COVERAGE_INVALID'); };
-  if (!hashes || !tools) return invalid();
+  if (!hashes || !tools || (requireCurrentScope&&!hasProjectCheckScope(hashes))) return invalid();
   const inputs = Object.keys(hashes), covered = evidence.coveredPaths;
   const toolName = /^@(node|tsc|tsc-runtime|tsc-libs|vitest)$/u;
   if (!Object.hasOwn(hashes, '@policy') || !Object.hasOwn(tools, '@node') || inputs.length > 5007 ||

@@ -94,3 +94,9 @@ Sdílená mutační fáze dovoluje různé soubory v témže projektu zapisovat 
 Po změně koordinace prošly oba původní skutečné R3 Git/non-Git průchody (2/2, ostatních devět testů příkazu bylo vynecháno filtrem).
 
 Tato evidence používá místní Windows fixtures. Konsolidovaný nový balíček a úplná sada zatím čekají; celý obecný koordinační a víceagentní produkt tím není uzavřený.
+
+## Přesný pozorovaný rozsah kontrol
+
+Nový důkaz vyžaduje přesný marker `bounded-project-inputs-v3` v aktuálním i uloženém rozsahu. Starší záznam neztrácí původní běh ani výsledek, ale je označen jako zastaralý. Uživatelsky ignorovaný běžný vstup, kolize názvu souboru s metadaty, alias, binární či nadlimitní vstup neumožní úplnou klasifikaci. Úspěšná zpráva uvádí stejné pozorované vstupy projektu.
+
+Scope/classifier/store regrese prošly 9/9. Skutečný `r4-ts-workflow.test.ts` non-Git scénář prošel 1/1 (druhá varianta vynechána filtrem), včetně schválení skutečných příkazů, původního selhání, opravy, invalidace při změně a doplnění dat bez zdrojové přípony a návratu. Vnější změna zachová důkaz jen pro nezměněné pozorované vstupy. Pevně chráněné adresáře, tajné soubory, libovolné externí vstupy a závislosti obecného shell příkazu se tím neprokazují. Obecné sledování běhového I/O není implementováno; úplná `AC-O1-24` zůstává otevřená.

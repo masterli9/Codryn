@@ -113,9 +113,9 @@ Poslední dříve zabalený základ má zdroj ee457ff6c52a3d481b472991435ebd4312
 | FR-COORD-01 | R4 | passed | SqliteWorkspaceStore; backend/infrastructure/test/workspace-revision.test.ts a workspace-observer.test.ts. Monotónní revision, observedAt, changeSource a Git identita. |
 | FR-COORD-02 | R4 | passed | SqliteMutationJournal/WorkspaceStore; workspace-revision.test.ts, r3-runtime-flow.test.ts a git-workflow.test.ts. Zápis i Git změna mění revizi, samotné opakované pozorování ji zachová. |
 | FR-COORD-08 | R4 | passed | WindowsGuardedWriter, canonical file queue a stale event; backend/core/test/apply-patch.test.ts, backend/infrastructure/test/guarded-writer.test.ts a nový stale-patch eval. Reread zachová externí úpravu. |
-| FR-COORD-09 | R4 | open | ResourceLocks a nativní index/ref ochrana; backend/core/test/workspace-state.test.ts a git-workflow.test.ts. Chybí úplný důkaz souběžných migrací a dedikovaný resource zámek budoucích balíčkovacích mutací. |
-| FR-COORD-10 | R4 | open | Samostatné resource keys běží souběžně v backend/core/test/workspace-state.test.ts. Desktop kvůli nativnímu guardu znovu serializuje chráněné zápisy uvnitř téhož projektu. |
-| FR-COORD-14 | R4 | open | SqliteVerificationStore a posouzení současných hashů; verification-freshness.test.ts a r4-ts-workflow.test.ts. Testovací data jsou zahrnutá bez ohledu na příponu, libovolné externí nebo ignorované vstupy se obecně neprokazují. |
+| FR-COORD-09 | R4 | open | Kanonické file/DB klíče a nativní index/ref ochrana. workspace-state a resource-barrier 3/3; database-coordination 1/1 pro dva migrační procesy a zálohu při dvou ope­nech jednoho procesu; native-resource-lock Node 1/1 chrání skutečné package-r3 CLI. Nová úplná/packaged regrese čeká. |
+| FR-COORD-10 | R4 | open | native-independent-writes.test.ts 2/2 na Windows: dva skutečné guardy a dva R2 aktéři nad různými soubory v témže projektu, observer čeká. Férová sdílená/výhradní fronta 2/2, původní guard ochrany 13/13. Nový balíček čeká; nejde o důkaz dosud neimplementovaného víceagentního UI. |
+| FR-COORD-14 | R4 | open | Přesný v3 marker a hash všech pozorovaných vstupů; classifier/store/policy 9/9 a skutečný TS non-Git cyklus 1/1. Uživatelský ignore a metadata kolize odmítají úplný rozsah; legacy záznam je stale. Libovolné externí, chráněné a runtime závislosti nejsou sledovány. |
 
 ## Všechna akceptační kritéria AC-O1-01 až AC-O1-31
 
@@ -142,9 +142,9 @@ Poslední dříve zabalený základ má zdroj ee457ff6c52a3d481b472991435ebd4312
 | AC-O1-19 | open | Git fixture pokrývá staged/unstaged a scoped project. Chybí úplná explicitní matice všech požadovaných druhů. |
 | AC-O1-20 | open | git-workflow.test.ts fake proposal/stale/edited commit a r4-git.test.ts. Finální regrese návrhu i všech stavů se posuzuje zvlášť. |
 | AC-O1-21 | open | Volitelné S/O1. Samostatný důkaz nebyl zařazen do tohoto přírůstku. |
-| AC-O1-22 | open | ResourceLocks unit a Git fixture; chybí plný souběžný důkaz a desktop znovu serializuje zápisy v témže projektu. |
-| AC-O1-23 | open | Guarded writer, stale metadata audit a nový eval stale fixture. Plný souběžný scénář je samostatné přijetí. |
-| AC-O1-24 | open | verification-freshness.test.ts a r4-ts-workflow.test.ts. Pozorovaný rozsah nezahrnuje libovolné ignorované nebo externí vstupy. |
+| AC-O1-22 | open | native-independent-writes 2/2: různé soubory souběžně a úplný observer po jejich dokončení, resource-barrier 2/2 FIFO/zrušení. Původní nativní ochrany 13/13. Nová packaged regrese čeká; plný víceagentní produkt zůstává mimo tento důkaz. |
+| AC-O1-23 | open | Guarded writer 13/13, dvě skutečné nativní mutace 2/2 a model-turn-context/freshness 5/5 pro změny mezi tahy bez replay. Změna během již probíhajícího vzdáleného požadavku zůstává hranicí; nová úplná/packaged regrese čeká. |
+| AC-O1-24 | open | Scope/classifier/store 9/9 a skutečný TS non-Git cyklus 1/1. Data bez zdrojové přípony invalidují; v3 marker vyžaduje úplný deklarovaný rozsah a legacy je stale. Pozorovaný rozsah nezahrnuje libovolné chráněné, runtime nebo externí vstupy; obecné I/O sledování neexistuje. |
 | AC-O1-25 | open | Historické rozhodnutí ADR0007/R2 live zůstává. Nový rozšířený živý eval nebyl spuštěn, rozpočet dosud není schválený. |
 | AC-O1-26 | open | Volitelné S/O1. Samostatný důkaz nebyl zařazen do tohoto přírůstku. |
 | AC-O1-27 | open | Sdílená politika a context security suite mají oblastní důkazy. Finální plná regrese a projití všech cest je samostatný důkaz. |
@@ -186,4 +186,4 @@ Poslední dříve zabalený základ má zdroj ee457ff6c52a3d481b472991435ebd4312
 - Živý rozšířený eval a skutečný uživatelský průchod čekají schválený rozpočet.
 - Osobní přijetí R3 a generální zkouška se potvrzují s autorem.
 - Kontext se nově sestavuje před každým dalším modelovým tahem a kontroluje historii zdrojů. Nová konsolidovaná regrese a balíček se doloží po dokončení koordinace a rozsahu ověření. Změna během už probíhajícího vzdáleného požadavku patří mezi výslovné hranice.
-- Úplné důkazy souběhu, balíčkovacích zámků a migrací zůstávají otevřené.
+- Windows souběh nativních zápisů, procesní migrace a skutečný balíčkovací zámek mají cílené důkazy uvedené výše. Konsolidovaná regrese a identita nového balíčku zatím čekají. Obecné runtime závislosti kontrol a budoucí víceagentní chování nejsou těmito fixtures prokázané.

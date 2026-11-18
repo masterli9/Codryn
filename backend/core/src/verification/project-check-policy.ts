@@ -1,4 +1,5 @@
 import type { ProjectCheckKind } from '@codryn/shared';
+import { hasProjectCheckScope } from '@codryn/shared';
 import type { WorkspaceSnapshot } from '../workspace/ports.js';
 import type { ProfiledVerificationRecord } from './verification-store.js';
 
@@ -28,7 +29,8 @@ export function assessProjectChecks(input: AssessmentInput) {
   for (const kind of kinds) {
     const entry = input.records.find(item => item.profileId === 'r4-ts-v1' && item.record.kind === kind);
     const current = entry && input.snapshot.complete && !entry.record.stale &&
-      !!entry.inputHashes && sameCheckInputs(entry.inputHashes, input.currentInputHashes);
+      hasProjectCheckScope(entry.inputHashes) && hasProjectCheckScope(input.currentInputHashes)
+      && !!entry.inputHashes && sameCheckInputs(entry.inputHashes, input.currentInputHashes);
     stale ||= !current && entry?.record.result === 'passed';
     if (current && entry.record.result === 'passed') passed.push(entry);
     else missingChecks.push(kind);
@@ -38,7 +40,7 @@ export function assessProjectChecks(input: AssessmentInput) {
   const labels = missingChecks.map(kind => kind === 'typecheck' ? 'kontrola typů' : 'testy').join(', ');
   if (!input.changedPaths.length) return { status: 'unverified' as const, reason: 'Běh nemá aktuální změnu k ověření.', uncoveredPaths, missingChecks };
   if (stale) return { status: 'stale' as const, reason: 'Vstupy kontroly se změnily nebo je nelze úplně ověřit.', uncoveredPaths, missingChecks };
-  if (!missingChecks.length && !uncoveredPaths.length) return { status: 'verified' as const, reason: 'Kontrola typů i testy prošly nad stejnými aktuálními vstupy.', uncoveredPaths, missingChecks };
+  if (!missingChecks.length && !uncoveredPaths.length) return { status: 'verified' as const, reason: 'Kontrola typů i testy prošly nad stejnými pozorovanými vstupy projektu.', uncoveredPaths, missingChecks };
   return { status: passed.length ? 'partially_verified' as const : 'unverified' as const,
     reason: labels ? `Chybí aktuální úspěšná kontrola: ${labels}.` : 'Kontroly nepokrývají všechny změněné soubory.', uncoveredPaths, missingChecks };
 }

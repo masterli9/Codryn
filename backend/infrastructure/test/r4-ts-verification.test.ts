@@ -30,5 +30,18 @@ it('compares the exact proposed commands and reclassifies current manifest, conf
     await writeFile(manifest, '{"scripts":{"test":"node --test"}}');
     await writeFile(config, '{"compilerOptions":{"strict":true},"include":["src"]}');
     expect(await classify(test, await snapshot(), signal)).toBeNull();
+    await writeFile(config, '{"include":["src"]}');
+    await writeFile(join(root,'data.txt'),'runtime input');
+    await writeFile(join(root,'.codrynignore'),'data.txt\n');
+    const ignored=await inspectProjectChecks(root,process.execPath,signal);
+    const incomplete=await snapshot();
+    expect(incomplete.inputHashes?.['@scope']).toBeUndefined();
+    expect(await createProjectCheckClassifier(root,ignored,process.execPath)(test,incomplete,signal)).toBeNull();
+    await rm(join(root,'.codrynignore'));
+    const reserved=await inspectProjectChecks(root,process.execPath,signal);
+    await writeFile(join(root,'@scope'),'reserved metadata name');
+    const collision=await snapshot();
+    expect(collision.inputHashes?.['@scope']).toBeUndefined();
+    expect(await createProjectCheckClassifier(root,reserved,process.execPath)(test,collision,signal)).toBeNull();
   } finally { observer.close(); await rm(root, { recursive: true, force: true }); }
 });

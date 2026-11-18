@@ -3,6 +3,7 @@ import { lstat, opendir, realpath } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import type { ClassifiedCheck, WorkspaceSnapshot } from '@codryn/core';
 import type { CommandSpec } from '@codryn/shared';
+import { hasProjectCheckScope } from '@codryn/shared';
 import { readBoundedContextFile } from '../filesystem/read-bounded-context-file.js';
 import { inspectProjectChecks } from './project-check-discovery.js';
 import type { ProjectCheckDiscovery } from './project-check-discovery.js';
@@ -76,19 +77,20 @@ function equalCommand(a: CommandSpec, b: CommandSpec): boolean {
 export function createProjectCheckClassifier(root: string, initial: ProjectCheckDiscovery, node: string | null, tsc?: string) {
   const tools = projectCheckToolPaths(initial);
   return async (command: CommandSpec, snapshot: WorkspaceSnapshot, signal: AbortSignal): Promise<ClassifiedCheck | null> => {
-    if (!snapshot.complete || !snapshot.inputHashes?.['@scope'] || !initial.catalog.checks.some(candidate => candidate.command && equalCommand(command, candidate.command))) return null;
+    const inputHashes = snapshot.inputHashes;
+    if (!snapshot.complete || !inputHashes || !hasProjectCheckScope(inputHashes) || !initial.catalog.checks.some(candidate => candidate.command && equalCommand(command, candidate.command))) return null;
     const discovery = await inspectProjectChecks(root, node, signal, tsc);
     const { catalog, configHashes, inputPaths, policyRevision, testFormat, testFiles } = discovery;
-    if (catalog.digest !== initial.catalog.digest || policyRevision !== snapshot.inputHashes['@policy']) return null;
+    if (catalog.digest !== initial.catalog.digest || policyRevision !== inputHashes['@policy']) return null;
     const candidate = catalog.checks.find(check => check.command && equalCommand(command, check.command));
     if (!candidate || !catalog.includedFiles.length || (candidate.kind === 'test' && (!testFormat || !testFiles.length))) return null;
-    if (inputPaths.some(path => !Object.hasOwn(snapshot.inputHashes ?? {}, path)) ||
-      Object.entries(configHashes).some(([path, hash]) => snapshot.inputHashes?.[path] !== hash)) return null;
+    if (inputPaths.some(path => !Object.hasOwn(inputHashes, path)) ||
+      Object.entries(configHashes).some(([path, hash]) => inputHashes[path] !== hash)) return null;
     const toolHashes = await readCheckToolHashes(tools);
     if (Object.keys(toolHashes).length !== Object.keys(tools).length) return null;
     return {
       kind: candidate.kind, profileId: 'r4-ts-v1', coveredPaths: catalog.includedFiles.filter(path => /\.tsx?$/iu.test(path)),
-      inputHashes: { ...snapshot.inputHashes, ...toolHashes },
+      inputHashes: { ...inputHashes, ...toolHashes },
       toolPaths: tools, evidenceFormat: candidate.kind === 'test' ? testFormat : null
     };
   };

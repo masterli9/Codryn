@@ -5,6 +5,8 @@ import { isAbsolute, relative, resolve } from 'node:path';
 import type { ProjectGitState, WorkspaceObservation, WorkspaceObserver } from '@codryn/core';
 import { ContextPathPolicy, ContextPathPolicyError } from './context-path-policy.js';
 import { MAX_CONTEXT_FILE_BYTES, readBoundedContextFile } from './read-bounded-context-file.js';
+import { projectCheckScopeHash } from '@codryn/shared';
+const metadataPaths = new Set(['@scope','@policy','@node','@tsc','@tsc-runtime','@tsc-libs','@vitest']);
 
 const maxFiles = 5_000;
 const maxBytes = 64 * 1024 * 1024;
@@ -59,7 +61,11 @@ export class FileWorkspaceObserver implements WorkspaceObserver {
       const info = await lstat(current);
       if (info.isSymbolicLink() || (!info.isDirectory() && !info.isFile())) { verificationScopeComplete = false; return; }
       const rel = relative(root, current).replaceAll('\\', '/') || '.';
-      if (!policy.decide(rel, 'crawl', { kind: info.isDirectory() ? 'directory' : 'file' }).allowed) return;
+      const decision=policy.decide(rel,'crawl',{kind:info.isDirectory()?'directory':'file'});
+      if(!decision.allowed){
+        if(decision.code==='R2_CONTEXT_PATH_IGNORED')verificationScopeComplete=false;
+        return;
+      }
       if (await realpath(current) !== current) { complete = false; return; }
       if (info.isDirectory()) {
         const children = (await readdir(current, { withFileTypes: true })).sort((a, b) => a.name.localeCompare(b.name));
@@ -81,7 +87,8 @@ export class FileWorkspaceObserver implements WorkspaceObserver {
       if (!policy.decide(rel, 'crawl', { kind: 'file', bytes }).allowed) { verificationScopeComplete = false; return; }
       const digest = createHash('sha256').update(bytes).digest('hex');
       entries.push(`${rel}\0${digest}\0${bytes.length}`);
-      inputHashes[rel] = digest;
+      if(metadataPaths.has(rel))verificationScopeComplete=false;
+      else inputHashes[rel] = digest;
       observedPaths.push(rel);
     };
     try { await visit(root); } catch (error) {
@@ -109,7 +116,7 @@ export class FileWorkspaceObserver implements WorkspaceObserver {
     cancelled(signal);
     const fingerprint = createHash('sha256').update(revision).update('\0').update(policyChanged ? '' : entries.join('\n'), 'utf8').digest('hex');
     if (!policyChanged) inputHashes['@policy'] = revision;
-    if (verificationScopeComplete && !policyChanged) inputHashes['@scope'] = createHash('sha256').update('bounded-project-inputs-v2').digest('hex');
+    if (verificationScopeComplete && !policyChanged) inputHashes['@scope'] = projectCheckScopeHash;
     return { fingerprint, gitIdentity, complete: complete && !policyChanged, observedPaths: policyChanged ? [] : observedPaths,
       inputHashes: policyChanged ? {} : inputHashes, watcherGeneration: `${this.watcherId}:${this.generation}` };
   }

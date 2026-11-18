@@ -1,6 +1,11 @@
 import { z } from 'zod';
 import { commandSpecSchema } from './r2-permission.js';
 import { r4ReferencePathSchema } from './r4-context.js';
+/** SHA-256 of bounded-project-inputs-v3. Older scope proofs need a fresh check. */
+export const projectCheckScopeHash = '33822087cc97f3d16031cc0e2c9684c671f8f77e00ec236e68c84f1a232027e8';
+export function hasProjectCheckScope(hashes: Readonly<Record<string,string>> | undefined): boolean {
+  return hashes?.['@scope'] === projectCheckScopeHash;
+}
 
 export const projectCheckKindSchema = z.enum(['typecheck', 'test']);
 export const projectCheckCandidateSchema = z.object({

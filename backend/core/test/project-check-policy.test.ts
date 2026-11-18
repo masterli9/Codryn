@@ -1,9 +1,10 @@
 import { expect, it } from 'vitest';
 import { assessProjectChecks } from '../src/verification/project-check-policy.js';
 import type { VerificationRecord } from '@codryn/shared';
+import { projectCheckScopeHash } from '@codryn/shared';
 
 const ts = 'src/app.ts', other = 'notes.md', config = 'tsconfig.json';
-const inputs = { [ts]: 'a'.repeat(64), [config]: 'b'.repeat(64), 'demo.test.mjs': 'c'.repeat(64) };
+const inputs = { [ts]: 'a'.repeat(64), [config]: 'b'.repeat(64), 'demo.test.mjs': 'c'.repeat(64),'@scope':projectCheckScopeHash };
 const record = (kind: VerificationRecord['kind'], result: VerificationRecord['result'] = 'passed') => ({
   record: { kind, result, stale: false } as VerificationRecord, profileId: 'r4-ts-v1', coveredPaths: [ts], inputHashes: inputs
 });
@@ -27,4 +28,8 @@ it('retains verification after an unrelated edit but refuses changed, absent or 
 it('gives the latest failure effect until rerunning the same check', () => {
   expect(assessProjectChecks({ ...input, records: [record('test', 'failed'), ...records] }).status).toBe('partially_verified');
   expect(assessProjectChecks({ ...input, records: [...records, record('test', 'failed')] }).status).toBe('verified');
+});
+it('refuses legacy or missing observed-scope proof even when every recorded hash matches',()=>{
+  const legacy=Object.fromEntries(Object.entries(inputs).filter(([path])=>path!=='@scope'));
+  expect(assessProjectChecks({...input,records:records.map(entry=>({...entry,inputHashes:legacy})),currentInputHashes:legacy}).status).toBe('stale');
 });

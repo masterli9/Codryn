@@ -32,6 +32,10 @@ Migrační důkaz prošel 1/1: dva procesy nad starším schématem používají
 
 ## 3. Rozsah ověření a dokončovací evidence
 
-- [ ] Testovat přesný obsahový rozsah, nástroje, konfiguraci, nezávislé změny a neúplné vstupy. Neznámá závislost obecného shell příkazu nesmí získat příslib úplnosti.
-- [ ] Zachovat provenance původního běhu a zaznamenaných kontrol. Užší důvěryhodný profil vyžaduje vlastní důkaz.
-- [ ] Doplnit přesné integrované důkazy a matici podle skutečných výsledků. Konsolidované statické kontroly, úplnou sadu a finální balíček provede koordinující agent. Živé API a osobní přijetí zůstávají samostatné otevřené brány.
+- [x] Testovat přesný obsahový rozsah, nástroje, konfiguraci, nezávislé změny a neúplné vstupy. Neznámá závislost obecného shell příkazu nesmí získat příslib úplnosti.
+- [x] Zachovat provenance původního běhu a zaznamenaných kontrol. Užší důvěryhodný profil vyžaduje vlastní důkaz.
+- [x] Doplnit přesné integrované důkazy a matici podle skutečných výsledků. Konsolidované statické kontroly, úplnou sadu a finální balíček provede koordinující agent. Živé API a osobní přijetí zůstávají samostatné otevřené brány.
+
+Rozsah má přesný marker bounded-project-inputs-v3. Běžné uživatelské ignore pravidlo vytvářející nepozorovaný vstup, rezervovaný kořenový název metadat, binární či nadlimitní vstup nebo alias nepřipustí úplný důkaz tohoto profilu. Starší uložené záznamy zůstávají čitelné se svou proveniencí, ale potřebují nové ověření. Nejde o sledování běhového I/O: pevně chráněné adresáře, tajné soubory, závislosti a vstupy mimo kořen nejsou prohlášeny za pozorované.
+
+Cílené scope/classifier/store testy prošly 9/9. Skutečný TS non-Git cyklus prošel 1/1 (Git varianta vynechána filtrem): samostatné schválení, skutečné kontroly, původ neúspěšné kontroly, invalidace po změně souboru i nových textových dat, zachování stejného pozorovaného rozsahu po vnější nezávislé změně a bezpečný návrat. Poslední zachování je důkazem pouze uvnitř deklarovaného rozsahu, nikoli zárukou o libovolných shell závislostech. Původní skutečné R3 Git/non-Git cykly po koordinaci prošly 2/2.
