@@ -19,7 +19,8 @@ export interface R2ExecutionOptions {
   readonly workflow?: { selection: string; instructions: string; toolIds: readonly string[] };
   readonly questions?: QuestionBoundary;
   readonly onRunCreated?: (runId: Uuid) => Promise<void>;
-  readonly prepareContext?: (runId: Uuid, signal: AbortSignal) => Promise<readonly ModelRequest['context'][number][]>;
+  readonly prepareContext?: (runId: Uuid, signal: AbortSignal, step?: number) => Promise<readonly ModelRequest['context'][number][]>;
+  readonly prepareModelTurn?: (request: ModelRequest, signal: AbortSignal) => Promise<ModelRequest>;
   readonly priorConversation?: ConversationSelection;
   readonly projectChecks?: ProjectCheckCatalog;
   readonly allowReadOnlyCompletion?: boolean;
@@ -161,8 +162,8 @@ export class RunAgentLoop {
       if (activeChangeSetId === null && options.openChangeSet !== undefined) activeChangeSetId = await options.openChangeSet(runId);
       state = await this.transition(runId, request.requestId, state, 'preparing_context', steps);
       this.abort(signal);
-      const context = options.prepareContext
-        ? { modelContent: await options.prepareContext(runId, signal) }
+      let context = options.prepareContext
+        ? { modelContent: await options.prepareContext(runId, signal, steps + 1) }
         : await this.dependencies.contextAssembler.assemble({ task: request.task, project: { id: projectId }, contextReferences: request.contextReferences }, signal);
       this.abort(signal);
       if ('sources' in context) await this.append(runId, request.requestId, 'context.assembled', { sources: context.sources.map((source) => ({ path: source.path, contentHash: source.contentHash, byteLength: source.byteLength, reason: source.reason })), totalBytes: context.totalBytes });
@@ -183,18 +184,29 @@ export class RunAgentLoop {
         }));
       }
       if (this.dependencies.model.descriptor.capabilities.toolCalling !== 'supported') throw { code: 'R1_MODEL_CAPABILITY_MISSING' };
+      let contextStep = steps;
       while (true) {
         this.abort(signal);
         if (steps >= request.maxSteps) throw { code: 'R1_STEP_LIMIT_EXCEEDED' };
+        if (contextStep !== steps) {
+          context = options.prepareContext
+            ? { modelContent: await options.prepareContext(runId, signal, steps + 1) }
+            : await this.dependencies.contextAssembler.assemble({task:request.task,project:{id:projectId},contextReferences:request.contextReferences},signal);
+          contextStep = steps;
+        }
         state = await this.transition(runId, request.requestId, state, 'waiting_for_model', steps);
         const previousToolResults = toolResultsFromHistory(history);
-        const modelRequest: ModelRequest = {
+        let modelRequest: ModelRequest = {
           runId, task: request.task, project: { id: projectId }, context: [...context.modelContent],
           tools: [...this.dependencies.registry.descriptors.filter(tool=>!options.workflow||options.workflow.toolIds.includes(tool.toolId)), ...(options.questions ? [questionTool] : [])], previousToolResults, history: [...history],
           ...(options.workflow?{workflowInstructions:options.workflow.instructions}:{}),
           ...(conversation?.length ? { priorConversation: conversation } : {}),
           ...(projectChecks?.checks.length ? { recommendedChecks: projectChecks.checks } : {})
         };
+        if (options.prepareModelTurn) {
+          modelRequest = await options.prepareModelTurn(modelRequest, signal);
+          history = [...(modelRequest.history ?? [])];
+        }
         await this.append(runId, request.requestId, 'model.requested', { step: steps + 1, profile: 'change', toolCount: modelRequest.tools.length, contextSourceCount: modelRequest.context.length, previousToolResultCount: previousToolResults.length });
         const onModelEvent = options.onModelEvent;
         const response = await collectModelResponse(this.dependencies.model.stream(modelRequest, signal), signal, { allowCommentaryWithToolCalls: true, ...(onModelEvent === undefined ? {} : { onValidatedEvent: (event:ModelStreamEvent)=>onModelEvent({runId,step:steps+1,event}) }) });

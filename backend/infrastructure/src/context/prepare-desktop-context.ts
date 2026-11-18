@@ -9,7 +9,7 @@ import { requireReadyReferences } from './reference-resolver.js';
 
 type Resources = Pick<R3InfrastructureResources, 'references' | 'repoMap' | 'recordContextAudit'>;
 
-export async function prepareDesktopContext(options: Resources, input: R3SubmitInput, projectId: string, root: string, runId: string, safe: (text: string) => string, signal: AbortSignal, prior: ConversationSelection) {
+export async function prepareDesktopContext(options: Resources, input: R3SubmitInput, projectId: string, root: string, runId: string, safe: (text: string) => string, signal: AbortSignal, prior: ConversationSelection, step = 1) {
   const task = input.task;
   const selected = input.references ?? [];
   const paths = selected.map(item => item.path);
@@ -18,16 +18,20 @@ export async function prepareDesktopContext(options: Resources, input: R3SubmitI
     source: 'project_reference', path: item.path, hash: item.contentHash, bytes: 0, status: 'omitted', reason
   }))) => options.recordContextAudit(input.requestId, runId, [
     { source: 'user_text', sourceId: input.requestId, bytes: 0, status: 'omitted', reason }, ...references
-  ]);
+  ], step);
   let result: ReturnType<typeof assembleR4Context>;
+  let referenceOmissions: R4ContextAuditSource[] = [];
   try {
     const [map, rules] = await Promise.all([
       options.repoMap.deepen(projectId, task, paths, signal),
       options.repoMap.instructions(projectId, signal, paths)
     ]);
-    const resolved = await options.references.resolve(root, input, signal, true);
+    const resolved = await options.references.resolve(root, input, signal, step === 1);
     const failed = resolved.results.some(item => item.status !== 'ready');
-    if (failed) {
+    if(step>1)referenceOmissions=resolved.results.flatMap(item=>item.status==='ready'?[]:[{
+      source:'project_reference',path:item.selected.path,hash:item.selected.contentHash,bytes:0,status:'omitted',reason:item.status
+    }]);
+    if (failed && step === 1) {
       await blockedAudit('blocked_reference', resolved.results.map(item => ({
         source: 'project_reference', path: item.selected.path, hash: item.selected.contentHash, bytes: 0,
         status: 'omitted', reason: item.status === 'ready' ? 'blocked_reference' : item.status
@@ -71,6 +75,7 @@ export async function prepareDesktopContext(options: Resources, input: R3SubmitI
     }
     throw error;
   }
-  await options.recordContextAudit(input.requestId, runId, result.audit);
+  result.audit.push(...referenceOmissions);
+  await options.recordContextAudit(input.requestId, runId, result.audit, step);
   return result.modelContent;
 }

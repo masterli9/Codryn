@@ -100,7 +100,7 @@ Poslední dříve zabalený základ má zdroj ee457ff6c52a3d481b472991435ebd4312
 | FR-CTX-02 | R4 | passed | Omezené zdroje a audit; backend/infrastructure/test/reference-resolver.test.ts a r4-context-evidence.test.ts; shared kontrakty byte caps. |
 | FR-CTX-03 | R4 | passed | RepoMapBuilder a worker; backend/infrastructure/test/repo-map.test.ts a r4-context-evidence.test.ts. docs/evals/r4-context-offline.md uvádí otevření při pozastavené indexaci a párové srovnání. |
 | FR-CTX-04 | R4 | passed | RepoMapStore/repo-map scanner; backend/infrastructure/test/repo-map.test.ts; revize, role a symboly uložené proti obsahovému hashi. |
-| FR-CTX-05 | R4 | open | RepoMapBuilder znovu ověřuje soubory při výběru, repo-map.test.ts. Již sestavený kontext uprostřed běžného modelového běhu se při externí změně samostatně neobnovuje; tato integrační mezera zůstává otevřená. |
+| FR-CTX-05 | R4 | open | RepoMapBuilder kontroluje obsah při výběru. Nový per-turn kontext a ModelTurnFreshness prokazují model-turn-context.test.ts a model-turn-freshness.test.ts, 5/5. Původní mezera opakovaného odesílání byla opravena; nová úplná a packaged regrese po doplnění koordinace zatím čeká. |
 | FR-CTX-06 | R4 | passed | context.map.init a ProjectMap; backend/infrastructure/test/repo-map.test.ts a apps/desktop/test/r4-repo-map.test.tsx. Omezená hlubší inicializace a zrušení. |
 | FR-CTX-12 | R4 | passed | ContextPathPolicy; backend/infrastructure/test/context-path-policy.test.ts a r4-context-evidence.test.ts. Neplatná syntaxe má řádek/důvod, chat zůstává čitelný. |
 | FR-CTX-13 | R4 | passed | Výchozí politika; backend/infrastructure/test/context-path-policy.test.ts a provider-context.test.ts. Pevné blokace, citlivé soubory, binární a velikostní limity. |
@@ -185,5 +185,5 @@ Poslední dříve zabalený základ má zdroj ee457ff6c52a3d481b472991435ebd4312
 
 - Živý rozšířený eval a skutečný uživatelský průchod čekají schválený rozpočet.
 - Osobní přijetí R3 a generální zkouška se potvrzují s autorem.
-- Kontext běžného nepřerušeného běhu se automaticky neobnovuje po každé externí změně. Po odpovědi na otázku se aktuální kontext sestaví znovu.
+- Kontext se nově sestavuje před každým dalším modelovým tahem a kontroluje historii zdrojů. Nová konsolidovaná regrese a balíček se doloží po dokončení koordinace a rozsahu ověření. Změna během už probíhajícího vzdáleného požadavku patří mezi výslovné hranice.
 - Úplné důkazy souběhu, balíčkovacích zámků a migrací zůstávají otevřené.

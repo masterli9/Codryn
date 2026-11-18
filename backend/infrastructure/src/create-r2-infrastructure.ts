@@ -43,6 +43,7 @@ import { SqliteWorkspaceStore } from './persistence/sqlite-workspace-store.js';
 import { SystemClock } from './system/system-clock.js';
 import { UuidGenerator } from './system/uuid-generator.js';
 import { StreamRedactor } from './logging/stream-redactor.js';
+import { ModelTurnFreshness } from './context/model-turn-freshness.js';
 const resourceLocks = new ResourceLocks();
 
 export interface R2Infrastructure {
@@ -84,6 +85,7 @@ export async function createR2Infrastructure(options: {
   readonly database?: DatabaseSync;
   readonly onRunCreated?: (runId: string) => Promise<void>;
   readonly prepareContext?: R2ExecutionOptions['prepareContext'];
+  readonly prepareModelTurn?: R2ExecutionOptions['prepareModelTurn'];
   readonly priorConversation?: R2ExecutionOptions['priorConversation'];
   readonly projectChecks?: R2ExecutionOptions['projectChecks'];
   readonly classifyCheck?: NonNullable<VerifyingCommandExecutorDependencies['classify']>;
@@ -242,12 +244,23 @@ export async function createR2Infrastructure(options: {
       ...(options.safeToolInput === undefined ? {} : { safeToolInput: options.safeToolInput }),
       ...(options.permissionResponder === undefined ? {} : { permissionResponder: options.permissionResponder })
     });
+    const observeContext = async (signal: AbortSignal) => workspaces.observe(projectId, await observer.inspect(signal));
+    const freshness = new ModelTurnFreshness(canonicalRoot, contextPolicy, observeContext);
+    const contextHarness: Pick<ToolExecutionHarness, 'execute'> = {
+      execute: async (...args) => {
+        const [call,,signal] = args;
+        const before = call.toolId === 'text.search' ? await observeContext(signal) : null;
+        const result = await toolExecutionHarness.execute(...args);
+        if (before) freshness.recordSearch(call.callId,before,await observeContext(signal));
+        return result;
+      }
+    };
     const logger = new JsonlDiagnosticLogger({ directory: join(userDataPath, 'logs'), redactionPolicy: { sensitiveRoots: [userDataPath, projectRoot] } });
     const loop = new RunAgentLoop({
       contextAssembler: new ContextAssembler(filesystem),
       model: options.model ?? new ScriptedModelAdapter(await scenario as FakeScenario),
       registry,
-      toolExecutionHarness,
+      toolExecutionHarness: contextHarness,
       agentRunStore: agentRuns,
       eventStore,
       clock,
@@ -294,11 +307,19 @@ export async function createR2Infrastructure(options: {
       executeR2: async (request, signal) => {
         let runSetId: string | null = options.questions?.resume?.changeSetId ?? null;
         let runId: string | null = options.questions?.resume?.runId ?? null;
+        const prepareContext = options.prepareContext;
         const result = await loop.executeR2(request, signal, {
+          prepareModelTurn: async (request, signal) => {
+            const current = await freshness.refresh(request, signal);
+            return options.prepareModelTurn ? options.prepareModelTurn(current, signal) : current;
+          },
           ...(options.questions ? { questions: options.questions } : {}),
           ...(options.workflow ? { workflow: options.workflow } : {}),
           ...(options.onRunCreated === undefined ? {} : { onRunCreated: options.onRunCreated }),
-          ...(options.prepareContext === undefined ? {} : { prepareContext: options.prepareContext }),
+          ...(prepareContext === undefined ? {} : { prepareContext: async (runId,signal,step) => {
+            freshness.initializePolicy(await contextPolicy.refresh());
+            return prepareContext(runId,signal,step);
+          } }),
           ...(options.priorConversation === undefined ? {} : { priorConversation: options.priorConversation }),
           ...(options.projectChecks === undefined ? {} : { projectChecks: options.projectChecks }),
           ...(options.allowReadOnlyCompletion === undefined ? {} : { allowReadOnlyCompletion: options.allowReadOnlyCompletion }),

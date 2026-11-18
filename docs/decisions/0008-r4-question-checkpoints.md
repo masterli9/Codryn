@@ -8,4 +8,4 @@ Po restartu zůstane nezodpovězená otázka dostupná. Restart po přijetí odp
 
 Rozšíření mají deklarativní manifesty. Výběr interního katalogu přidá omezené instrukce a zúží nabídku nástrojů. Plánování dovolí čtení. Ověřování dovolí čtení a samostatně povolené příkazy. Manifest nemá spustitelný vstupní bod.
 
-Obnovení po otázce znovu čte aktuální projekt. Dříve evidovaná mezera automatické obnovy kontextu při libovolné externí změně uprostřed běžného nepřerušeného běhu zůstává otevřená.
+Obnovení po otázce znovu čte aktuální projekt. Doplnění podle plánu z 18. listopadu 2026 nově připravuje kontext i před každým dalším modelovým tahem. Staré zdrojové výsledky vyžadují současný důkaz čerstvosti. Identita otázky a potvrzené výsledky uživatelských rozhodnutí zůstávají zachované.

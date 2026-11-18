@@ -73,3 +73,11 @@ Otisky SHA-256 tohoto balíčku
 První úplná regrese měla 772 úspěšných, dva přeskočené a tři neúspěšné testy. Dvě selhání byla v testových kontrolách po přidání ovládacích prvků a projekce čekajícího příkazu. Jejich úzká oprava prošla 9/9. Třetí případ narazil na obsazený dočasný adresář při úklidu procesního testu. Izolované opakování souboru prošlo 4/4. Závěrečná úplná regrese na aktuálním balíčku měla 775 úspěšných a dva přeskočené testy.
 
 Zafixovaný offline eval prošel 9/9 a má vlastní [protokol](r4-eval-report.md). Rozšířený živý eval a skutečný uživatelský průchod čekají schválený rozpočet. [Úplná matice 108 M/O1 požadavků a 31 AC](r4-requirement-matrix.md) zachovává otevřené brány včetně dřívějších mezer R3. Celé R4 zůstává otevřené.
+
+## Kontext dalších modelových tahů
+
+Doplnění z 18. listopadu 2026 nově sestavuje omezený kontext před každým dalším tahem produkčního R2/desktopového běhu. Změněná nebo znovu zakázaná reference se vynechá s důvodem. Jednorázová výjimka se při dalším sestavení znovu nespotřebuje. Dřívější souborové výřezy, hledání a TS výsledky projdou kontrolou aktuálního pozorovaného obsahu a politiky. Při chybějícím důkazu se odesílá pouze označení zastaralého výsledku. Role a call ID zůstávají spárované a hotové nástroje se neopakují.
+
+Testy `model-turn-context.test.ts` a `model-turn-freshness.test.ts` prošly 5/5. Ověřily čtyři navazující tahy po změně pravidel bez znovuobjevení starého obsahu, změnu po vlastním patchi, ruční změnu a původní i následné použití jednorázově povoleného výřezu. Sedm cílených regresí otázky a skutečného Git/non-Git cyklu schválení, kontroly a návratu prošlo. Audit zachycuje skutečný kontext každého tahu a projekce ukazuje nejnovější sestavení.
+
+Kontrola typů všech workspace prošla. Nová konsolidovaná regrese a identita balíčku po tomto doplnění se doloží po dokončení koordinace a ověřovacího rozsahu. Ochrana posuzuje stav před odesláním požadavku. Externí změna během již probíhajícího vzdáleného požadavku zůstává samostatnou hranicí.

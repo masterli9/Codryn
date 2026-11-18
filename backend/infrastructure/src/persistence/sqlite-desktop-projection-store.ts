@@ -48,8 +48,8 @@ function activityView(row: Row): R3ActivityView {
     }
     return r3ActivityViewSchema.parse({eventId:row.event_id,sequence:row.activity_sequence,runId:row.run_id,type,occurredAt:row.occurred_at,callId:null,summary,details,detailsTruncated});
   }
-  if (type === 'context.assembled') {
-    const audit = r4ContextAuditSchema.safeParse(payload);
+  if (type === 'context.assembled' || type === 'context.refreshed') {
+    const audit = r4ContextAuditSchema.safeParse({schemaVersion:payload.schemaVersion,sources:payload.sources,totalBytes:payload.totalBytes});
     if (audit.success) {
       details.push({ label: 'Použito bajtů', value: String(audit.data.totalBytes) });
       details.push({ label: 'Zdroje', value: String(audit.data.sources.length) });
@@ -66,18 +66,20 @@ function activityView(row: Row): R3ActivityView {
 export class SqliteDesktopProjectionStore implements DesktopProjectionStore {
   constructor(private readonly database: DatabaseSync,private readonly clock: Clock,private readonly ids: IdGenerator,
     private readonly currentInputs: (projectId: Uuid, revision: number) => Readonly<Record<string, string>> = () => ({})) {}
-  async recordContextAudit(requestId: Uuid, runId: Uuid, sources: readonly R4ContextAuditSource[]): Promise<void> {
-    const payload = r4ContextAuditSchema.parse({ schemaVersion: 1, sources, totalBytes: sources.reduce((sum, source) => sum + source.bytes, 0) });
+  async recordContextAudit(requestId: Uuid, runId: Uuid, sources: readonly R4ContextAuditSource[], step = 1): Promise<void> {
+    if(!Number.isInteger(step)||step<1||step>32)throw new Error('R3_INPUT_INVALID');
+    const audit = r4ContextAuditSchema.parse({ schemaVersion: 1, sources, totalBytes: sources.reduce((sum, source) => sum + source.bytes, 0) });
+    const payload = step === 1 ? audit : {...audit,step};
     transaction(this.database, () => {
       const job = this.database.prepare('SELECT run_id FROM desktop_jobs WHERE request_id=?').get(uuidSchema.parse(requestId));
       if (!job || job.run_id !== uuidSchema.parse(runId)) throw new Error('R3_CHAT_PROJECT_MISMATCH');
-      const existing = this.contextAuditEvent(runId);
+      const existing = step === 1 ? this.contextAuditEvent(runId) : this.database.prepare("SELECT payload_json FROM events WHERE session_id=? AND event_type='context.refreshed' AND json_extract(payload_json,'$.step')=? LIMIT 1").get(runId,step);
       if (existing) {
         if (existing.payload_json !== JSON.stringify(payload)) throw new Error('R3_REQUEST_MISMATCH');
         return;
       }
       insertEvent(this.database, validateEvent({
-        eventId: this.ids.next(), eventType: 'context.assembled', eventVersion: 1, correlationId: requestId,
+        eventId: this.ids.next(), eventType: step === 1 ? 'context.assembled' : 'context.refreshed', eventVersion: 1, correlationId: requestId,
         occurredAt: this.clock.now(), source: 'core', sessionId: runId, payload
       }));
     });
@@ -88,9 +90,10 @@ export class SqliteDesktopProjectionStore implements DesktopProjectionStore {
   }
 
   private contextAuditSummary(runId: Uuid | null): R4ContextAuditSummary | null {
-    const row = runId === null ? undefined : this.contextAuditEvent(runId);
+    const row = runId === null ? undefined : this.database.prepare("SELECT payload_json FROM events WHERE session_id=? AND event_type IN ('context.assembled','context.refreshed') AND json_extract(payload_json,'$.schemaVersion')=1 ORDER BY rowid DESC LIMIT 1").get(runId);
     if (!row) return null;
-    const audit = r4ContextAuditSchema.parse(parseJson(row.payload_json));
+    const payload=object(parseJson(row.payload_json));
+    const audit = r4ContextAuditSchema.parse({schemaVersion:payload.schemaVersion,sources:payload.sources,totalBytes:payload.totalBytes});
     const bySource = new Map<R4ContextAuditSource['source'], R4ContextAuditSummary['sources'][number]>();
     for (const item of audit.sources) {
       const count = bySource.get(item.source) ?? { source: item.source, used: 0, omitted: 0, truncated: 0, reasons: [] };

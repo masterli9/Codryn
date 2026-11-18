@@ -1,6 +1,6 @@
 import { StringDecoder } from 'node:string_decoder';
 import { selectConversationContext,StreamBatcher,type DesktopRuntimeFactory,type ModelAdapter } from '@codryn/core';
-import type { ModelStreamEvent } from '@codryn/shared';
+import type { ModelStreamEvent, R4ContextAuditSource } from '@codryn/shared';
 import type { R3InfrastructureResources } from '../create-r3-infrastructure.js';
 import { createR2Infrastructure } from '../create-r2-infrastructure.js';
 import { StreamRedactor } from '../logging/stream-redactor.js';
@@ -62,6 +62,7 @@ export function createDesktopRuntimeFactory(options:R3InfrastructureResources&{u
       let stream=output.get(callId);if(!stream){const make=(channel:'stdout'|'stderr')=>new StreamBatcher({flushBytes:4096,flushMs:50,write:(_sequence,text)=>options.projections.appendOutput(input.request.requestId,callId,channel,text,false),onError:()=>abort.abort()});stream={redactor:new StreamRedactor({secrets:keys}),stdout:new StringDecoder('utf8'),stderr:new StringDecoder('utf8'),stdoutBatch:make('stdout'),stderrBatch:make('stderr')};output.set(callId,stream);}return stream;
     };
     let runtime:Awaited<ReturnType<typeof createR2Infrastructure>>;
+    let preparedAudit:{runId:string;step:number;sources:readonly R4ContextAuditSource[]}|null=null;
     try {
       runtime=await createR2Infrastructure({userDataPath:options.userDataPath,projectRoot:root,database:options.database,model,workspaceObserver:{inspect:async signal=>(await options.observer(input.projectId)).inspect(signal)},workspaceStore:options.workspace,allowReadOnlyCompletion:true,onRunCreated:input.onRunCreated,
         questions: {
@@ -76,7 +77,32 @@ export function createDesktopRuntimeFactory(options:R3InfrastructureResources&{u
         projectChecks:projectChecks.catalog,
         classifyCheck:createProjectCheckClassifier(root,projectChecks,options.nodeExecutable,options.typescriptCli),
         ...(options.typescriptQueries ? { typescriptQueries: options.typescriptQueries } : {}),
-        prepareContext:(runId,signal)=>prepareDesktopContext(resume ? {...options,recordContextAudit:async()=>undefined} : options,input.request,input.projectId,root,runId,safe,signal,priorConversation),
+        prepareContext:async(runId,signal,step=1)=>{
+          try{
+            return await prepareDesktopContext({...options,recordContextAudit:async(_requestId,_runId,sources)=>{
+              preparedAudit={runId,step,sources};
+            }},input.request,input.projectId,root,runId,safe,signal,priorConversation,step);
+          }catch(error){
+            const blocked=preparedAudit;
+            if(blocked)await options.recordContextAudit(input.request.requestId,runId,blocked.sources,step);
+            throw error;
+          }
+        },
+        prepareModelTurn:async request=>{
+          if(preparedAudit){
+            const audit=preparedAudit;
+            const sources=audit.sources.map((item):R4ContextAuditSource=>{
+              const used=item.status==='omitted'||item.source==='user_text'
+                ||(item.source==='chat_history'?!!request.priorConversation?.length:request.context.some(source=>source.path===item.path&&source.contentHash===item.hash));
+              if(used)return item;
+              return {source:item.source,...(item.path?{path:item.path}:{}),...(item.hash?{hash:item.hash}:{}),...(item.sourceId?{sourceId:item.sourceId}:{}),
+                bytes:0,status:'omitted',reason:'stale_context'};
+            });
+            await options.recordContextAudit(input.request.requestId,audit.runId,sources,audit.step);
+            preparedAudit=null;
+          }
+          return request;
+        },
         trustedVerificationExecutable:options.nodeExecutable??'__unavailable_node__',filesystemEffect:effect=>options.filesystemEffect(input.projectId,effect),safeModelText:safe,safeToolInput:args=>!keys.some(key=>JSON.stringify(args).includes(key)),
         onModelEvent:async({step,event})=>{if(event.type==='text_delta'){const stream=getStream(step);await stream.batcher.push(stream.redactor.push('model',event.text));}},
         onModelTurnCompleted:async({step})=>{const stream=streams.get(step);if(stream){await stream.batcher.push(stream.redactor.finish('model'));await stream.batcher.close('complete');await options.projections.sealAssistant(input.request.requestId,step,'complete');stream.sealed=true;}},
