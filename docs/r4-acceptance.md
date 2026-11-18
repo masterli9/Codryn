@@ -53,3 +53,23 @@ Otisky SHA-256 ověřeného balíčku
 Přepnutí větve používá ochrany Gitu při zápisu do pracovního stromu. Vyžaduje znovu potvrzený čistý stav celého stromu a existující podporovanou lokální větev. Souběžný externí proces přesto může posunout referenci nebo upravit pracovní strom mezi poslední kontrolou a příkazem. Commit používá zámek indexu a porovnání očekávaného hashe reference přímo při zápisu. [Kontrakt lokálního Gitu](superpowers/specs/r4-local-git.md)
 
 Obecný test může číst i vstupy mimo pozorované cesty, například soubory vynechané pravidly projektu. Důkaz platnosti se vztahuje k pozorovaným vstupům. Otevřené zůstávají úplná matice `AC-O1-22/24`, zámek pro budoucí balíčkovací mutace a ověření souběžných migrací. Desktop při aktivním běhu blokuje lokální Git mutace globálně. Sestavený kontext ze začátku běhu se při externí úpravě souboru před dalším voláním modelu samostatně neobnovuje.
+
+## Trvalé otázky a vestavěné postupy
+
+Přírůstek z 18. listopadu 2026 ukládá otázku a čekající krok atomicky, uvolňuje runtime během čekání a po odpovědi pokračuje se stejným runId, počtem kroků a sadou změn. Restart v nejistém bodě po přijetí odpovědi vyžaduje bezpečnou obnovu. Před pokračováním se sestaví aktuální kontext a dřívější data nástrojů označí jako zastaralá. [Rozhodnutí o checkpointu](decisions/0008-r4-question-checkpoints.md)
+
+- `backend/infrastructure/test/question-runtime.test.ts` prošel 5/5. Pokrývá opakovanou odpověď, restart desktopu, dřívější patch bez replay, odmítnutí otázky, následné samostatné oprávnění příkazu, zrušení a uvolnění projektu po přerušení v nejistém bodě.
+- Testy schema/persistence prošly 2/2 a test otázkové karty 1/1. Kontrakt adaptéru má regresi obnovení původních identit již dokončených function callů do nového adaptéru.
+- Registry manifestů a katalog prošly dvěma kontraktními testy. `builtin-workflows.test.ts` prošel 4/4 v Git i non-Git projektu. Plánování má čtecí nástroje, ověřování používá skutečný příkaz až po samostatném schválení.
+- `tests/desktop/r4-questions.test.ts` prošel 1/1 v sestavené aplikaci. Ověřil obnovu rendereru i desktopu při čekající otázce a nové samostatné povolení příkazu po odpovědi.
+
+Na finálním balíčku prošlo osm scénářů R3 a strukturní dotaz TypeScriptu. Místní protokoly jsou v `.r3-artifacts/packaged-V7v7KO/r3-report.json` a `.r3-artifacts/r4-ts-worker-1hV4gL/r4-typescript-worker-smoke.json`. Závěrečná kontrola typů, lint a hranice závislostí prošly pro 394 modulů a 1 320 hran.
+
+Otisky SHA-256 tohoto balíčku
+
+- Zdroj `a41de13fc3d40ba74175b3f0198ccde9f9c636438e010f1e33d39eb470fe0014`
+- Archiv ASAR `8e58fd6cd51bc9d0c20c4a9ee72944d46ca9609cf59d733eecfbdd3f2cce63e1`
+
+První úplná regrese měla 772 úspěšných, dva přeskočené a tři neúspěšné testy. Dvě selhání byla v testových kontrolách po přidání ovládacích prvků a projekce čekajícího příkazu. Jejich úzká oprava prošla 9/9. Třetí případ narazil na obsazený dočasný adresář při úklidu procesního testu. Izolované opakování souboru prošlo 4/4. Závěrečná úplná regrese na aktuálním balíčku měla 775 úspěšných a dva přeskočené testy.
+
+Zafixovaný offline eval prošel 9/9 a má vlastní [protokol](r4-eval-report.md). Rozšířený živý eval a skutečný uživatelský průchod čekají schválený rozpočet. [Úplná matice 108 M/O1 požadavků a 31 AC](r4-requirement-matrix.md) zachovává otevřené brány včetně dřívějších mezer R3. Celé R4 zůstává otevřené.
