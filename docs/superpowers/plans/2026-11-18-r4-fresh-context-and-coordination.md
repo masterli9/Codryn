@@ -21,10 +21,14 @@ Cílené testy model-turn-context a model-turn-freshness prošly 5/5. Původní 
 
 ## 2. Koordinace zápisů a pozorování
 
-- [ ] Testem zafixovat férovou frontu sdílených mutací a výhradního pozorování, zrušení čekání a uvolnění po chybě.
-- [ ] Zachovat kanonické zámky jednotlivých souborů. Více různých nativních zápisů smí držet sdílenou mutační fázi, úplný observer čeká na jejich dokončení. Nové mutace nepředbíhají čekající observer.
-- [ ] Stejnou cestu použít pro revert. Git a existující migrační operace posoudit podle skutečného prostředku. Zámek balíčkovací mutace přidat pouze k existujícímu zapisujícímu vstupu.
-- [ ] Na Windows doložit souběh různých souborů i bezpečný souběh s pozorovatelem bez návratu chyby nativního guardu.
+- [x] Testem zafixovat férovou frontu sdílených mutací a výhradního pozorování, zrušení čekání a uvolnění po chybě.
+- [x] Zachovat kanonické zámky jednotlivých souborů. Více různých nativních zápisů smí držet sdílenou mutační fázi, úplný observer čeká na jejich dokončení. Nové mutace nepředbíhají čekající observer.
+- [x] Stejnou cestu použít pro revert. Git a existující migrační operace posoudit podle skutečného prostředku. Zámek balíčkovací mutace přidat pouze k existujícímu zapisujícímu vstupu.
+- [x] Na Windows doložit souběh různých souborů i bezpečný souběh s pozorovatelem bez návratu chyby nativního guardu.
+
+ResourceBarrier prošel 2/2: FIFO, nejvýše osm sdílených operací, fronta nejvýše 128, zrušení a uvolnění. Skutečné nezávislé nativní zápisy a dva R2 aktéři s čekajícím úplným observerem prošli 2/2. Původní guarded-writer sada prošla 13/13 včetně parent rename, junction a oplock ochran. Příčina původního selhání byla nadbytečná požadovaná DELETE práva rodičovského handle; zákaz sdílení pro smazání zůstává zachován.
+
+Migrační důkaz prošel 1/1: dva procesy nad starším schématem používají existující BEGIN IMMEDIATE; dva souběžné desktopové openy nad kanonickými aliasy v jednom procesu vytvoří jednu zálohu. Napříč procesy se neprohlašuje jediná společná záloha. Balíčkovací CLI drží nativní SQLite zámek od vstupního sourceHash po zápis build.json; dvouprocesový test a uvolnění po chybě prošly 1/1. Pomocník je určen pro jeden balíčkovací běh na proces, nikoli pro dvě souběžná asynchronní volání v témže event loopu.
 
 ## 3. Rozsah ověření a dokončovací evidence
 

@@ -8,6 +8,9 @@ const allTests = [
 ];
 
 const hostIntegrationTests = [
+  'backend/infrastructure/test/model-turn-context.test.ts',
+  'backend/infrastructure/test/native-independent-writes.test.ts',
+  'backend/infrastructure/test/database-coordination.test.ts',
   'backend/infrastructure/test/question-runtime.test.ts',
   'backend/infrastructure/test/builtin-workflows.test.ts',
   'backend/infrastructure/test/git-workflow.test.ts',

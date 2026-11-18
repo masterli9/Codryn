@@ -87,6 +87,13 @@ export class ProjectGitState implements ProjectGitStatePort {
       throw error;
     }
   }
+  async hasConflict(path: string, signal: AbortSignal): Promise<boolean> {
+    const root=await this.rootReady;
+    const result=await this.tryCommand(root,['ls-files','--unmerged','-z','--',path],signal);
+    if(result.ok)return result.result.stdout.length>0;
+    if(isMissingExecutable(result.error)||isNotRepository(result.error))return false;
+    throw commandError('R2_GIT_QUERY_FAILED',result.error);
+  }
 
   private async inspectOnce(root: string, signal: AbortSignal): Promise<ProjectBaseline> {
     const topLevel = await this.tryCommand(root, ['rev-parse', '--show-toplevel'], signal);

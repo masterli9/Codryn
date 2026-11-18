@@ -221,7 +221,9 @@ public sealed class CodrynR2NativeGuard : IDisposable
     private IntPtr OpenDirectorySegment(string path, bool publicationParent)
     {
         var access = FILE_READ_ATTRIBUTES;
-        if (publicationParent) access |= DELETE | FILE_ADD_FILE;
+        // Replacing a child needs add-file rights. The parent itself stays
+        // protected from rename by denying delete sharing on every held segment.
+        if (publicationParent) access |= FILE_ADD_FILE;
         var handle = CreateFile(
             path,
             access,

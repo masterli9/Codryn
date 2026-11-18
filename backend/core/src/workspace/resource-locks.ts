@@ -2,6 +2,10 @@ export class ResourceLocks {
   private readonly tails = new Map<string, Promise<void>>();
 
   async withKey<T>(key: string, signal: AbortSignal, action: () => Promise<T>): Promise<T> {
+    const release=await this.acquire(key,signal);
+    try{return await action();}finally{release();}
+  }
+  async acquire(key: string, signal: AbortSignal): Promise<() => void> {
     signal.throwIfAborted();
     const previous = this.tails.get(key) ?? Promise.resolve();
     let release: () => void = () => undefined;
@@ -9,17 +13,21 @@ export class ResourceLocks {
     const tail = previous.then(() => complete);
     this.tails.set(key, tail);
     let abort: () => void = () => undefined;
+    const finish=()=>{
+      release();
+      void tail.then(()=>{if(this.tails.get(key)===tail)this.tails.delete(key);});
+    };
     try {
       await Promise.race([previous, new Promise<never>((_, reject) => {
         abort = () => reject(signal.reason);
         signal.addEventListener('abort', abort, { once: true });
       })]);
       signal.throwIfAborted();
-      return await action();
+      return finish;
+    } catch(error) {
+      finish();throw error;
     } finally {
       signal.removeEventListener('abort', abort);
-      release();
-      void tail.then(() => { if (this.tails.get(key) === tail) this.tails.delete(key); });
     }
   }
 }

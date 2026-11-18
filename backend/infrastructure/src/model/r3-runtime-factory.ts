@@ -103,7 +103,7 @@ export function createDesktopRuntimeFactory(options:R3InfrastructureResources&{u
           }
           return request;
         },
-        trustedVerificationExecutable:options.nodeExecutable??'__unavailable_node__',filesystemEffect:effect=>options.filesystemEffect(input.projectId,effect),safeModelText:safe,safeToolInput:args=>!keys.some(key=>JSON.stringify(args).includes(key)),
+        trustedVerificationExecutable:options.nodeExecutable??'__unavailable_node__',safeModelText:safe,safeToolInput:args=>!keys.some(key=>JSON.stringify(args).includes(key)),
         onModelEvent:async({step,event})=>{if(event.type==='text_delta'){const stream=getStream(step);await stream.batcher.push(stream.redactor.push('model',event.text));}},
         onModelTurnCompleted:async({step})=>{const stream=streams.get(step);if(stream){await stream.batcher.push(stream.redactor.finish('model'));await stream.batcher.close('complete');await options.projections.sealAssistant(input.request.requestId,step,'complete');stream.sealed=true;}},
         permissionResponder:permission=>{permissionIds.add(permission.id);return options.permissionBroker.wait(permission.id,permission.digest,signal);},

@@ -44,6 +44,7 @@ import { SystemClock } from './system/system-clock.js';
 import { UuidGenerator } from './system/uuid-generator.js';
 import { StreamRedactor } from './logging/stream-redactor.js';
 import { ModelTurnFreshness } from './context/model-turn-freshness.js';
+import { workspaceAccess,workspaceKey } from './filesystem/workspace-access.js';
 const resourceLocks = new ResourceLocks();
 
 export interface R2Infrastructure {
@@ -52,7 +53,7 @@ export interface R2Infrastructure {
   readonly agentLoop: { executeR2(input: RunAgentRequest, signal: AbortSignal): Promise<R2RunResult> };
   readonly changes: {
     readonly diff: GetChangeDiff;
-    readonly revert: RevertChanges;
+    readonly revert: Pick<RevertChanges,'execute'>;
     readonly changeSets: ChangeSetStore;
   };
   readonly permissions: PermissionService;
@@ -133,7 +134,11 @@ export async function createR2Infrastructure(options: {
     const filesystem = new ProjectFilesystem(projectRoot, { contextPolicy });
     let readCalls = 0;
     const git = new ProjectGitState(projectRoot);
-    const observer = options.workspaceObserver ?? new FileWorkspaceObserver(projectRoot, { git, contextPolicy });
+    const diskObserver = options.workspaceObserver ? null : new FileWorkspaceObserver(projectRoot, { git, contextPolicy });
+    const observer = options.workspaceObserver ?? {inspect:(signal:AbortSignal)=>workspaceAccess.observe(canonicalRoot,signal,()=>{
+      if(!diskObserver)throw new Error('R3_INTERNAL');
+      return diskObserver.inspect(signal);
+    })};
     if (!options.prepareContext) await workspaces.observe(projectId, await observer.inspect(new AbortController().signal));
     const eventStore = new SqliteEventStore(database);
     const toolCalls = new SqliteToolCallStore(database, { clock, ids });
@@ -145,14 +150,16 @@ export async function createR2Infrastructure(options: {
     const diskWriter = new WindowsGuardedWriter(projectRoot);
     const guardedWriter = {
       open: async (path: string, expectedHash: string, signal: AbortSignal) => {
-        await contextPolicy.refresh();
-        if (!contextPolicy.decide(path, 'explicit_file', { kind: 'file' }).allowed) throw new Error('R2_PATH_SENSITIVE');
-        const state = await git.inspect(signal);
-        const target = resolve(projectRoot, path).toLowerCase();
-        if (state.mode === 'git' && state.conflicts.some((conflict) => resolve(projectRoot, conflict).toLowerCase() === target)) {
-          throw new Error('R2_GIT_CONFLICT');
-        }
-        return diskWriter.open(path, expectedHash, signal);
+        const release=await resourceLocks.acquire(`file:${workspaceKey(resolve(canonicalRoot,path))}`,signal);
+        try{
+          await contextPolicy.refresh();
+          if (!contextPolicy.decide(path, 'explicit_file', { kind: 'file' }).allowed) throw new Error('R2_PATH_SENSITIVE');
+          if(await git.hasConflict(path,signal))throw new Error('R2_GIT_CONFLICT');
+          const guard=await diskWriter.open(path,expectedHash,signal);
+          return {bytes:guard.bytes,publish:(bytes:Uint8Array)=>guard.publish(bytes),close:async()=>{
+            try{await guard.close();}finally{release();}
+          }};
+        }catch(error){release();throw error;}
       }
     };
     const fileHashes = {
@@ -216,11 +223,8 @@ export async function createR2Infrastructure(options: {
           nextSequence: () => changeSets.reserveSequence(setId),
           hash: (bytes) => createHash('sha256').update(bytes).digest('hex')
         }).execute(parsed.data, actor, signal);
-        const key = resolve(canonicalRoot, path);
-        const applyWithFileLock = () => resourceLocks.withKey(`file:${process.platform === 'win32' ? key.toLowerCase() : key}`, signal, apply);
-        // The desktop observer opens files while scanning. Keep it out of the
-        // native guard's exclusive file-access window.
-        const result = await (options.filesystemEffect ? options.filesystemEffect(applyWithFileLock) : applyWithFileLock());
+        const result = await (options.filesystemEffect ? options.filesystemEffect(apply)
+          : workspaceAccess.mutate(canonicalRoot,signal,apply));
         if(result.status==='rejected'&&result.code==='R2_PATCH_STALE')await eventStore.append({
           eventId:ids.next(),eventType:'change.mutation_stale',eventVersion:1,correlationId:actor.callId,occurredAt:clock.now(),source:'core',
           sessionId:actor.runId,payload:{path,errorCode:result.code,revision:(await workspaces.current(actor.projectId)).revision}
@@ -268,9 +272,7 @@ export async function createR2Infrastructure(options: {
       logger,
       safeModelText:options.safeModelText??(text=>{const redactor=new StreamRedactor({secrets:[]});return redactor.push('model',text)+redactor.finish('model');})
     });
-    const changes = {
-      diff: new GetChangeDiff({ journal, blobs, files: fileHashes }),
-      revert: new RevertChanges({
+    const revertOperation = new RevertChanges({
         projectId,
         writer: guardedWriter,
         blobs,
@@ -294,7 +296,11 @@ export async function createR2Infrastructure(options: {
           await toolCalls.createWithInitialEvent(call, auditEvent(ids, clock, runId, requestId, callId));
         },
         finishAuditCall:async({callId,runId,requestId,status})=>{const now=clock.now(),to=status==='applied'?'succeeded':'failed';await toolCalls.transitionWithEvent({callId,from:'running',to,updatedAt:now,safeResult:{status},event:{...auditEvent(ids,clock,runId,requestId,callId),eventType:`tool_call.${to}`,payload:{callId,toolId:'change.revert',status}}});}
-      }),
+      });
+    const changes = {
+      diff: new GetChangeDiff({ journal, blobs, files: fileHashes }),
+      revert: {execute:(input:Parameters<RevertChanges['execute']>[0],signal:AbortSignal)=>
+        workspaceAccess.mutate(canonicalRoot,signal,()=>revertOperation.execute(input,signal))},
       changeSets
     };
     const recover = new RecoverR2Run({
@@ -378,7 +384,7 @@ export async function createR2Infrastructure(options: {
       permissions,
       recover,
       eventStore,
-      close() { if (!closed) { closed = true; if(options.workspaceObserver===undefined&&observer instanceof FileWorkspaceObserver)observer.close(); if (options.database === undefined) database.close(); } }
+      close() { if (!closed) { closed = true; diskObserver?.close(); if (options.database === undefined) database.close(); } }
     };
   } catch (error) {
     if (options.database === undefined) database.close();

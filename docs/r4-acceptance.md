@@ -52,7 +52,7 @@ Otisky SHA-256 ověřeného balíčku
 
 Přepnutí větve používá ochrany Gitu při zápisu do pracovního stromu. Vyžaduje znovu potvrzený čistý stav celého stromu a existující podporovanou lokální větev. Souběžný externí proces přesto může posunout referenci nebo upravit pracovní strom mezi poslední kontrolou a příkazem. Commit používá zámek indexu a porovnání očekávaného hashe reference přímo při zápisu. [Kontrakt lokálního Gitu](superpowers/specs/r4-local-git.md)
 
-Obecný test může číst i vstupy mimo pozorované cesty, například soubory vynechané pravidly projektu. Důkaz platnosti se vztahuje k pozorovaným vstupům. Otevřené zůstávají úplná matice `AC-O1-22/24`, zámek pro budoucí balíčkovací mutace a ověření souběžných migrací. Desktop při aktivním běhu blokuje lokální Git mutace globálně. Sestavený kontext ze začátku běhu se při externí úpravě souboru před dalším voláním modelu samostatně neobnovuje.
+Tento původní průchod serializoval zápisy v témže projektu a ještě neměl samostatný migrační a balíčkovací důkaz. Pozdější doplnění níže tyto mezery řeší. Obecný test může číst i vstupy mimo pozorované cesty; důkaz platnosti se vztahuje k pozorovaným vstupům. Desktop při aktivním běhu nadále blokuje lokální Git mutace globálně.
 
 ## Trvalé otázky a vestavěné postupy
 
@@ -81,3 +81,16 @@ Doplnění z 18. listopadu 2026 nově sestavuje omezený kontext před každým 
 Testy `model-turn-context.test.ts` a `model-turn-freshness.test.ts` prošly 5/5. Ověřily čtyři navazující tahy po změně pravidel bez znovuobjevení starého obsahu, změnu po vlastním patchi, ruční změnu a původní i následné použití jednorázově povoleného výřezu. Sedm cílených regresí otázky a skutečného Git/non-Git cyklu schválení, kontroly a návratu prošlo. Audit zachycuje skutečný kontext každého tahu a projekce ukazuje nejnovější sestavení.
 
 Kontrola typů všech workspace prošla. Nová konsolidovaná regrese a identita balíčku po tomto doplnění se doloží po dokončení koordinace a ověřovacího rozsahu. Ochrana posuzuje stav před odesláním požadavku. Externí změna během již probíhajícího vzdáleného požadavku zůstává samostatnou hranicí.
+
+## Koordinace skutečných prostředků
+
+Sdílená mutační fáze dovoluje různé soubory v témže projektu zapisovat souběžně. Kanonický zámek konkrétního souboru trvá po celou životnost guardu a vztahuje se i na návrat změn. Úplné pozorování drží výhradní fázi a čekající pozorovatel zabrání předbíhání novými mutacemi. Indexová kontrola konfliktu používá doslovný pathspec bez úplného čtení pracovního stromu.
+
+- `resource-barrier.test.ts` prošel 2/2 pro férovost, omezené fronty, zrušení a chybu.
+- `native-independent-writes.test.ts` prošel 2/2: skutečné souběžné guardy sourozeneckých souborů a dva R2 aktéři, jejichž zápisy oddálí úplný observer. Původní `guarded-writer.test.ts` prošel 13/13 včetně ochran rodičovského přejmenování, junction a oplock.
+- `database-coordination.test.ts` prošel 1/1: dva procesy migrují starší schéma a dva openy v jednom procesu koordinují zálohu podle kanonické DB cesty. Jediná záloha napříč procesy se neprohlašuje.
+- `scripts/native-resource-lock.test.mjs` prošel 1/1 pro dva balíčkovací procesy a uvolnění po chybě. Zámek omezený časem chrání skutečný package-r3 vstup až po finální metadata. Pomocník předpokládá jeden běh CLI na proces.
+
+Po změně koordinace prošly oba původní skutečné R3 Git/non-Git průchody (2/2, ostatních devět testů příkazu bylo vynecháno filtrem).
+
+Tato evidence používá místní Windows fixtures. Konsolidovaný nový balíček a úplná sada zatím čekají; celý obecný koordinační a víceagentní produkt tím není uzavřený.

@@ -1,13 +1,17 @@
-import { mkdir, stat } from 'node:fs/promises';
+import { mkdir, realpath, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { backup, DatabaseSync } from 'node:sqlite';
 import { randomUUID } from 'node:crypto';
 import { openR0Database } from './open-database.js';
 import { runMigrations } from './run-migrations.js';
 import { migrations } from './migrations.js';
+import { ResourceLocks } from '@codryn/core';
+const databaseLocks = new ResourceLocks();
 export async function openDesktopDatabase(userDataPath: string): Promise<{ database: DatabaseSync; close(): void }> {
   await mkdir(userDataPath, { recursive: true });
-  const filename = join(userDataPath, 'codryn.sqlite');
+  const filename = join(await realpath(userDataPath), 'codryn.sqlite');
+  const key=process.platform==='win32'?filename.toLowerCase():filename;
+  return databaseLocks.withKey(key,AbortSignal.timeout(30000),async()=>{
   const exists = await stat(filename).then(() => true, (error: unknown) => { if (error instanceof Error && Reflect.get(error, 'code') === 'ENOENT') return false; throw error; });
   const database = openR0Database(filename);
   try {
@@ -25,4 +29,5 @@ export async function openDesktopDatabase(userDataPath: string): Promise<{ datab
     runMigrations(database, new Date().toISOString());
     return { database, close: () => { if (database.isOpen) database.close(); } };
   } catch (error) { database.close(); throw error; }
+  });
 }

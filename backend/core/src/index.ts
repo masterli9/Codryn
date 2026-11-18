@@ -152,3 +152,4 @@ export type { LocalGitDiffInput } from './git/local-git-service.js';
 export { QuestionSuspended, questionTool, validateQuestion } from './desktop/question-service.js';
 export type { QuestionBoundary } from './desktop/question-service.js';
 export { ExtensionRegistry } from './extensions/extension-registry.js';
+export { ResourceBarrier } from './workspace/resource-barrier.js';

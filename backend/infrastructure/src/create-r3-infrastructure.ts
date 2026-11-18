@@ -39,11 +39,12 @@ import { RepoMapBuilder } from './context/repo-map-builder.js';
 import type { MapWorker } from './context/repo-map-builder.js';
 import { RepoMapStore } from './context/repo-map-store.js';
 import { SqliteQuestionStore } from './persistence/sqlite-question-store.js';
+import { workspaceAccess } from './filesystem/workspace-access.js';
 import type { QuestionAnswer } from '@codryn/shared';
 export interface R3InfrastructureResources {
   database:DatabaseSync;projects:R3ProjectService;projections:DesktopProjectionStore;providerAccess:ProviderAccessGate;
   secrets:SecretStore;settings:ProviderSettingsService;ownedCommands:OwnedCommandStore;permissionBroker:DesktopPermissionBroker;
-  filesystemEffect:<T>(projectId:string,effect:()=>Promise<T>)=>Promise<T>;workspace:WorkspaceStore;observer:(projectId:string)=>Promise<WorkspaceObserver>;ids:IdGenerator;
+  filesystemEffect:<T>(projectId:string,effect:()=>Promise<T>,signal?:AbortSignal)=>Promise<T>;workspace:WorkspaceStore;observer:(projectId:string)=>Promise<WorkspaceObserver>;ids:IdGenerator;
   repoMap:RepoMapBuilder;
   references:ReferenceResolver;
   questions:SqliteQuestionStore;
@@ -53,9 +54,14 @@ const unavailableProtector:SecretProtector={available:async()=>false,encrypt:asy
 export async function createR3Infrastructure(options:{userDataPath:string;runtimeFactory:(resources:R3InfrastructureResources)=>DesktopRuntimeFactory;secretProtector?:SecretProtector;clock?:Clock;ids?:IdGenerator;preflight?:(mode:'demo'|'openai',root:string)=>Promise<void>;repoMapWorker?:MapWorker;commitSuggestion?:(task:string,mode:'demo'|'openai',root:string,secrets:SecretStore,signal:AbortSignal)=>Promise<string>}) {
   const handle=await openDesktopDatabase(options.userDataPath),database=handle.database,clock=options.clock??new SystemClock(),ids=options.ids??new UuidGenerator();
   const observers=new Map<string,FileWorkspaceObserver>(),scans=new Map<string,Promise<WorkspaceObservation>>(),refreshes=new Map<string,Promise<void>>(),opened=new Set<string>(),locks=new Set<string>();
-  const filesystemTails=new Map<string,Promise<void>>();
+  const filesystemOperations=new Set<Promise<unknown>>();
   const gitLocks = new ResourceLocks();
-  const filesystemEffect=async<T>(projectId:string,effect:()=>Promise<T>):Promise<T>=>{const previous=filesystemTails.get(projectId)??Promise.resolve();let release:()=>void=()=>undefined;const done=new Promise<void>(resolve=>{release=resolve;});const tail=previous.then(()=>done);filesystemTails.set(projectId,tail);try{await previous;return await effect();}finally{release();if(filesystemTails.get(projectId)===tail)filesystemTails.delete(projectId);}};
+  const filesystemEffect=async<T>(projectId:string,effect:()=>Promise<T>,signal=AbortSignal.timeout(30000)):Promise<T>=>{
+    const row=database.prepare('SELECT root FROM desktop_projects WHERE project_id=?').get(projectId);
+    const pending=workspaceAccess.observe(String(row?.root??projectId),signal,effect);
+    filesystemOperations.add(pending);
+    try{return await pending;}finally{filesystemOperations.delete(pending);}
+  };
   let periodic:ReturnType<typeof setInterval>|undefined,closed=false;
   const repoMap = new RepoMapBuilder(new RepoMapStore(database), options.repoMapWorker ?? (async () => { throw new Error('R4_REPO_MAP_WORKER_UNAVAILABLE'); }));
   const references = new ReferenceResolver();
@@ -98,7 +104,7 @@ export async function createR3Infrastructure(options:{userDataPath:string;runtim
     const observer=async(projectId:string):Promise<WorkspaceObserver>=>{
       if(closed)throw new Error('R3_PROJECT_BUSY');opened.add(projectId);const root=await projects.root(projectId);if(closed)throw new Error('R3_PROJECT_BUSY');
       if(!observers.has(projectId)){const policy=await ContextPathPolicy.fromProjectRoot(root);if(closed)throw new Error('R3_PROJECT_BUSY');observers.set(projectId,new FileWorkspaceObserver(root,{git:new ProjectGitState(root),contextPolicy:policy}));}
-      return {inspect:async(signal)=>{if(closed)throw new Error('R3_PROJECT_BUSY');signal.throwIfAborted();let pending=scans.get(projectId);if(!pending){const scanner=observers.get(projectId);if(!scanner)throw new Error('R3_INTERNAL');pending=filesystemEffect(projectId,()=>scanner.inspect(AbortSignal.timeout(5000))).finally(()=>scans.delete(projectId));scans.set(projectId,pending);}const result=await pending;signal.throwIfAborted();return result;}};
+      return {inspect:async(signal)=>{if(closed)throw new Error('R3_PROJECT_BUSY');signal.throwIfAborted();let pending=scans.get(projectId);if(!pending){const scanner=observers.get(projectId);if(!scanner)throw new Error('R3_INTERNAL');pending=filesystemEffect(projectId,()=>scanner.inspect(AbortSignal.timeout(5000)),signal).finally(()=>scans.delete(projectId));scans.set(projectId,pending);}const result=await pending;signal.throwIfAborted();return result;}};
     };
     const refresh=(projectId:string,signal:AbortSignal):Promise<void>=>{
       if(closed)return Promise.reject(new Error('R3_PROJECT_BUSY'));const previous=refreshes.get(projectId);if(previous)return previous;
@@ -264,7 +270,7 @@ export async function createR3Infrastructure(options:{userDataPath:string;runtim
         if((await ownedCommands.pending(chat.projectId)).length||(await journal.pending(chat.projectId)).length)throw new Error('R3_RECOVERY_REQUIRED');
         const view=await diff(input.chatId,input.setId,signal);if(view.observedSetSequence!==input.expectedSetSequence||view.workspaceRevision!==input.expectedWorkspaceRevision)throw new Error('R3_STALE_VIEW');
         await actions.begin(input,digest);const runtime=await utility(chat.projectId);
-        try {const result=r3RevertResultSchema.parse(await filesystemEffect(chat.projectId,()=>runtime.changes.revert.execute({setId:input.setId,requestId:input.requestId,...(input.entryId?{entryId:input.entryId}:{})},signal)));await actions.finish(input.requestId,result);await refresh(chat.projectId,signal);return result;}finally{runtime.close();}
+        try {const result=r3RevertResultSchema.parse(await runtime.changes.revert.execute({setId:input.setId,requestId:input.requestId,...(input.entryId?{entryId:input.entryId}:{})},signal));await actions.finish(input.requestId,result);await refresh(chat.projectId,signal);return result;}finally{runtime.close();}
       }finally{release();}})().finally(()=>reverts.delete(input.requestId));reverts.set(input.requestId,{digest,promise:execute});return execute;
     };
     const answerPermission=async(chatId:string,projectId:string,raw:PermissionDecisionInput)=>{
@@ -276,7 +282,7 @@ export async function createR3Infrastructure(options:{userDataPath:string;runtim
       await refresh(projectId,AbortSignal.timeout(6000));return permissionBroker.answer(input.id,input.digest,input.decision);
     };
     periodic=setInterval(()=>{for(const project of opened)void refresh(project,AbortSignal.timeout(6000)).catch(()=>undefined);},1000);periodic.unref();
-    const shutdown=async(signal:AbortSignal)=>{providerAccess.beginShutdown();if(periodic)clearInterval(periodic);mapLifetime.abort();repoMap.closeAll();const result=await manager.shutdown(signal);await repoMap.drain(signal);while((!providerAccess.idle()||refreshes.size||scans.size||filesystemTails.size||reverts.size)&&!signal.aborted)await new Promise(resolve=>setTimeout(resolve,25));return {stopped:!signal.aborted&&result.stopped&&providerAccess.idle()&&(await ownedCommands.pending()).length===0&&reverts.size===0&&refreshes.size===0&&scans.size===0&&filesystemTails.size===0};};
+    const shutdown=async(signal:AbortSignal)=>{providerAccess.beginShutdown();if(periodic)clearInterval(periodic);mapLifetime.abort();repoMap.closeAll();const result=await manager.shutdown(signal);await repoMap.drain(signal);while((!providerAccess.idle()||refreshes.size||scans.size||filesystemOperations.size||reverts.size)&&!signal.aborted)await new Promise(resolve=>setTimeout(resolve,25));return {stopped:!signal.aborted&&result.stopped&&providerAccess.idle()&&(await ownedCommands.pending()).length===0&&reverts.size===0&&refreshes.size===0&&scans.size===0&&filesystemOperations.size===0};};
     return {projects,chats,requests,projections,manager,subscriptions,settings,resources,recover,snapshot,history,stop,inspectRun,diff,revert,answerPermission,answerQuestion,questionCurrent,shutdown,contextMap,referenceSearch,referencePermit,localGit,
       activity:(chatId:string,target:string,before:number|null)=>projections.activity(chatId,target,before),output:(chatId:string,callId:string,after:number|null)=>projections.output(chatId,callId,after),
       close:()=>{if(activeJob()||!providerAccess.idle()||reverts.size)throw new Error('R3_PROJECT_BUSY');closed=true;if(periodic)clearInterval(periodic);mapLifetime.abort();repoMap.closeAll();subscriptions.close();for(const scanner of observers.values())scanner.close();handle.close();}
