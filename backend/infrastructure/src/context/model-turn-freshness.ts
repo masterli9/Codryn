@@ -1,6 +1,7 @@
 import { ContextAssemblyFailure } from '@codryn/core';
 import type { WorkspaceSnapshot } from '@codryn/core';
 import type { ModelRequest, ModelToolCall, ModelTurn, ToolResult } from '@codryn/shared';
+import { typescriptQueryOutputSchema } from '@codryn/shared';
 import type { ContextPathPolicy } from '../filesystem/context-path-policy.js';
 import { readReferenceIdentity } from './reference-identity.js';
 
@@ -12,6 +13,15 @@ type ContextStamp = Pick<WorkspaceSnapshot, 'complete'|'fingerprint'|'watcherGen
 function sameWorkspace(left: ContextStamp, right: ContextStamp): boolean {
   return left.complete && right.complete && left.fingerprint === right.fingerprint
     && left.watcherGeneration === right.watcherGeneration;
+}
+function emptyWorkerFailure(result: ToolResult): boolean {
+  if(!result.ok)return false;
+  const parsed=typescriptQueryOutputSchema.safeParse(result.output);
+  if(!parsed.success)return false;
+  const output=parsed.data;
+  return output.status==='limited' && output.mode==='fallback' && output.items.length===0
+    && output.targetHash===null && output.policyRevision===null && !output.truncated
+    && (output.reason==='worker_failed'||output.reason==='worker_timeout'||output.reason==='cancelled');
 }
 
 /** Revalidates previously obtained data. It never executes a model tool. */
@@ -39,10 +49,14 @@ export class ModelTurnFreshness {
     const history = request.history ?? [];
     const calls = new Map(history.flatMap(turn => turn.kind === 'assistant' ? turn.calls.map(call => [call.callId, call] as const) : []));
     const staleIds = new Set<string>();
+    const safeDiagnostics = new Set<string>();
     for (const turn of history) {
       if (turn.kind !== 'tool') continue;
       const call = calls.get(turn.result.callId);
       if (!call || call.toolId === 'ask_user') continue;
+      if(call.toolId==='typescript.query'&&emptyWorkerFailure(turn.result)){
+        safeDiagnostics.add(call.callId);continue;
+      }
       const output = turn.result.ok ? object(turn.result.output) : {};
       if (policyChanged) staleIds.add(call.callId);
       else if (call.toolId === 'file.read' && turn.result.ok) {
@@ -72,7 +86,7 @@ export class ModelTurnFreshness {
     const after = await this.observe(signal);
     const raced = before.fingerprint!==after.fingerprint || before.watcherGeneration!==after.watcherGeneration;
     if (await this.policy.refresh() !== policyRevision) throw new ContextAssemblyFailure('R4_CONTEXT_POLICY_CHANGED');
-    if (raced) for (const call of calls.values()) if (sourceTools.has(call.toolId)) staleIds.add(call.callId);
+    if (raced) for (const call of calls.values()) if (sourceTools.has(call.toolId)&&!safeDiagnostics.has(call.callId)) staleIds.add(call.callId);
     const contextIdentity=JSON.stringify(context.map(source=>[source.path,source.contentHash,source.reason]));
     const contextChanged=this.contextIdentity!==null&&this.contextIdentity!==contextIdentity;
     const stale = policyChanged || contextChanged || raced || staleIds.size > 0 || context.length !== request.context.length;

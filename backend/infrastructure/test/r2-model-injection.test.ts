@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { execFileSync } from 'node:child_process';
 import { readFile, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -188,11 +189,13 @@ describe('R2 infrastructure model composition', () => {
   }, 30_000);
 
   it('rejects a patch targeting an unresolved Git conflict', async () => {
-    const fixture = await createR2Project('non-git');
+    const fixture = await createR2Project('git');
     deterministicBoundaries(fixture.root);
-    vi.spyOn(ProjectGitState.prototype, 'inspect').mockResolvedValue({ mode: 'git', head: null,
-      branch: 'main', indexHash: 'a'.repeat(64), worktreeIdentity: fixture.root,
-      conflicts: ['sum.mjs'], status: [{ path: 'sum.mjs', xy: 'UU' }] });
+    const gitOptions={cwd:fixture.root,timeout:6000,windowsHide:true};
+    const blob=execFileSync('git',['hash-object','-w','sum.mjs'],gitOptions).toString().trim();
+    execFileSync('git',['update-index','--index-info'],{...gitOptions,input:
+      `0 ${'0'.repeat(40)}\tsum.mjs\n`+[1,2,3].map(stage=>`100644 ${blob} ${stage}\tsum.mjs\n`).join('')});
+    expect(await new ProjectGitState(fixture.root).hasConflict('sum.mjs',AbortSignal.timeout(6000))).toBe(true);
     const infra = await createR2Infrastructure({ projectRoot: fixture.root, userDataPath: fixture.userData,
       scenario: 'change-verify-return', permissionResponder: async () => 'allow_once' });
     try {

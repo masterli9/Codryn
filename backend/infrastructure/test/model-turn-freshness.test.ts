@@ -7,8 +7,30 @@ import type { ModelRequest } from '@codryn/shared';
 import { ModelTurnFreshness } from '../src/context/model-turn-freshness.js';
 import { ContextPathPolicy } from '../src/filesystem/context-path-policy.js';
 import { FileWorkspaceObserver } from '../src/filesystem/workspace-observer.js';
+import { emptyTypeScriptQuery } from '../src/typescript/typescript-query-result.js';
 const marker = 'STALE_CONTEXT_CANARY';
 const hash = createHash('sha256').update(marker).digest('hex');
+it('preserves empty worker failure diagnostics but strips unproven source-bearing failures', async () => {
+  const fixture=await createR2Project('non-git');
+  const policy=await ContextPathPolicy.fromProjectRoot(fixture.root);
+  const observer=new FileWorkspaceObserver(fixture.root,{contextPolicy:policy});
+  const signal=AbortSignal.timeout(10000);
+  try{
+    const freshness=new ModelTurnFreshness(fixture.root,policy,async input=>({...await observer.inspect(input),revision:1}));
+    const emptyId=randomUUID(),sourceId=randomUUID();
+    const empty=emptyTypeScriptQuery(0,'worker_failed');
+    const request:ModelRequest={runId:randomUUID(),task:'Inspect.',project:{id:randomUUID()},tools:[],context:[],previousToolResults:[],history:[
+      {kind:'assistant',text:'',calls:[emptyId,sourceId].map(callId=>({callId,toolId:'typescript.query',toolVersion:1,arguments:{kind:'exports',path:'sum.mjs'}}))},
+      {kind:'tool',result:{ok:true,callId:emptyId,output:empty}},
+      {kind:'tool',result:{ok:true,callId:sourceId,output:{...empty,targetHash:hash}}}
+    ]};
+    const next=await freshness.refresh(request,signal);
+    expect(next.previousToolResults[0]).toEqual(request.history?.[1]?.kind==='tool'?request.history[1].result:undefined);
+    expect(next.previousToolResults[1]).toMatchObject({ok:true,output:{status:'stale'}});
+    await writeFile(join(fixture.root,'.codrynignore'),'sum.mjs\n');
+    expect((await freshness.refresh({...request,history:next.history},signal)).previousToolResults[0]).toMatchObject({ok:true,output:empty});
+  }finally{observer.close();await fixture.close();}
+});
 it('keeps fresh reads and paired calls but removes stale file/search/TS payloads and quoted arguments after a policy change', async () => {
   const fixture = await createR2Project('non-git');
   const policy = await ContextPathPolicy.fromProjectRoot(fixture.root);
