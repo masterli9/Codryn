@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { expect, it } from 'vitest';
 import { createR2Project } from '@codryn/test-support';
 import type { ModelRequest } from '@codryn/shared';
+import { jsonValueSchema } from '@codryn/shared';
 import { ModelTurnFreshness } from '../src/context/model-turn-freshness.js';
 import { ContextPathPolicy } from '../src/filesystem/context-path-policy.js';
 import { FileWorkspaceObserver } from '../src/filesystem/workspace-observer.js';
@@ -18,11 +19,11 @@ it('preserves empty worker failure diagnostics but strips unproven source-bearin
   try{
     const freshness=new ModelTurnFreshness(fixture.root,policy,async input=>({...await observer.inspect(input),revision:1}));
     const emptyId=randomUUID(),sourceId=randomUUID();
-    const empty=emptyTypeScriptQuery(0,'worker_failed');
+    const empty=jsonValueSchema.parse(emptyTypeScriptQuery(0,'worker_failed'));
     const request:ModelRequest={runId:randomUUID(),task:'Inspect.',project:{id:randomUUID()},tools:[],context:[],previousToolResults:[],history:[
       {kind:'assistant',text:'',calls:[emptyId,sourceId].map(callId=>({callId,toolId:'typescript.query',toolVersion:1,arguments:{kind:'exports',path:'sum.mjs'}}))},
       {kind:'tool',result:{ok:true,callId:emptyId,output:empty}},
-      {kind:'tool',result:{ok:true,callId:sourceId,output:{...empty,targetHash:hash}}}
+      {kind:'tool',result:{ok:true,callId:sourceId,output:jsonValueSchema.parse({...emptyTypeScriptQuery(0,'worker_failed'),targetHash:hash})}}
     ]};
     const next=await freshness.refresh(request,signal);
     expect(next.previousToolResults[0]).toEqual(request.history?.[1]?.kind==='tool'?request.history[1].result:undefined);
