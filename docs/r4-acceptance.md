@@ -13,7 +13,7 @@ Implementace dodává `FR-CHAT-06` dříve a pokrývá výběr historie z `FR-CT
 
 Offline scénář pro `FR-TERM-04/05/06` a část rozpoznání z `FR-TS-01` proběhl přes desktopový backend v projektu s Gitem i bez něj. Testovací model dostal přesné návrhy a požádal jednotlivě o povolení všech pěti kontrol. Po chybném testu opravil zdroj. Změna dalšího zdrojového souboru mezi kontrolami zneplatnila předchozí kontrolu a nový běh kontroly obnovil stav ověření. Úprava poznámky mimo rozsah stav zachovala. Vrácení změny obnovilo původní hash měněného souboru.
 
-Strukturní dotazy `FR-TS-02..08` a jejich eval `AC-O1-13` mají vlastní plán. Plná matice invalidace pracovního prostoru podle `AC-O1-24` a oddělený placený průchod zůstávají otevřené.
+Strukturní dotazy `FR-TS-02..08` a jejich eval `AC-O1-13` mají vlastní plán. Pozdější doplnění invalidace pracovního prostoru podle `AC-O1-24` jsou uvedena níže; oddělený placený průchod zůstává otevřený.
 
 ## Strukturní dotazy TypeScriptu
 
@@ -80,7 +80,7 @@ Doplnění z 18. listopadu 2026 nově sestavuje omezený kontext před každým 
 
 Testy `model-turn-context.test.ts` a `model-turn-freshness.test.ts` prošly 5/5. Ověřily čtyři navazující tahy po změně pravidel bez znovuobjevení starého obsahu, změnu po vlastním patchi, ruční změnu a původní i následné použití jednorázově povoleného výřezu. Sedm cílených regresí otázky a skutečného Git/non-Git cyklu schválení, kontroly a návratu prošlo. Audit zachycuje skutečný kontext každého tahu a projekce ukazuje nejnovější sestavení.
 
-Kontrola typů všech workspace prošla. Nová konsolidovaná regrese a identita balíčku po tomto doplnění se doloží po dokončení koordinace a ověřovacího rozsahu. Ochrana posuzuje stav před odesláním požadavku. Externí změna během již probíhajícího vzdáleného požadavku zůstává samostatnou hranicí.
+Kontrola typů všech workspace prošla. Nová konsolidovaná regrese a identita balíčku po doplnění koordinace a ověřovacího rozsahu jsou uvedeny níže. Ochrana posuzuje stav před odesláním požadavku. Externí změna během již probíhajícího vzdáleného požadavku zůstává samostatnou hranicí.
 
 ## Koordinace skutečných prostředků
 
@@ -93,14 +93,28 @@ Sdílená mutační fáze dovoluje různé soubory v témže projektu zapisovat 
 
 Po změně koordinace prošly oba původní skutečné R3 Git/non-Git průchody (2/2, ostatních devět testů příkazu bylo vynecháno filtrem).
 
-Tato evidence používá místní Windows fixtures. Konsolidovaný nový balíček a úplná sada zatím čekají; celý obecný koordinační a víceagentní produkt tím není uzavřený.
+Tato evidence používá místní Windows fixtures. Konsolidovaný nový balíček a úplná sada jsou doloženy níže; celý obecný koordinační a víceagentní produkt tím není uzavřený.
 
 ## Přesný pozorovaný rozsah kontrol
 
 Nový důkaz vyžaduje přesný marker `bounded-project-inputs-v3` v aktuálním i uloženém rozsahu. Starší záznam neztrácí původní běh ani výsledek, ale je označen jako zastaralý. Uživatelsky ignorovaný běžný vstup, kolize názvu souboru s metadaty, alias, binární či nadlimitní vstup neumožní úplnou klasifikaci. Úspěšná zpráva uvádí stejné pozorované vstupy projektu.
 
-Scope/classifier/store regrese prošly 9/9. Skutečný `r4-ts-workflow.test.ts` non-Git scénář prošel 1/1 (druhá varianta vynechána filtrem), včetně schválení skutečných příkazů, původního selhání, opravy, invalidace při změně a doplnění dat bez zdrojové přípony a návratu. Vnější změna zachová důkaz jen pro nezměněné pozorované vstupy. Pevně chráněné adresáře, tajné soubory, libovolné externí vstupy a závislosti obecného shell příkazu se tím neprokazují. Obecné sledování běhového I/O není implementováno; úplná `AC-O1-24` zůstává otevřená.
+Scope/classifier/store regrese prošly 9/9. Skutečný `r4-ts-workflow.test.ts` non-Git scénář prošel 1/1 (druhá varianta vynechána filtrem), včetně schválení skutečných příkazů, původního selhání, opravy, invalidace při změně a doplnění dat bez zdrojové přípony a návratu. Vnější změna zachová důkaz jen pro nezměněné pozorované vstupy po novém posouzení hashů. Pevně chráněné adresáře, tajné soubory, libovolné externí vstupy a závislosti obecného shell příkazu se tím neprokazují. `AC-O1-24` posuzuje deklarovaný rozsah recordu; obecné sledování běhového I/O není implementováno ani tímto výsledkem prohlašováno.
 
-První nové packaged pokusy `.r3-artifacts/packaged-gO4gpk` a `packaged-y0GxDU` zůstávají neúspěšné. Druhý bezpečný protokol určil `workflow-git / revert / TimeoutError`: sdílených 25 sekund vypršelo po dokončeném a ověřeném pětikrokovém běhu, před auditním voláním samotného návratu. Fixture vznikla v 14:47:31 UTC, běh skončil v 14:47:49.605 a timeout v 14:47:56. Skutečný zdrojový TS cyklus včetně návratu prošel za 35,85 s. Po přidání opakované validace kontextu má pouze testovací workflow limit 60 s a nadřazený proces 70 s; ostatní fáze mají původních 25/30 s. Příkazová oprávnění, produktové a worker limity se nemění. Bezpečný trace dalších pevných kroků zůstává dostupný; úspěch nového balíčku zatím není doložen.
+První nové packaged pokusy `.r3-artifacts/packaged-gO4gpk` a `packaged-y0GxDU` zůstávají neúspěšné. Druhý bezpečný protokol určil `workflow-git / revert / TimeoutError`: sdílených 25 sekund vypršelo po dokončeném a ověřeném pětikrokovém běhu, před auditním voláním samotného návratu. Fixture vznikla v 14:47:31 UTC, běh skončil v 14:47:49.605 a timeout v 14:47:56. Skutečný zdrojový TS cyklus včetně návratu prošel za 35,85 s. Po přidání opakované validace kontextu má pouze testovací workflow limit 60 s a nadřazený proces 70 s; ostatní fáze mají původních 25/30 s. Příkazová oprávnění, produktové a worker limity se nemění. Bezpečný trace dalších pevných kroků zůstává dostupný. Finální balíček níže následně prošel včetně návratu změn.
 
-Nová úplná sada měla 785 úspěšných, dva přeskočené a dva neúspěšné testy. Konfliktový test ještě mockoval původní úplné Git inspect místo indexové kontroly; nyní vytváří skutečný unmerged index ve fixture. Druhá regrese zbytečně nahrazovala bezpečný prázdný důvod pádu TS workeru stavem stale. Oprava zachová jen validovaný omezený diagnostický výsledek bez položek, obsahu a hashů. Výsledek s cílovým hashem se dál odstraní. Cílené regrese prošly 4/4 (18 vynecháno filtrem), včetně původního runtime po pádu workeru a změny politiky bez návratu starého obsahu. Nová úplná sada a packaged průchod čekají.
+Nová úplná sada měla 785 úspěšných, dva přeskočené a dva neúspěšné testy. Konfliktový test ještě mockoval původní úplné Git inspect místo indexové kontroly; nyní vytváří skutečný unmerged index ve fixture. Druhá regrese zbytečně nahrazovala bezpečný prázdný důvod pádu TS workeru stavem stale. Oprava zachová jen validovaný omezený diagnostický výsledek bez položek, obsahu a hashů. Výsledek s cílovým hashem se dál odstraní. Cílené regrese prošly 4/4 (18 vynecháno filtrem), včetně původního runtime po pádu workeru a změny politiky bez návratu starého obsahu. Poté následovalo finální ověření.
+
+## Finální důkaz doplnění — 19. listopadu 2026
+
+- Úplná regrese prošla: 788 úspěšných, dva přeskočené testy, 135 úspěšných a jeden přeskočený soubor, 522,25 s. Novější test dvou souběžných Git požadavků v `git-workflow.test.ts` prošel samostatně 1/1 (čtyři vynechány filtrem) a není připočten k této jediné úplné sadě. Přesně jeden požadavek provedl stage, druhý byl bezpečně odmítnut a nativní index zůstal koherentní.
+- Finální typy všech workspace, lint a kontrola závislostí prošly: 404 modulů / 1 378 hran. Node testy nativního resource zámku a eval bran prošly 5/5.
+- Stejný finální balíček prošel R3 8/8 v `.r3-artifacts/packaged-Z6GTyT/r3-report.json`, strukturní TS worker v `.r3-artifacts/r4-ts-worker-zDBZ4y/r4-typescript-worker-smoke.json` a desktopové otázky/reference/Git 3/3 za 54,07 s.
+
+Otisky SHA-256 finálního balíčku
+
+- Zdroj `d2bde68019763b4056ae4a33553bffbb89d481c4e7ae6d2455e10604d8c752b7`
+- Archiv ASAR `6418032f00a2f56e9e20a170a111ea2e1118325c099eda119bca5383fa2d19ad`
+- TS worker `043c2ac6c915b4c827a2f343421e7be1aa74ca5f70cce6da30bdba1115da04e4`
+
+Přírůstek uzavírá konkrétní mezery čerstvosti před modelovým tahem, koordinace skutečných prostředků a invalidace deklarovaných ověřovacích vstupů. [Matice](r4-requirement-matrix.md) tomu přizpůsobuje FR-CTX-05, FR-COORD-09/10/14 a AC-O1-22/23/24. Zachovává limity změn po odeslání požadavku, nepozorovaných runtime závislostí, jednoho balíčkovacího CLI na proces a samostatných záloh mezi procesy. Živý eval bez schváleného rozpočtu ani osobní přijetí nebyly provedeny. Celé R4 zůstává otevřené; sestavené binární soubory se necommitují.

@@ -39,3 +39,11 @@ Migrační důkaz prošel 1/1: dva procesy nad starším schématem používají
 Rozsah má přesný marker bounded-project-inputs-v3. Běžné uživatelské ignore pravidlo vytvářející nepozorovaný vstup, rezervovaný kořenový název metadat, binární či nadlimitní vstup nebo alias nepřipustí úplný důkaz tohoto profilu. Starší uložené záznamy zůstávají čitelné se svou proveniencí, ale potřebují nové ověření. Nejde o sledování běhového I/O: pevně chráněné adresáře, tajné soubory, závislosti a vstupy mimo kořen nejsou prohlášeny za pozorované.
 
 Cílené scope/classifier/store testy prošly 9/9. Skutečný TS non-Git cyklus prošel 1/1 (Git varianta vynechána filtrem): samostatné schválení, skutečné kontroly, původ neúspěšné kontroly, invalidace po změně souboru i nových textových dat, zachování stejného pozorovaného rozsahu po vnější nezávislé změně a bezpečný návrat. Poslední zachování je důkazem pouze uvnitř deklarovaného rozsahu, nikoli zárukou o libovolných shell závislostech. Původní skutečné R3 Git/non-Git cykly po koordinaci prošly 2/2.
+
+## Závěrečný stav — 19. listopadu 2026
+
+Všechny tři implementační skupiny jsou dokončené. Finální úplná sada prošla 788/2 skipped, typy/lint/závislosti prošly pro 404 modulů a 1 378 hran. Novější skutečný test dvou souběžných host.localGit požadavků prošel samostatně 1/1 a doplnil přesný AC-O1-22 spolu s nezávislými zápisy 2/2; není připočten k úplné sadě. Node resource/eval brány prošly 5/5.
+
+Finální balíček zdroje d2bde68019763b4056ae4a33553bffbb89d481c4e7ae6d2455e10604d8c752b7, ASAR 6418032f00a2f56e9e20a170a111ea2e1118325c099eda119bca5383fa2d19ad prošel R3 8/8 (`packaged-Z6GTyT`), TS worker (`r4-ts-worker-zDBZ4y`) a desktop otázky/reference/Git 3/3. Dřívější dva timeout pokusy a úplná sada 785/2 skipped/2 failed zůstávají v akceptačním záznamu včetně příčin a oprav. Testovací workflow rozpočet je nyní omezených 60/70 s kvůli opakované validaci kontextu; produktová oprávnění a worker limity zůstávají stejné.
+
+AC-O1-22 nevyžaduje koordinační UI a AC-O1-24 hodnotí deklarovaný rozsah zaznamenaných vstupů. Jejich důkazy jsou doplněné bez nové obecné podmínky runtime I/O tracingu. Placený eval, osobní přijetí a celý zbývající rozsah R4 tento plán neuzavírá. Podrobné limity a identita workeru jsou v docs/r4-acceptance.md.
