@@ -113,3 +113,31 @@ it('keeps Git unavailable when a configured external filter could execute', asyn
   expect(view.snapshotId).toBeNull();
   expect(f.git('log', '-1', '--format=%s').trim()).toBe('initial');
 });
+
+it('admits only one of two concurrent Git mutations against the same reviewed worktree snapshot', async () => {
+  const f=await fixture(),profile=await mkdtemp(join(tmpdir(),'codryn-r4-git-concurrent-'));
+  roots.push(profile);
+  const host=await createR3Infrastructure({userDataPath:profile,
+    runtimeFactory:()=>async()=>{throw new Error('Git fixture must not start an agent.');}});
+  try{
+    const project=await host.projects.open(f.root,f.signal);
+    await writeFile(f.path,'export const value = 2;\n');
+    await writeFile(join(f.root,'project','second.ts'),'export const second = 3;\n');
+    const paths=['project/file.ts','project/second.ts'];
+    const view=await host.localGit.status(project.id,f.signal);
+    if(!view.snapshotId)throw new Error('Missing snapshot.');
+    const snapshotId=view.snapshotId;
+    const outcomes=await Promise.allSettled(paths.map(path=>
+      host.localGit.mutate(project.id,randomUUID(),'stage',snapshotId,path,f.signal)));
+    expect(outcomes.filter(item=>item.status==='fulfilled')).toHaveLength(1);
+    const refused=outcomes.find(item=>item.status==='rejected');
+    expect(refused?.status==='rejected'&&refused.reason instanceof Error?refused.reason.message:'').toMatch(/^R3_(PROJECT_BUSY|STALE_VIEW)$/u);
+    const accepted=outcomes.findIndex(item=>item.status==='fulfilled');
+    expect(f.git('diff','--cached','--name-only','-z').split('\0').filter(Boolean)).toEqual([paths[accepted]]);
+    expect(f.git('ls-files','--unmerged')).toBe('');
+    expect(f.git('diff','--cached','--check')).toBe('');
+    expect(await readFile(f.path,'utf8')).toBe('export const value = 2;\n');
+    expect(await readFile(join(f.root,'project','second.ts'),'utf8')).toBe('export const second = 3;\n');
+    expect(f.git('log','-1','--format=%s').trim()).toBe('initial');
+  }finally{await host.shutdown(AbortSignal.timeout(10000));host.close();}
+},60000);
