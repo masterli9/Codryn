@@ -1,5 +1,13 @@
 # R4 — ověření návaznosti chatu
 
+## Oprava modelové historie — 21. listopadu 2026
+
+Při invalidaci zdrojů se trvale chrání tehdejší historické tahy a invalidované výsledky. Novější čerstvá čtení zachovávají své argumenty a výsledky; staré argumenty patchů zůstávají redigované. Změny politiky, souběžné úpravy, návrat politiky i obnova po otázce mají cílené regrese. Bezpečnostní review vyžádalo doplnění trvalé invalidace výsledků příkazů a zachování markerů po obnovení. Hranice historie předpokládá současný model postupného přidávání tahů, nikoli přeuspořádání nebo zkracování.
+
+Testy freshness, navazujícího modelového toku a otázek prošly 17/17; kontrola typů, lint a hranice závislostí prošly (405 modulů / 1 383 hran). Úplná sada skončila 798 passed / 4 skipped ve 136 souborech (469,65 s). Offline eval po opravě prošel 9/9. Omezený živý eval prošel prvními dvěma úlohami v Git a non-Git režimu; sedm dalších zastavil rozpočet před prvním požadavkem. Podrobnosti a limity jsou v [reportu](r4-eval-report.md).
+
+Nově sestavený balíček prošel R3 8/8 (`.r3-artifacts/packaged-n4FsXb/r3-report.json`) a TS workerem (`.r3-artifacts/r4-ts-worker-rv41Ae/r4-typescript-worker-smoke.json`). Ověřená identita: zdroj `09f09211dda5b397e57efa762a3c06c25589825a17477dc38454766fc5efe546`, ASAR `e4018c0a1301ee01210f55fcd139c155a6123a963c3ce21d2878513f87a35285`, EXE `3d37a2cdfe213883e59024cb82b84707de4930ccd9e27c2020122e3f9b2c8328`. Celé R4 a osobní přijetí zůstávají otevřené.
+
 ## Doplnění evidence — 21. listopadu 2026
 
 Byly doplněny integrační test Git stavů a diffů, samostatná kontrola jejich projekce v panelu a regrese změny politiky při TS dotazu a obnově repo mapy. Cílené testy Git workflow prošly 6/6, panel 2/2 a TS runtime/mapa 10/10. Test eval fixture potvrzuje úplný pozorovaný rozsah běžného případu a jeho záměrnou neúplnost u ignorované cesty.
