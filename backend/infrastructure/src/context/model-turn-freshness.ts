@@ -27,6 +27,8 @@ function emptyWorkerFailure(result: ToolResult): boolean {
 /** Revalidates previously obtained data. It never executes a model tool. */
 export class ModelTurnFreshness {
   private readonly searches = new Map<string, ContextStamp | null>();
+  private readonly invalidatedResultIds = new Set<string>();
+  private redactedHistoryLength = 0;
   private revision: string | null = null;
   private first = true;
   private allowPriorConversation = true;
@@ -50,10 +52,24 @@ export class ModelTurnFreshness {
     const calls = new Map(history.flatMap(turn => turn.kind === 'assistant' ? turn.calls.map(call => [call.callId, call] as const) : []));
     const staleIds = new Set<string>();
     const safeDiagnostics = new Set<string>();
-    for (const turn of history) {
+    let recoveredStaleMarker=false;
+    for (const [index,turn] of history.entries()) {
+      if (turn.kind !== 'tool' || !this.isStaleMarker(turn.result)) continue;
+      const call = calls.get(turn.result.callId);
+      if (call && call.toolId!=='ask_user') {
+        recoveredStaleMarker=true;
+        this.redactedHistoryLength=Math.max(this.redactedHistoryLength,index+1);
+        this.invalidatedResultIds.add(call.callId);
+      }
+    }
+    for (const [index,turn] of history.entries()) {
       if (turn.kind !== 'tool') continue;
       const call = calls.get(turn.result.callId);
       if (!call || call.toolId === 'ask_user') continue;
+      if (index < this.redactedHistoryLength && sourceTools.has(call.toolId)) {
+        if(call.toolId==='typescript.query'&&emptyWorkerFailure(turn.result))safeDiagnostics.add(call.callId);
+        continue;
+      }
       if(call.toolId==='typescript.query'&&emptyWorkerFailure(turn.result)){
         safeDiagnostics.add(call.callId);continue;
       }
@@ -71,6 +87,7 @@ export class ModelTurnFreshness {
       }
     }
     const context: ModelRequest['context'] = [];
+    let contextInvalidated=false;
     for (const source of request.context) {
       // A confirmed exception authorizes its initial assembly only. Later turns
       // reassemble under current policy and never reuse the consumed permit.
@@ -80,20 +97,33 @@ export class ModelTurnFreshness {
         const identity = await readReferenceIdentity(this.root, source.path, this.policy, initiallyPermitted?'explicit_file':'context', signal,
           initiallyPermitted?{allow:initiallyPermitted}:undefined);
         if (identity.status === 'ready' && identity.reference.contentHash === source.contentHash) context.push(source);
+        else contextInvalidated=true;
       } else if (this.policy.decide(source.path, 'context', {kind:'file'}).allowed
         && before.inputHashes?.[source.path] === source.contentHash) context.push(source);
+      else contextInvalidated=true;
     }
     const after = await this.observe(signal);
     const raced = before.fingerprint!==after.fingerprint || before.watcherGeneration!==after.watcherGeneration;
     if (await this.policy.refresh() !== policyRevision) throw new ContextAssemblyFailure('R4_CONTEXT_POLICY_CHANGED');
     if (raced) for (const call of calls.values()) if (sourceTools.has(call.toolId)&&!safeDiagnostics.has(call.callId)) staleIds.add(call.callId);
+    for(const callId of staleIds)this.invalidatedResultIds.add(callId);
     const contextIdentity=JSON.stringify(context.map(source=>[source.path,source.contentHash,source.reason]));
     const contextChanged=this.contextIdentity!==null&&this.contextIdentity!==contextIdentity;
     const stale = policyChanged || contextChanged || raced || staleIds.size > 0 || context.length !== request.context.length;
-    const cleaned: ModelTurn[] = history.map(turn => {
-      if (turn.kind === 'assistant') return { ...turn, text: stale ? '' : turn.text,
-        calls: turn.calls.map(call => stale || call.toolId === 'file.patch' ? {...call,arguments:{historical:true}} : call) };
-      return staleIds.has(turn.result.callId) ? {kind:'tool',result:this.staleResult(turn.result,calls.get(turn.result.callId),policyChanged)} : turn;
+    const sourceInvalidated=recoveredStaleMarker||staleIds.size>0||contextInvalidated
+      || (policyChanged&&Boolean(request.priorConversation?.length))
+      || (stale&&[...calls.values()].some(call=>sourceTools.has(call.toolId)));
+    if (sourceInvalidated) this.allowPriorConversation=false;
+    if (stale) this.redactedHistoryLength=Math.max(this.redactedHistoryLength,history.length);
+    const cleaned: ModelTurn[] = history.map((turn,index) => {
+      if (turn.kind === 'assistant') return {
+        ...turn,
+        ...(index < this.redactedHistoryLength ? {text:''} : {}),
+        calls: turn.calls.map(call => index < this.redactedHistoryLength || call.toolId==='file.patch'
+          ? {...call,arguments:{historical:true}} : call)
+      };
+      return this.invalidatedResultIds.has(turn.result.callId)
+        ? {kind:'tool',result:this.staleResult(turn.result,calls.get(turn.result.callId),policyChanged)} : turn;
     });
     this.revision = policyRevision;
     this.first = false;
@@ -103,8 +133,13 @@ export class ModelTurnFreshness {
       previousToolResults: cleaned.flatMap(turn => turn.kind === 'tool' ? [turn.result] : []),
       ...(this.allowPriorConversation && priorConversation ? {priorConversation} : {}) };
   }
+  private isStaleMarker(result: ToolResult): boolean {
+    if (!result.ok) return false;
+    const output=object(result.output);
+    return output.status==='stale';
+  }
   private staleResult(result: ToolResult, call: ModelToolCall | undefined, policyChanged: boolean): ToolResult {
     return { ok:true,callId:result.callId,output:{status:'stale',reason:policyChanged?'policy_changed':'source_changed_or_unproven',
-      toolId:call?.toolId??'unknown',needsFreshRead:true} };
+      toolId:call?.toolId??'unknown',...(call&&sourceTools.has(call.toolId)?{needsFreshRead:true}:{needsFreshExecution:true})} };
   }
 }

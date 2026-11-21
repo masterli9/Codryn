@@ -1,0 +1,705 @@
+{
+  "schemaVersion": 1,
+  "sourceHash": "09f09211dda5b397e57efa762a3c06c25589825a17477dc38454766fc5efe546",
+  "evalIdentity": {
+    "runnerSha256": "b61412cc812b8abd08444d9b4fdc9c2651626e9db19b52957fc405d375a3924c",
+    "fixtureBuilderSha256": "ed8fdbcb1b76ced91108a905cde0683f7a98214b5045c46c2ff4a1dee0769ddd",
+    "counterOracleSha256": "fe79d9755d547b6c15f875f74e99b77a5d3038d562ba67ba2d9ebc1aace9d206",
+    "budgetSha256": "d99ff75377e37cf1253a01dc8dba55a4ba1cd7b98e9b9fcb3467f83191565d20",
+    "safeOutputSha256": "5744552f9a9a36eabebb55e406f73af7a523716df3b0ab529e99e87244066552",
+    "reportSchemaSha256": "1244729b595b31d705a967513d822599f0cf0758d8ffa4c8401f9eac1bddc9ac",
+    "r4ModelEvalDiagnosticsSha256": "ac37280596e35b862803f2093397754c563602d05cd91f1288b99ec0afa8c4ff"
+  },
+  "counterOracle": {
+    "kind": "bounded_expression_ast",
+    "input": 1,
+    "expected": 2,
+    "scope": "exported one-parameter function or arrow with a single return expression; numeric literals, parameter, parentheses and + - * / % **"
+  },
+  "series": "offline",
+  "diagnostics": [
+    {
+      "id": "counter-git",
+      "runState": "finished",
+      "runFailureCode": null,
+      "resultStatus": "completed",
+      "verificationStatus": "verified",
+      "questionTotal": 0,
+      "counterOracleStatus": "verified",
+      "commandExitCodes": [
+        0,
+        0
+      ],
+      "modelToolIds": [
+        "file.read",
+        "file.patch",
+        "command.run",
+        "command.run"
+      ],
+      "toolAudit": [
+        {
+          "toolId": "file.read",
+          "state": "succeeded",
+          "errorCode": null
+        },
+        {
+          "toolId": "file.patch",
+          "state": "succeeded",
+          "errorCode": null
+        },
+        {
+          "toolId": "command.run",
+          "state": "succeeded",
+          "errorCode": null
+        },
+        {
+          "toolId": "command.run",
+          "state": "succeeded",
+          "errorCode": null
+        }
+      ],
+      "fileReadCalls": [
+        {
+          "fields": [
+            {
+              "name": "path",
+              "type": "string"
+            }
+          ],
+          "unknownFieldCount": 0,
+          "reasons": [],
+          "rejected": false
+        }
+      ],
+      "staleResultsByTurn": [
+        {
+          "turn": 1,
+          "previousToolResultCount": 0,
+          "staleResultCount": 0
+        },
+        {
+          "turn": 2,
+          "previousToolResultCount": 1,
+          "staleResultCount": 0
+        },
+        {
+          "turn": 3,
+          "previousToolResultCount": 2,
+          "staleResultCount": 1
+        },
+        {
+          "turn": 4,
+          "previousToolResultCount": 3,
+          "staleResultCount": 1
+        },
+        {
+          "turn": 5,
+          "previousToolResultCount": 4,
+          "staleResultCount": 1
+        }
+      ],
+      "validatedToolArgumentsAndQuestions": 4,
+      "rejectedInputCount": 0
+    },
+    {
+      "id": "counter-non-git",
+      "runState": "finished",
+      "runFailureCode": null,
+      "resultStatus": "completed",
+      "verificationStatus": "verified",
+      "questionTotal": 0,
+      "counterOracleStatus": "verified",
+      "commandExitCodes": [
+        0,
+        0
+      ],
+      "modelToolIds": [
+        "file.read",
+        "file.patch",
+        "command.run",
+        "command.run"
+      ],
+      "toolAudit": [
+        {
+          "toolId": "file.read",
+          "state": "succeeded",
+          "errorCode": null
+        },
+        {
+          "toolId": "file.patch",
+          "state": "succeeded",
+          "errorCode": null
+        },
+        {
+          "toolId": "command.run",
+          "state": "succeeded",
+          "errorCode": null
+        },
+        {
+          "toolId": "command.run",
+          "state": "succeeded",
+          "errorCode": null
+        }
+      ],
+      "fileReadCalls": [
+        {
+          "fields": [
+            {
+              "name": "path",
+              "type": "string"
+            }
+          ],
+          "unknownFieldCount": 0,
+          "reasons": [],
+          "rejected": false
+        }
+      ],
+      "staleResultsByTurn": [
+        {
+          "turn": 1,
+          "previousToolResultCount": 0,
+          "staleResultCount": 0
+        },
+        {
+          "turn": 2,
+          "previousToolResultCount": 1,
+          "staleResultCount": 0
+        },
+        {
+          "turn": 3,
+          "previousToolResultCount": 2,
+          "staleResultCount": 1
+        },
+        {
+          "turn": 4,
+          "previousToolResultCount": 3,
+          "staleResultCount": 1
+        },
+        {
+          "turn": 5,
+          "previousToolResultCount": 4,
+          "staleResultCount": 1
+        }
+      ],
+      "validatedToolArgumentsAndQuestions": 4,
+      "rejectedInputCount": 0
+    },
+    {
+      "id": "continuation",
+      "runState": "finished",
+      "runFailureCode": null,
+      "resultStatus": "completed",
+      "verificationStatus": "unverified",
+      "questionTotal": 0,
+      "counterOracleStatus": "not_applicable",
+      "commandExitCodes": [],
+      "modelToolIds": [
+        "file.read",
+        "file.read"
+      ],
+      "toolAudit": [
+        {
+          "toolId": "file.read",
+          "state": "succeeded",
+          "errorCode": null
+        },
+        {
+          "toolId": "file.read",
+          "state": "succeeded",
+          "errorCode": null
+        }
+      ],
+      "fileReadCalls": [
+        {
+          "fields": [
+            {
+              "name": "path",
+              "type": "string"
+            }
+          ],
+          "unknownFieldCount": 0,
+          "reasons": [],
+          "rejected": false
+        },
+        {
+          "fields": [
+            {
+              "name": "path",
+              "type": "string"
+            }
+          ],
+          "unknownFieldCount": 0,
+          "reasons": [],
+          "rejected": false
+        }
+      ],
+      "staleResultsByTurn": [
+        {
+          "turn": 1,
+          "previousToolResultCount": 0,
+          "staleResultCount": 0
+        },
+        {
+          "turn": 2,
+          "previousToolResultCount": 1,
+          "staleResultCount": 0
+        },
+        {
+          "turn": 3,
+          "previousToolResultCount": 0,
+          "staleResultCount": 0
+        },
+        {
+          "turn": 4,
+          "previousToolResultCount": 1,
+          "staleResultCount": 0
+        }
+      ],
+      "validatedToolArgumentsAndQuestions": 2,
+      "rejectedInputCount": 0
+    },
+    {
+      "id": "ignored-reference",
+      "runState": "finished",
+      "runFailureCode": null,
+      "resultStatus": "failed",
+      "verificationStatus": "unverified",
+      "questionTotal": 0,
+      "counterOracleStatus": "not_applicable",
+      "commandExitCodes": [],
+      "modelToolIds": [
+        "file.read"
+      ],
+      "toolAudit": [
+        {
+          "toolId": "file.read",
+          "state": "failed",
+          "errorCode": "R1_TOOL_EXECUTION_FAILED"
+        }
+      ],
+      "fileReadCalls": [
+        {
+          "fields": [
+            {
+              "name": "path",
+              "type": "string"
+            }
+          ],
+          "unknownFieldCount": 0,
+          "reasons": [],
+          "rejected": false
+        }
+      ],
+      "staleResultsByTurn": [
+        {
+          "turn": 1,
+          "previousToolResultCount": 0,
+          "staleResultCount": 0
+        },
+        {
+          "turn": 2,
+          "previousToolResultCount": 1,
+          "staleResultCount": 0
+        }
+      ],
+      "validatedToolArgumentsAndQuestions": 1,
+      "rejectedInputCount": 0
+    },
+    {
+      "id": "stale-patch",
+      "runState": "finished",
+      "runFailureCode": null,
+      "resultStatus": "completed",
+      "verificationStatus": "verified",
+      "questionTotal": 0,
+      "counterOracleStatus": "verified",
+      "commandExitCodes": [
+        0,
+        0
+      ],
+      "modelToolIds": [
+        "file.read",
+        "file.patch",
+        "file.read",
+        "file.patch",
+        "command.run",
+        "command.run"
+      ],
+      "toolAudit": [
+        {
+          "toolId": "file.read",
+          "state": "succeeded",
+          "errorCode": null
+        },
+        {
+          "toolId": "file.patch",
+          "state": "succeeded",
+          "errorCode": null
+        },
+        {
+          "toolId": "file.read",
+          "state": "succeeded",
+          "errorCode": null
+        },
+        {
+          "toolId": "file.patch",
+          "state": "succeeded",
+          "errorCode": null
+        },
+        {
+          "toolId": "command.run",
+          "state": "succeeded",
+          "errorCode": null
+        },
+        {
+          "toolId": "command.run",
+          "state": "succeeded",
+          "errorCode": null
+        }
+      ],
+      "fileReadCalls": [
+        {
+          "fields": [
+            {
+              "name": "path",
+              "type": "string"
+            }
+          ],
+          "unknownFieldCount": 0,
+          "reasons": [],
+          "rejected": false
+        },
+        {
+          "fields": [
+            {
+              "name": "path",
+              "type": "string"
+            }
+          ],
+          "unknownFieldCount": 0,
+          "reasons": [],
+          "rejected": false
+        }
+      ],
+      "staleResultsByTurn": [
+        {
+          "turn": 1,
+          "previousToolResultCount": 0,
+          "staleResultCount": 0
+        },
+        {
+          "turn": 2,
+          "previousToolResultCount": 1,
+          "staleResultCount": 0
+        },
+        {
+          "turn": 3,
+          "previousToolResultCount": 2,
+          "staleResultCount": 1
+        },
+        {
+          "turn": 4,
+          "previousToolResultCount": 3,
+          "staleResultCount": 1
+        },
+        {
+          "turn": 5,
+          "previousToolResultCount": 4,
+          "staleResultCount": 2
+        },
+        {
+          "turn": 6,
+          "previousToolResultCount": 5,
+          "staleResultCount": 2
+        },
+        {
+          "turn": 7,
+          "previousToolResultCount": 6,
+          "staleResultCount": 2
+        }
+      ],
+      "validatedToolArgumentsAndQuestions": 6,
+      "rejectedInputCount": 0
+    },
+    {
+      "id": "question",
+      "runState": "finished",
+      "runFailureCode": null,
+      "resultStatus": "completed",
+      "verificationStatus": "verified",
+      "questionTotal": 1,
+      "counterOracleStatus": "verified",
+      "commandExitCodes": [
+        0,
+        0
+      ],
+      "modelToolIds": [
+        "ask_user",
+        "file.read",
+        "file.patch",
+        "command.run",
+        "command.run"
+      ],
+      "toolAudit": [
+        {
+          "toolId": "file.read",
+          "state": "succeeded",
+          "errorCode": null
+        },
+        {
+          "toolId": "file.patch",
+          "state": "succeeded",
+          "errorCode": null
+        },
+        {
+          "toolId": "command.run",
+          "state": "succeeded",
+          "errorCode": null
+        },
+        {
+          "toolId": "command.run",
+          "state": "succeeded",
+          "errorCode": null
+        }
+      ],
+      "fileReadCalls": [
+        {
+          "fields": [
+            {
+              "name": "path",
+              "type": "string"
+            }
+          ],
+          "unknownFieldCount": 0,
+          "reasons": [],
+          "rejected": false
+        }
+      ],
+      "staleResultsByTurn": [
+        {
+          "turn": 1,
+          "previousToolResultCount": 0,
+          "staleResultCount": 0
+        },
+        {
+          "turn": 2,
+          "previousToolResultCount": 1,
+          "staleResultCount": 0
+        },
+        {
+          "turn": 3,
+          "previousToolResultCount": 2,
+          "staleResultCount": 0
+        },
+        {
+          "turn": 4,
+          "previousToolResultCount": 3,
+          "staleResultCount": 1
+        },
+        {
+          "turn": 5,
+          "previousToolResultCount": 4,
+          "staleResultCount": 1
+        },
+        {
+          "turn": 6,
+          "previousToolResultCount": 5,
+          "staleResultCount": 1
+        }
+      ],
+      "validatedToolArgumentsAndQuestions": 5,
+      "rejectedInputCount": 0
+    },
+    {
+      "id": "repair-after-error",
+      "runState": "finished",
+      "runFailureCode": null,
+      "resultStatus": "completed",
+      "verificationStatus": "verified",
+      "questionTotal": 0,
+      "counterOracleStatus": "verified",
+      "commandExitCodes": [
+        1,
+        0,
+        0
+      ],
+      "modelToolIds": [
+        "command.run",
+        "file.read",
+        "file.patch",
+        "command.run",
+        "command.run"
+      ],
+      "toolAudit": [
+        {
+          "toolId": "command.run",
+          "state": "succeeded",
+          "errorCode": null
+        },
+        {
+          "toolId": "file.read",
+          "state": "succeeded",
+          "errorCode": null
+        },
+        {
+          "toolId": "file.patch",
+          "state": "succeeded",
+          "errorCode": null
+        },
+        {
+          "toolId": "command.run",
+          "state": "succeeded",
+          "errorCode": null
+        },
+        {
+          "toolId": "command.run",
+          "state": "succeeded",
+          "errorCode": null
+        }
+      ],
+      "fileReadCalls": [
+        {
+          "fields": [
+            {
+              "name": "path",
+              "type": "string"
+            }
+          ],
+          "unknownFieldCount": 0,
+          "reasons": [],
+          "rejected": false
+        }
+      ],
+      "staleResultsByTurn": [
+        {
+          "turn": 1,
+          "previousToolResultCount": 0,
+          "staleResultCount": 0
+        },
+        {
+          "turn": 2,
+          "previousToolResultCount": 1,
+          "staleResultCount": 0
+        },
+        {
+          "turn": 3,
+          "previousToolResultCount": 2,
+          "staleResultCount": 0
+        },
+        {
+          "turn": 4,
+          "previousToolResultCount": 3,
+          "staleResultCount": 1
+        },
+        {
+          "turn": 5,
+          "previousToolResultCount": 4,
+          "staleResultCount": 1
+        },
+        {
+          "turn": 6,
+          "previousToolResultCount": 5,
+          "staleResultCount": 1
+        }
+      ],
+      "validatedToolArgumentsAndQuestions": 5,
+      "rejectedInputCount": 0
+    },
+    {
+      "id": "planning",
+      "runState": "finished",
+      "runFailureCode": null,
+      "resultStatus": "completed",
+      "verificationStatus": "unverified",
+      "questionTotal": 0,
+      "counterOracleStatus": "not_applicable",
+      "commandExitCodes": [],
+      "modelToolIds": [
+        "file.read"
+      ],
+      "toolAudit": [
+        {
+          "toolId": "file.read",
+          "state": "succeeded",
+          "errorCode": null
+        }
+      ],
+      "fileReadCalls": [
+        {
+          "fields": [
+            {
+              "name": "path",
+              "type": "string"
+            }
+          ],
+          "unknownFieldCount": 0,
+          "reasons": [],
+          "rejected": false
+        }
+      ],
+      "staleResultsByTurn": [
+        {
+          "turn": 1,
+          "previousToolResultCount": 0,
+          "staleResultCount": 0
+        },
+        {
+          "turn": 2,
+          "previousToolResultCount": 1,
+          "staleResultCount": 0
+        }
+      ],
+      "validatedToolArgumentsAndQuestions": 1,
+      "rejectedInputCount": 0
+    },
+    {
+      "id": "verification",
+      "runState": "finished",
+      "runFailureCode": null,
+      "resultStatus": "completed",
+      "verificationStatus": "unverified",
+      "questionTotal": 0,
+      "counterOracleStatus": "verified",
+      "commandExitCodes": [
+        0,
+        0
+      ],
+      "modelToolIds": [
+        "command.run",
+        "command.run"
+      ],
+      "toolAudit": [
+        {
+          "toolId": "command.run",
+          "state": "succeeded",
+          "errorCode": null
+        },
+        {
+          "toolId": "command.run",
+          "state": "succeeded",
+          "errorCode": null
+        }
+      ],
+      "fileReadCalls": [],
+      "staleResultsByTurn": [
+        {
+          "turn": 1,
+          "previousToolResultCount": 0,
+          "staleResultCount": 0
+        },
+        {
+          "turn": 2,
+          "previousToolResultCount": 1,
+          "staleResultCount": 0
+        },
+        {
+          "turn": 3,
+          "previousToolResultCount": 2,
+          "staleResultCount": 0
+        }
+      ],
+      "validatedToolArgumentsAndQuestions": 2,
+      "rejectedInputCount": 0
+    }
+  ]
+}

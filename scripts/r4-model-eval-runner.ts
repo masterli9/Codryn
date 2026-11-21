@@ -3,7 +3,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve, relative, isAbsolute } from 'node:path';
-import { r3ModelDescriptor, type ModelAdapter, type SecretProtector } from '@codryn/core';
+import { fileReadInputSchema, r3ModelDescriptor, type ModelAdapter, type SecretProtector } from '@codryn/core';
 import { createR3Infrastructure, createDesktopRuntimeFactory, FetchProviderTransport, OpenAIResponsesAdapter, UuidGenerator } from '@codryn/infrastructure';
 import type { ProviderTransport } from '@codryn/infrastructure';
 import { builtinWorkflowSchema, type ModelRequest, type JsonValue } from '@codryn/shared';
@@ -13,6 +13,7 @@ import { isSafeR4EvalId, r4EvalReportSchema } from './r4-eval-report.mjs';
 import { R4RequestBudget } from './r4-eval-budget.mjs';
 import { writeR4EvalOutput } from './r4-safe-output.mjs';
 import { counterOracle } from './r4-counter-oracle.mjs';
+import { diagnoseFileReadArguments, summarizeStaleResultsByTurn } from './r4-model-eval-diagnostics.mjs';
 
 interface EvalCase { id: string; mode: 'git'|'non-git'; variant: string; prompt: string; expected: string; workflow?: string }
 const diagnosticToolIds = new Set(['file.read','file.patch','text.search','command.run','typescript.query','change.revert','ask_user']);
@@ -49,7 +50,8 @@ const evalIdentity = {
   counterOracleSha256: hash(await readFile(new URL('./r4-counter-oracle.mjs', import.meta.url))),
   budgetSha256: hash(await readFile(new URL('./r4-eval-budget.mjs', import.meta.url))),
   safeOutputSha256: hash(await readFile(new URL('./r4-safe-output.mjs', import.meta.url))),
-  reportSchemaSha256: hash(await readFile(new URL('./r4-eval-report.mjs', import.meta.url)))
+  reportSchemaSha256: hash(await readFile(new URL('./r4-eval-report.mjs', import.meta.url))),
+  r4ModelEvalDiagnosticsSha256: hash(await readFile(new URL('./r4-model-eval-diagnostics.mjs', import.meta.url)))
 };
 
 // Test-owned profiles use an ephemeral authenticated key. No provider key is
@@ -77,6 +79,8 @@ try {
       execFileSync('git',command,{cwd:projectRoot,windowsHide:true,timeout:5000,stdio:'ignore'});
     }
     const trace: {toolId:string}[] = [], captured:ModelRequest[]=[];
+    const fileReadShapes: {callId:string;shape:ReturnType<typeof diagnoseFileReadArguments>}[] = [];
+    const fileReadRejections = new Map<string,string|null>();
     let inputTokens=0,outputTokens=0,reasoningTokens=0,usageKnown=true,reasoningKnown=true,actualCost=0,requestCount=0;
     let budgetHit=false,validArguments=0,projectId:string|undefined,runFailureCode:string|null=null,runState:string|null=null;
     let resultStatus:string|null=null,verificationStatus:string|null=null,questionTotal=0,counterOracleStatus:'verified'|'mismatch'|'unsupported'|'not_applicable'='not_applicable';
@@ -149,6 +153,7 @@ try {
               for await(const event of chosen.stream(request,signal)){
                 if(event.type==='tool_call'){
                   trace.push({toolId:event.call.toolId});
+                  if(event.call.toolId==='file.read')fileReadShapes.push({callId:event.call.callId,shape:diagnoseFileReadArguments(event.call.arguments,fileReadInputSchema)});
                   if(item.variant==='stale'&&event.call.toolId==='file.patch'&&!staleInjected){
                     await writeFile(join(projectRoot,'src/counter.ts'),fixtureSource+'// external edit\n');staleInjected=true;
                   }
@@ -226,11 +231,12 @@ try {
     finally{if(host){
       try {
         if(projectId){
-          const rows=host.resources.database.prepare('SELECT tool_id,state,error_code FROM tool_calls WHERE project_id=? ORDER BY created_at,call_id').all(projectId);
+          const rows=host.resources.database.prepare('SELECT call_id,tool_id,state,error_code FROM tool_calls WHERE project_id=? ORDER BY created_at,call_id').all(projectId);
           for(const row of rows){
             const toolId=typeof row.tool_id==='string'&&diagnosticToolIds.has(row.tool_id)?row.tool_id:'unknown';
             const state=typeof row.state==='string'&&diagnosticToolStates.has(row.state)?row.state:'unknown';
             const code=typeof row.error_code==='string'?(diagnosticErrorCodes.has(row.error_code)?row.error_code:'OTHER_FAILURE'):null;
+            if(row.tool_id==='file.read'&&typeof row.call_id==='string')fileReadRejections.set(row.call_id,code);
             toolAudit.push({toolId,state,errorCode:code});
           }
         }
@@ -250,8 +256,13 @@ try {
         }
       }
     }}
+    const fileReadCalls=fileReadShapes.map(({callId,shape})=>{
+      const rejected=fileReadRejections.get(callId)==='R1_TOOL_INPUT_INVALID';
+      return { ...shape, rejected, reasons:shape.reasons.length?shape.reasons:rejected?['pre_schema_safety_check']:[] };
+    });
     diagnostics.push({id:item.id,runState,runFailureCode,resultStatus,verificationStatus,questionTotal,counterOracleStatus,commandExitCodes,
       modelToolIds:trace.map(call=>diagnosticToolIds.has(call.toolId)?call.toolId:'unknown'),toolAudit,
+      fileReadCalls,staleResultsByTurn:summarizeStaleResultsByTurn(captured),
       validatedToolArgumentsAndQuestions:validArguments,
       rejectedInputCount:toolAudit.filter(row=>row.errorCode==='R1_TOOL_INPUT_INVALID').length});
     results.push({id:item.id,success,taskCompleted,recovery,failureOwner:success?null:owner,reason,toolCalls:trace.length,

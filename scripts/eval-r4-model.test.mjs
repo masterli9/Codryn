@@ -16,6 +16,11 @@ test('the frozen nine-case offline report has consistent metrics and unknown mod
   assert.equal(report.datasetHash,createHash('sha256').update(bytes).digest('hex'));
   assert.deepEqual(report.results.map(item=>item.id),dataset.cases.map(item=>item.id));
   assert.equal(r4EvalReportSchema.safeParse(report).success,true);
+  if (report.evalIdentity) assert.equal(Object.hasOwn(report.evalIdentity,'r4ModelEvalDiagnosticsSha256'),false);
+  const legacyIdentity = { runnerSha256:'a'.repeat(64),fixtureBuilderSha256:'b'.repeat(64),counterOracleSha256:'c'.repeat(64),budgetSha256:'d'.repeat(64),safeOutputSha256:'e'.repeat(64),reportSchemaSha256:'f'.repeat(64) };
+  assert.equal(r4EvalReportSchema.safeParse({ ...report, evalIdentity: legacyIdentity }).success,true);
+  assert.equal(r4EvalReportSchema.safeParse({ ...report, evalIdentity: { ...legacyIdentity, r4ModelEvalDiagnosticsSha256: '1'.repeat(64) } }).success,true);
+  assert.equal(r4EvalReportSchema.safeParse({ ...report, evalIdentity: { ...legacyIdentity, r4ModelEvalDiagnosticsSha256: 'invalid' } }).success,false);
   assert.equal(r4EvalReportSchema.safeParse({...report,passed:100}).success,false);
   assert.equal(r4EvalReportSchema.safeParse({...report,evalIdentity:{runnerSha256:'a'.repeat(64),fixtureBuilderSha256:'b'.repeat(64),counterOracleSha256:'c'.repeat(64),budgetSha256:'d'.repeat(64),safeOutputSha256:'e'.repeat(64),reportSchemaSha256:'f'.repeat(64)}}).success,true);
   const wrong=JSON.parse(JSON.stringify(report));wrong.results[0].validArguments=wrong.results[0].toolCalls+1;
