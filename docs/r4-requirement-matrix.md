@@ -6,7 +6,7 @@ Nový integrační Git test pokrývá staged, unstaged, nový, smazaný a konfli
 
 Nové kontextové regrese pokrývají změnu `.codrynignore` během TypeScript dotazu a invalidaci a obnovu repo mapy. Neuzavírají samy společnou AC-O1-27. Cílený vizuální a klávesnicový průchod popisuje [záznam](evidence/r3-r4-visual-pass-2026-11-21-v1.md); osobní přijetí ani skutečné systémové dialogy tím nejsou nahrazeny.
 
-Dva živé evaly a opravu jejich fixture popisuje [report](r4-eval-report.md). Druhý živý průchod skončil 2/9; dva případy splnily očekávání a tři omezila rozpočtová brána. `FR-LLM-12` a `AC-O1-25` zůstávají otevřené. Offline sada po opravě fixture a vyhodnocovače prošla 9/9, ale neprokazuje rozhodování skutečného modelu.
+Živé evaly a opravu jejich fixture popisuje [report](r4-eval-report.md). Po opravě freshness prošly v omezeném živém běhu obě první úlohy (Git i non-Git); sedm dalších případů zastavila rozpočtová brána před prvním požadavkem. `FR-LLM-12` a `AC-O1-25` zůstávají otevřené. Offline sada po opravě prošla 9/9, ale neprokazuje rozhodování skutečného modelu.
 
 Autoritou jsou PRD_v1.1.md a roadmapa §8. Zahrnuty jsou všechny funkční M/O1 řádky, aby R4 nepřevzala dřívější základ bez kontroly. Stav passed je omezený uvedeným důkazem. Stav open zachovává konkrétní neprovedené přijetí nebo chybějící důkaz. R4 zůstává otevřená.
 
