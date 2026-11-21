@@ -1,5 +1,13 @@
 # Důkazní matice R4
 
+## Průběžné doplnění — 21. listopadu 2026
+
+Nový integrační Git test pokrývá staged, unstaged, nový, smazaný a konfliktní soubor včetně diffů; komponentový test panelu prověřuje zobrazení všech stavů a předání požadavku na příslušný diff. Tyto dílčí důkazy samy nepředstavují kompletní packaged E2E všech stavů. Záznam a konečný stav požadavků zůstávají k posouzení podle úplného PRD.
+
+Nové kontextové regrese pokrývají změnu `.codrynignore` během TypeScript dotazu a invalidaci a obnovu repo mapy. Neuzavírají samy společnou AC-O1-27. Cílený vizuální a klávesnicový průchod popisuje [záznam](evidence/r3-r4-visual-pass-2026-11-21-v1.md); osobní přijetí ani skutečné systémové dialogy tím nejsou nahrazeny.
+
+Dva živé evaly a opravu jejich fixture popisuje [report](r4-eval-report.md). Druhý živý průchod skončil 2/9; dva případy splnily očekávání a tři omezila rozpočtová brána. `FR-LLM-12` a `AC-O1-25` zůstávají otevřené. Offline sada po opravě fixture a vyhodnocovače prošla 9/9, ale neprokazuje rozhodování skutečného modelu.
+
 Autoritou jsou PRD_v1.1.md a roadmapa §8. Zahrnuty jsou všechny funkční M/O1 řádky, aby R4 nepřevzala dřívější základ bez kontroly. Stav passed je omezený uvedeným důkazem. Stav open zachovává konkrétní neprovedené přijetí nebo chybějící důkaz. R4 zůstává otevřená.
 
 Poslední dříve zabalený základ má zdroj ee457ff6c52a3d481b472991435ebd431212f1a69b2c1bc65d7a7ac1fdc8a401 a ASAR 25fe75bfb9ba8d0d9318062578da05934e2f547f8bbb4fc1e51cd08f960eb0d8. Nový přírůstek otázek a postupů je 3e187e2 s následnou opravou zúžení typů. Finální zdroj a41de13fc3d40ba74175b3f0198ccde9f9c636438e010f1e33d39eb470fe0014 a ASAR 8e58fd6cd51bc9d0c20c4a9ee72944d46ca9609cf59d733eecfbdd3f2cce63e1 mají R3 packaged 8/8 a otázkový desktop E2E 1/1.

@@ -44,6 +44,32 @@ it('withholds stale output across an edit and returns fresh or denied data on th
   } finally { observer.close(); await rm(root, { recursive: true, force: true }); }
 }, 20000);
 
+it('withholds semantic output when .codrynignore changes while the TypeScript worker is running', async () => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), 'codryn-ts-policy-fresh-'))), observer = new FileWorkspaceObserver(root);
+  const signal = AbortSignal.timeout(15000), source = join(root, 'app.ts');
+  let revision = 1, last: WorkspaceSnapshot | undefined, changePolicy = true;
+  const observe = async (signal: AbortSignal) => {
+    const next = await observer.inspect(signal);
+    if (last && next.fingerprint !== last.fingerprint) revision++;
+    return last = { ...next, revision };
+  };
+  const runner: TypeScriptQueryRunner = { async query(root, input, expectedRevision, signal) {
+    const result = await executeTypeScriptQuery(input, { root, expectedRevision, signal, policy: await ContextPathPolicy.fromProjectRoot(root) });
+    if (changePolicy) {
+      changePolicy = false;
+      await writeFile(join(root, '.codrynignore'), 'app.ts\n');
+    }
+    return result;
+  } };
+  try {
+    await writeFile(source, 'export const privateSymbol = 1;\n');
+    await writeFile(join(root, 'tsconfig.json'), '{"files":["app.ts"],"compilerOptions":{"types":[]}}');
+    const query = freshTypeScriptQuery(root, runner, observe), input = { kind: 'exports' as const, path: 'app.ts', maxResults: 20 };
+    expect(await query(input, signal)).toMatchObject({ status: 'stale', items: [] });
+    expect(await query(input, signal)).toMatchObject({ status: 'unsupported', items: [] });
+  } finally { observer.close(); await rm(root, { recursive: true, force: true }); }
+}, 20000);
+
 it('keeps normal read and search tools available in the desktop run after a structural worker failure', async () => {
   const root = await realpath(await mkdtemp(join(tmpdir(), 'codryn-ts-runtime-'))), userDataPath = join(root, 'user-data');
   const signal = AbortSignal.timeout(18000), received: string[] = [];

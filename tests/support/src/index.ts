@@ -3,3 +3,4 @@ export type { EventuallyOptions } from './eventually.js';
 export { createTempDirectory } from './temp-directory.js';
 export type { TempDirectory } from './temp-directory.js';
 export { createR2Project } from './r2-project.js';
+export { createR4EvalProjectFixture } from './r4-eval-project.js';

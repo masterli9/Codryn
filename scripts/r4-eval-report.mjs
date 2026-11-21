@@ -1,9 +1,12 @@
 import { z } from 'zod';
+export function isSafeR4EvalId(value) { return typeof value === 'string' && /^[a-z0-9]+(?:-[a-z0-9]+)*$/u.test(value); }
 const count = z.number().int().nonnegative();
 const metric = z.number().nonnegative().nullable();
 export const r4EvalReportSchema = z.object({
   schemaVersion:z.literal(1),series:z.enum(['offline','live']),model:z.string().min(1),createdAt:z.iso.datetime(),
   datasetHash:z.string().regex(/^[a-f0-9]{64}$/u),sourceHash:z.string().regex(/^[a-f0-9]{64}$/u),
+  evalIdentity:z.object({runnerSha256:z.string().regex(/^[a-f0-9]{64}$/u),fixtureBuilderSha256:z.string().regex(/^[a-f0-9]{64}$/u),counterOracleSha256:z.string().regex(/^[a-f0-9]{64}$/u),
+    budgetSha256:z.string().regex(/^[a-f0-9]{64}$/u),safeOutputSha256:z.string().regex(/^[a-f0-9]{64}$/u),reportSchemaSha256:z.string().regex(/^[a-f0-9]{64}$/u)}).strict().optional(),
   paidRequests:count,reservedUsd:z.number().nonnegative(),approvedBudgetUsd:metric,pricingSource:z.string().nullable(),
   pricing:z.object({inputUsdPerMillion:z.number().positive(),outputUsdPerMillion:z.number().positive(),maxRequests:count,maxOutputTokens:count}).strict().nullable().optional(),
   passed:count,total:z.literal(9),

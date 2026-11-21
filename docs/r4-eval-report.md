@@ -21,7 +21,21 @@ První pokus odhalil dvě chyby ovladače. Příkaz testu měl tvar, který infe
 
 ## Živý eval
 
-Nový živý eval nebyl spuštěn. Autor dosud neschválil jeho konkrétní rozpočet. `FR-LLM-12` a nové rozšířené měření `AC-O1-25` zůstávají otevřené. Historické rozhodnutí ADR 0007 a původní živé protokoly R2/R3 zůstávají samostatnými důkazy.
+### Pokusy z 21. listopadu 2026
+
+Autor schválil celkový limit 0,350 USD. První pokus v sandboxu skončil 0/9 ještě před požadavkem: izolovaný test se syntetickým klíčem reprodukoval `R3_SECRET_UNAVAILABLE:ACL_VERIFY`. [Protokol](evals/r4-live-2026-11-21.json) uvádí nula požadavků a nulovou rezervaci; nejde o selhání modelu.
+
+Hostní pokus se stropem 0,30 USD skončil 2/9, s 68 požadavky, známou spotřebou a odhadovaným součtem 0,0140177 USD. Rezervace byla 0,2997412 USD; poslední tři scénáře narazily na rozpočtovou bránu, z toho dva bez požadavku. Prošly návaznost chatu a ochrana ignorovaného vstupu. Zbývající čtyři scénáře nedosáhly očekávaného výsledku v limitu kroků. [Původní protokol](evals/r4-live-2026-11-21-host.json) neobsahuje dost detailů pro určení příčiny každého neplatného volání.
+
+Následná offline diagnostika zjistila chybu přípravy fixture: všechny případy obsahovaly uživatelsky ignorovanou složku, což po zpřísnění rozsahu ověřování záměrně znemožnilo úplnou klasifikaci vstupů. Skutečné úspěšné příkazy proto nezískaly úplný ověřovací záznam. [Offline host protokol](evals/r4-offline-diagnostic-host-2026-11-21.json) a jeho [omezená diagnostika](evals/r4-offline-diagnostic-host-2026-11-21-diagnostics.json) zachovávají výsledek 4/9. Tato chyba zpochybňuje interpretaci změnových scénářů živého pokusu; nelze je automaticky připsat modelu ani označit za úspěšné.
+
+Fixture byla upravena tak, aby ignorovanou složku obsahoval pouze scénář, který ji testuje. Zafixovaný dataset se nezměnil. Opravený offline průchod skončil 9/9 ([protokol](evals/r4-offline-corrected-2026-11-21.json), [diagnostika](evals/r4-offline-corrected-2026-11-21-diagnostics.json)). Následné review zjistilo další nedostatky vyhodnocovače, které se řeší samostatně; tento offline výsledek není výsledkem opakovaného živého měření ani uzavřením R4.
+
+Po zpřesnění vyhodnocovače prošel [finální offline průchod](evals/r4-offline-final-2026-11-21.json) 9/9. Oprava čítače se nově kontroluje omezeným vyhodnocením syntaxe pro `nextCount(1) === 2`; jiné tvary jsou `unsupported`, nejde o obecný důkaz správnosti programu. Ve scénáři stale výsledek prokazuje odmítnutí zastaralého patche a následné čtení i požadovanou hodnotu funkce, nikoli samostatně úspěšný build.
+
+[Druhý živý průchod](evals/r4-live-final-2026-11-21.json) po opravě fixture skončil 2/9, s 67 požadavky a odhadovanou cenou 0,014827 USD. Návaznost a ochrana ignorovaného vstupu opět splnily své bezpečnostní očekávání. V obou základních změnových úlohách se funkce opravila, ale model opakovaně četl soubory a do limitu 12 kroků nespustil kontroly; výsledek zůstal neověřený. Další tři případy zastavila rozpočtová rezervace, z toho dva před prvním požadavkem. [Diagnostika](evals/r4-live-final-2026-11-21-diagnostics.json) obsahuje pouze omezené typy nástrojů, stavy a kódy, nikoli jejich argumenty či obsah. Ze známé spotřeby obou živých průchodů vychází součet 0,0288447 USD; jde o odhad dle uvedeného ceníku, nikoli ověřenou fakturu. Živá brána zůstává otevřená.
+
+Při sepsání původního reportu z 18. listopadu nový živý eval ještě nebyl spuštěn. Pokusy z 21. listopadu jsou uvedeny výše. `FR-LLM-12` a nové rozšířené měření `AC-O1-25` zůstávají otevřené. Historické rozhodnutí ADR 0007 a původní živé protokoly R2/R3 zůstávají samostatnými důkazy.
 
 Připravený vstup `scripts/eval-r4-model.mjs` vyžaduje současně `--live`, `--confirm-paid-api`, kladné `--max-cost-usd`, celočíselné `--max-requests` nejvýše 100, oba cenové parametry `--input-usd-per-million` a `--output-usd-per-million`, zdroj cen `--pricing-source` a potvrzení aktuální verze `--consent-version openai-api-2026-11-14`. Model je pevně `gpt-6-luna`. Klíč přebírá existující mechanismus pro lokální provider key.
 

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
-import { r4EvalReportSchema } from './r4-eval-report.mjs';
+import { isSafeR4EvalId, r4EvalReportSchema } from './r4-eval-report.mjs';
 test('live evaluation stays opt-in before any provider call',()=>{
   const result=spawnSync(process.execPath,['scripts/eval-r4-model.mjs','--live'],{cwd:process.cwd(),encoding:'utf8',timeout:5000,windowsHide:true});
   assert.equal(result.status,2);
@@ -17,6 +17,12 @@ test('the frozen nine-case offline report has consistent metrics and unknown mod
   assert.deepEqual(report.results.map(item=>item.id),dataset.cases.map(item=>item.id));
   assert.equal(r4EvalReportSchema.safeParse(report).success,true);
   assert.equal(r4EvalReportSchema.safeParse({...report,passed:100}).success,false);
+  assert.equal(r4EvalReportSchema.safeParse({...report,evalIdentity:{runnerSha256:'a'.repeat(64),fixtureBuilderSha256:'b'.repeat(64),counterOracleSha256:'c'.repeat(64),budgetSha256:'d'.repeat(64),safeOutputSha256:'e'.repeat(64),reportSchemaSha256:'f'.repeat(64)}}).success,true);
   const wrong=JSON.parse(JSON.stringify(report));wrong.results[0].validArguments=wrong.results[0].toolCalls+1;
   assert.equal(r4EvalReportSchema.safeParse(wrong).success,false);
+});
+test('eval case IDs are restricted to path-safe slugs',()=>{
+  assert.equal(isSafeR4EvalId('counter-git'),true);
+  assert.equal(isSafeR4EvalId('../outside'),false);
+  assert.equal(isSafeR4EvalId('nested/path'),false);
 });

@@ -1,6 +1,7 @@
 import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, realpath, rm, unlink, writeFile } from 'node:fs/promises';
+import { DatabaseSync } from 'node:sqlite';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, expect, it } from 'vitest';
@@ -39,6 +40,44 @@ it('exposes staged and unstaged sides for a nested project and refuses outside s
   if (!current.snapshotId) throw new Error('Missing snapshot.');
   await expect(local.commit(current.snapshotId, 'refuse outside staged data', f.signal)).rejects.toThrow();
   expect(f.git('log', '-1', '--format=%s').trim()).toBe('initial');
+});
+
+it('shows every required Git status and opens diffs from the current index and worktree', async () => {
+  const f = await fixture(), local = new LocalGitOperations(f.root);
+  await writeFile(join(f.root, 'changed.ts'), 'export const staged = 1;\n');
+  await writeFile(join(f.root, 'deleted.ts'), 'remove me\n');
+  f.git('add', 'changed.ts', 'deleted.ts'); f.git('commit', '-m', 'Git status fixture');
+  await writeFile(join(f.root, 'conflict.ts'), 'main version\n');
+  f.git('add', 'conflict.ts'); f.git('commit', '-m', 'main conflict version');
+  f.git('branch', 'conflict-side');
+  f.git('checkout', 'conflict-side');
+  await writeFile(join(f.root, 'conflict.ts'), 'side version\n');
+  f.git('add', 'conflict.ts'); f.git('commit', '-m', 'side conflict version');
+  f.git('checkout', 'main');
+  await writeFile(join(f.root, 'conflict.ts'), 'other main version\n');
+  f.git('add', 'conflict.ts'); f.git('commit', '-m', 'other main version');
+  try { f.git('merge', 'conflict-side'); } catch { /* Git leaves a real unmerged index for this fixture. */ }
+
+  await writeFile(join(f.root, 'changed.ts'), 'export const staged = 2;\n');
+  f.git('add', 'changed.ts');
+  await writeFile(join(f.root, 'changed.ts'), 'export const unstaged = 3;\n');
+  await unlink(join(f.root, 'deleted.ts'));
+  await writeFile(join(f.root, 'new.ts'), 'export const fresh = true;\n');
+
+  const view = await local.read(f.signal);
+  expect(view.items).toEqual(expect.arrayContaining([
+    expect.objectContaining({ path: 'changed.ts', side: 'staged', status: 'M' }),
+    expect.objectContaining({ path: 'changed.ts', side: 'unstaged', status: 'M' }),
+    expect.objectContaining({ path: 'deleted.ts', side: 'unstaged', status: 'D' }),
+    expect.objectContaining({ path: 'new.ts', side: 'untracked', status: '?' }),
+    expect.objectContaining({ path: 'conflict.ts', side: 'conflict', status: 'U' })
+  ]));
+  if (!view.snapshotId) throw new Error('Missing snapshot.');
+  expect((await local.diff(view.snapshotId, 'changed.ts', 'staged', f.signal)).text).toContain('+export const staged = 2;');
+  expect((await local.diff(view.snapshotId, 'changed.ts', 'unstaged', f.signal)).text).toContain('+export const unstaged = 3;');
+  expect((await local.diff(view.snapshotId, 'deleted.ts', 'unstaged', f.signal)).text).toContain('-remove me');
+  expect((await local.diff(view.snapshotId, 'new.ts', 'untracked', f.signal)).text).toContain('+export const fresh = true;');
+  expect((await local.diff(view.snapshotId, 'conflict.ts', 'conflict', f.signal)).text).toContain('diff --cc conflict.ts');
 });
 
 it('stages and unstages the exact file, commits only the reviewed tree and safely switches a clean branch', async () => {
@@ -95,6 +134,11 @@ it('sends only staged changes to a fake provider, rejects an old confirmation, a
     await writeFile(join(f.root, 'outside.txt'), 'newly staged\n');
     f.git('add', 'outside.txt');
     await expect(host.localGit.mutate(project.id, randomUUID(), 'commit', current.snapshotId, 'Stale message', f.signal)).rejects.toThrow('R3_STALE_VIEW');
+    const audit = new DatabaseSync(join(profile, 'codryn.sqlite'), { readOnly: true, allowExtension: false });
+    try {
+      expect(audit.prepare("SELECT action,status FROM local_git_actions WHERE snapshot_id=? ORDER BY rowid DESC LIMIT 1").get(current.snapshotId))
+        .toMatchObject({ action: 'commit', status: 'rejected' });
+    } finally { audit.close(); }
     expect(f.git('log', '-1', '--format=%s').trim()).toBe('initial');
     const newest = await host.localGit.status(project.id, f.signal);
     if (!newest.snapshotId) throw new Error('Missing snapshot.');

@@ -1,0 +1,345 @@
+{
+  "schemaVersion": 1,
+  "sourceHash": "d2bde68019763b4056ae4a33553bffbb89d481c4e7ae6d2455e10604d8c752b7",
+  "series": "offline",
+  "diagnostics": [
+    {
+      "id": "counter-git",
+      "runState": "finished",
+      "runFailureCode": null,
+      "resultStatus": "failed",
+      "verificationStatus": "unverified",
+      "questionTotal": 0,
+      "expectedChangeApplied": true,
+      "commandExitCodes": [
+        0,
+        0
+      ],
+      "modelToolIds": [
+        "file.read",
+        "file.patch",
+        "command.run",
+        "command.run"
+      ],
+      "toolAudit": [
+        {
+          "toolId": "file.read",
+          "state": "succeeded",
+          "errorCode": null
+        },
+        {
+          "toolId": "file.patch",
+          "state": "succeeded",
+          "errorCode": null
+        },
+        {
+          "toolId": "command.run",
+          "state": "succeeded",
+          "errorCode": null
+        },
+        {
+          "toolId": "command.run",
+          "state": "succeeded",
+          "errorCode": null
+        }
+      ],
+      "schemaValidated": 4,
+      "rejectedInputCount": 0
+    },
+    {
+      "id": "counter-non-git",
+      "runState": "finished",
+      "runFailureCode": null,
+      "resultStatus": "failed",
+      "verificationStatus": "unverified",
+      "questionTotal": 0,
+      "expectedChangeApplied": true,
+      "commandExitCodes": [
+        0,
+        0
+      ],
+      "modelToolIds": [
+        "file.read",
+        "file.patch",
+        "command.run",
+        "command.run"
+      ],
+      "toolAudit": [
+        {
+          "toolId": "file.read",
+          "state": "succeeded",
+          "errorCode": null
+        },
+        {
+          "toolId": "file.patch",
+          "state": "succeeded",
+          "errorCode": null
+        },
+        {
+          "toolId": "command.run",
+          "state": "succeeded",
+          "errorCode": null
+        },
+        {
+          "toolId": "command.run",
+          "state": "succeeded",
+          "errorCode": null
+        }
+      ],
+      "schemaValidated": 4,
+      "rejectedInputCount": 0
+    },
+    {
+      "id": "continuation",
+      "runState": "finished",
+      "runFailureCode": null,
+      "resultStatus": "completed",
+      "verificationStatus": "unverified",
+      "questionTotal": 0,
+      "expectedChangeApplied": false,
+      "commandExitCodes": [],
+      "modelToolIds": [
+        "file.read",
+        "file.read"
+      ],
+      "toolAudit": [
+        {
+          "toolId": "file.read",
+          "state": "succeeded",
+          "errorCode": null
+        },
+        {
+          "toolId": "file.read",
+          "state": "succeeded",
+          "errorCode": null
+        }
+      ],
+      "schemaValidated": 2,
+      "rejectedInputCount": 0
+    },
+    {
+      "id": "ignored-reference",
+      "runState": "finished",
+      "runFailureCode": null,
+      "resultStatus": "failed",
+      "verificationStatus": "unverified",
+      "questionTotal": 0,
+      "expectedChangeApplied": false,
+      "commandExitCodes": [],
+      "modelToolIds": [
+        "file.read"
+      ],
+      "toolAudit": [
+        {
+          "toolId": "file.read",
+          "state": "failed",
+          "errorCode": "R1_TOOL_EXECUTION_FAILED"
+        }
+      ],
+      "schemaValidated": 1,
+      "rejectedInputCount": 0
+    },
+    {
+      "id": "stale-patch",
+      "runState": "finished",
+      "runFailureCode": null,
+      "resultStatus": "failed",
+      "verificationStatus": "unverified",
+      "questionTotal": 0,
+      "expectedChangeApplied": true,
+      "commandExitCodes": [
+        0,
+        0
+      ],
+      "modelToolIds": [
+        "file.read",
+        "file.patch",
+        "file.read",
+        "file.patch",
+        "command.run",
+        "command.run"
+      ],
+      "toolAudit": [
+        {
+          "toolId": "file.read",
+          "state": "succeeded",
+          "errorCode": null
+        },
+        {
+          "toolId": "file.patch",
+          "state": "succeeded",
+          "errorCode": null
+        },
+        {
+          "toolId": "file.read",
+          "state": "succeeded",
+          "errorCode": null
+        },
+        {
+          "toolId": "file.patch",
+          "state": "succeeded",
+          "errorCode": null
+        },
+        {
+          "toolId": "command.run",
+          "state": "succeeded",
+          "errorCode": null
+        },
+        {
+          "toolId": "command.run",
+          "state": "succeeded",
+          "errorCode": null
+        }
+      ],
+      "schemaValidated": 6,
+      "rejectedInputCount": 0
+    },
+    {
+      "id": "question",
+      "runState": "finished",
+      "runFailureCode": null,
+      "resultStatus": "failed",
+      "verificationStatus": "unverified",
+      "questionTotal": 1,
+      "expectedChangeApplied": true,
+      "commandExitCodes": [
+        0,
+        0
+      ],
+      "modelToolIds": [
+        "ask_user",
+        "file.read",
+        "file.patch",
+        "command.run",
+        "command.run"
+      ],
+      "toolAudit": [
+        {
+          "toolId": "file.read",
+          "state": "succeeded",
+          "errorCode": null
+        },
+        {
+          "toolId": "file.patch",
+          "state": "succeeded",
+          "errorCode": null
+        },
+        {
+          "toolId": "command.run",
+          "state": "succeeded",
+          "errorCode": null
+        },
+        {
+          "toolId": "command.run",
+          "state": "succeeded",
+          "errorCode": null
+        }
+      ],
+      "schemaValidated": 5,
+      "rejectedInputCount": 0
+    },
+    {
+      "id": "repair-after-error",
+      "runState": "finished",
+      "runFailureCode": null,
+      "resultStatus": "failed",
+      "verificationStatus": "unverified",
+      "questionTotal": 0,
+      "expectedChangeApplied": true,
+      "commandExitCodes": [
+        1,
+        0,
+        0
+      ],
+      "modelToolIds": [
+        "command.run",
+        "file.read",
+        "file.patch",
+        "command.run",
+        "command.run"
+      ],
+      "toolAudit": [
+        {
+          "toolId": "command.run",
+          "state": "succeeded",
+          "errorCode": null
+        },
+        {
+          "toolId": "file.read",
+          "state": "succeeded",
+          "errorCode": null
+        },
+        {
+          "toolId": "file.patch",
+          "state": "succeeded",
+          "errorCode": null
+        },
+        {
+          "toolId": "command.run",
+          "state": "succeeded",
+          "errorCode": null
+        },
+        {
+          "toolId": "command.run",
+          "state": "succeeded",
+          "errorCode": null
+        }
+      ],
+      "schemaValidated": 5,
+      "rejectedInputCount": 0
+    },
+    {
+      "id": "planning",
+      "runState": "finished",
+      "runFailureCode": null,
+      "resultStatus": "completed",
+      "verificationStatus": "unverified",
+      "questionTotal": 0,
+      "expectedChangeApplied": false,
+      "commandExitCodes": [],
+      "modelToolIds": [
+        "file.read"
+      ],
+      "toolAudit": [
+        {
+          "toolId": "file.read",
+          "state": "succeeded",
+          "errorCode": null
+        }
+      ],
+      "schemaValidated": 1,
+      "rejectedInputCount": 0
+    },
+    {
+      "id": "verification",
+      "runState": "finished",
+      "runFailureCode": null,
+      "resultStatus": "completed",
+      "verificationStatus": "unverified",
+      "questionTotal": 0,
+      "expectedChangeApplied": true,
+      "commandExitCodes": [
+        0,
+        0
+      ],
+      "modelToolIds": [
+        "command.run",
+        "command.run"
+      ],
+      "toolAudit": [
+        {
+          "toolId": "command.run",
+          "state": "succeeded",
+          "errorCode": null
+        },
+        {
+          "toolId": "command.run",
+          "state": "succeeded",
+          "errorCode": null
+        }
+      ],
+      "schemaValidated": 2,
+      "rejectedInputCount": 0
+    }
+  ]
+}

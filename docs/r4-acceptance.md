@@ -1,5 +1,13 @@
 # R4 — ověření návaznosti chatu
 
+## Doplnění evidence — 21. listopadu 2026
+
+Byly doplněny integrační test Git stavů a diffů, samostatná kontrola jejich projekce v panelu a regrese změny politiky při TS dotazu a obnově repo mapy. Cílené testy Git workflow prošly 6/6, panel 2/2 a TS runtime/mapa 10/10. Test eval fixture potvrzuje úplný pozorovaný rozsah běžného případu a jeho záměrnou neúplnost u ignorované cesty.
+
+Po úpravách prošly kontrola typů, lint a hranice závislostí (405 modulů / 1 383 hran). Úplná Vitest sada skončila 792 passed / 4 skipped v 136 souborech (467,85 s). Hláška `R0 smoke startup failed.` pocházela z očekávaného odmítnutí neplatné junction v testu startu, nikoli z neúspěšného testu sady. Přeskočené packaged kontroly byly doplněny samostatně na existujícím balíčku: R0 11/11 v `.r0-artifacts/packaged-NzOBtl/r0-report.json`, R2 prošel v `.r2-artifacts/packaged-5g9tbg/r2-report.json`. Identita balíčku se shoduje se zdrojem `d2bde68019763b4056ae4a33553bffbb89d481c4e7ae6d2455e10604d8c752b7` a ASAR `6418032f00a2f56e9e20a170a111ea2e1118325c099eda119bca5383fa2d19ad`; produkční zdroj se tímto přírůstkem neměnil.
+
+Node testy eval brány, omezené oracle a bezpečného výstupu prošly 9/9 s jedním přeskočeným testem symlinku: Windows odmítl jeho vytvoření. Kontrola hardlinku a cesty mimo cílový adresář prošla. [Vizuální protokol](evidence/r3-r4-visual-pass-2026-11-21-v1.md) zaznamenává omezený průchod stejného balíčku. [Eval report](r4-eval-report.md) zachovává oba živé neúspěšné pokusy a výsledek offline regrese. R4 ani osobní přijetí tím nejsou uzavřené.
+
 Implementace dodává `FR-CHAT-06` dříve a pokrývá výběr historie z `FR-CTX-01/02`.
 
 - Jednotkové testy ověřují pořadí zpráv a rolí, strop osmi dvojic, 32 KiB UTF-8 a důvod při vynechání nadlimitní poslední dvojice.

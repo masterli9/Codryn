@@ -104,6 +104,21 @@ describe('repo map', () => {
     expect(store.current(projectId)).toBeNull();
   });
 
+  it('invalidates the published map and rebuilds it after .codrynignore changes', async () => {
+    const map = start(), store = new RepoMapStore(handle.database);
+    await map.start(projectId, root, signal()).done;
+    expect(store.current(projectId)?.items.some(item => item.path === 'src/Zebra.ts')).toBe(true);
+
+    await put('.codrynignore', 'src/Zebra.ts\n');
+    const stale = await map.deepen(projectId, 'Zebra', [], signal());
+    expect(stale).toMatchObject({ items: [], omitted: [{ path: null, reason: 'policy_changed' }] });
+    await map.drain(signal());
+
+    expect(map.status(projectId)).toMatchObject({ state: 'ready', mode: 'quick' });
+    expect(store.current(projectId)?.items.some(item => item.path === 'src/Zebra.ts')).toBe(false);
+    expect(await map.deepen(projectId, 'Zebra', [], signal())).toMatchObject({ items: [], omitted: [] });
+  });
+
   it('opens a project while a scan is pending and rejects map actions for an inactive project', async () => {
     let ran = false;
     const host = await createR3Infrastructure({
