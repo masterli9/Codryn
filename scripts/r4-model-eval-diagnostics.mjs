@@ -35,9 +35,11 @@ export function diagnoseFileReadArguments(args, schema) {
     ? [{ name, type: safeType(args[name]) }]
     : []);
   const unknownFieldCount = Object.keys(args).filter(name => !fileReadFieldSet.has(name)).length;
+  const redactedHistoryMarkerEcho = Object.keys(args).length === 1 && args.historical === true;
   const parsed = schema.safeParse(args);
-  const reasons = new Set(parsed.success ? [] : parsed.error.issues.map(issue => classifyIssue(issue, args)));
-  if (unknownFieldCount > 0) reasons.add('unknown_field');
+  const reasons = new Set(redactedHistoryMarkerEcho ? ['redacted_history_marker_echo']
+    : parsed.success ? [] : parsed.error.issues.map(issue => classifyIssue(issue, args)));
+  if (unknownFieldCount > 0 && !redactedHistoryMarkerEcho) reasons.add('unknown_field');
   return { fields, unknownFieldCount, reasons: [...reasons].sort() };
 }
 
