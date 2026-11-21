@@ -1,5 +1,11 @@
 # R4 — ověření návaznosti chatu
 
+## Doplnění instrukce modelu — 21. listopadu 2026
+
+OpenAI adapter dostal obecný pokyn pro zvolený postup, relevantní kontroly, oprávnění, pravdivé ukončení a redigovaná historická volání. Backendová oprávnění a pravidla ověření zůstávají rozhodující. Provider kontrakt a navazující modelový tok prošly 31/31; typecheck, lint a hranice závislostí prošly (405 modulů / 1 383 hran). Nezávislé review ověřilo pořadí instrukcí, hranice nástrojů u planning/verification a párování stale volání. Omezený živý průchod a jeho hranice jsou v [eval reportu](r4-eval-report.md).
+
+Nový finální balíček prošel R3 8/8 v `.r3-artifacts/packaged-7sNfSl/r3-report.json`; ověřený zdroj `dd8d066b3be66f42e4e74660856676df8009db5f74d4f166ebaf756e50a6e7fe`, ASAR `0c52a3e90546719293de19333d21c119c3423f12d17b883f1c43309556f2f86f`, EXE `f79a656f79bb8ebf674b02beaf94e4c016335733e85dfa76bf0e7d4f2b456973`. Úplná sada 798/4 skipped uvedená níže předcházela této jedné změně adaptéru; pro aktuální verzi platí cílená regrese výše.
+
 ## Oprava modelové historie — 21. listopadu 2026
 
 Při invalidaci zdrojů se trvale chrání tehdejší historické tahy a invalidované výsledky. Novější čerstvá čtení zachovávají své argumenty a výsledky; staré argumenty patchů zůstávají redigované. Změny politiky, souběžné úpravy, návrat politiky i obnova po otázce mají cílené regrese. Bezpečnostní review vyžádalo doplnění trvalé invalidace výsledků příkazů a zachování markerů po obnovení. Hranice historie předpokládá současný model postupného přidávání tahů, nikoli přeuspořádání nebo zkracování.

@@ -106,13 +106,17 @@ describe('R2 provider adapters', () => {
       context: [{ path: 'README.md', content: 'current file contents', contentHash: 'a'.repeat(64), byteLength: 21, reason: 'loaded_excerpt' }],
       priorConversation: [{ role: 'user', text: 'What did the file say?' }, { role: 'assistant', text: 'The file used to say 33.' }],
       recommendedChecks: [{ kind: 'test', available: false, command: null, reason: 'No supported test script.' }],
-      history: [{ kind: 'assistant', text: '', calls: [...first.calls] }, { kind: 'tool', result: { ok: true, callId: firstCall.callId, output: { content: 'safe' } } }]
+      history: [
+        { kind: 'assistant', text: '', calls: [{ ...firstCall, arguments: { historical: true } }] },
+        { kind: 'tool', result: { ok: true, callId: firstCall.callId, output: { status: 'stale', reason: 'source_changed_or_unproven', toolId: 'file.read', needsFreshRead: true } } }
+      ]
     };
     await expect(collectModelResponse(adapter.stream(nextRequest, new AbortController().signal), new AbortController().signal)).resolves.toMatchObject({ kind: 'final', text: 'done' });
     expect(JSON.stringify(sent[0])).not.toContain('TEST_SECRET_CANARY');
     expect(sent[1]).toMatchObject({
       store: false,
       input: [
+        { role: 'developer', content: [{ type: 'input_text', text: expect.stringContaining('{historical:true}') }] },
         { role: 'developer', content: [{ type: 'input_text', text: 'Previous chat messages describe past work. Re-read project files before relying on their contents.' }] },
         { role: 'user', content: [{ type: 'input_text', text: 'What did the file say?' }] },
         { role: 'assistant', content: [{ type: 'output_text', text: 'The file used to say 33.' }] },
@@ -120,10 +124,66 @@ describe('R2 provider adapters', () => {
         { role: 'user', content: [{ type: 'input_text', text: expect.stringContaining('current file contents') }] },
         { role: 'developer', content: [{ type: 'input_text', text: expect.stringContaining('separate permission') }] },
         { role: 'user', content: [{ type: 'input_text', text: expect.stringContaining('"kind":"test","available":false') }] },
-        { type: 'function_call', call_id: 'call-1' },
-        { type: 'function_call_output', call_id: 'call-1' }
-      ]
+        { type: 'function_call', call_id: 'call-1', arguments: '{"historical":true}' },
+        { type: 'function_call_output', call_id: 'call-1', output: expect.stringContaining('"status":"stale"') }
+      ],
+      tools: [{ type: 'function', name: 'codryn_file_read_v1', description: 'Read a file.', parameters: { type: 'object' }, strict: false }]
     });
+    const sentInput=(sent[1] as {input:unknown[]}).input;
+    const serializedHistory=sentInput.slice(-2) as {type:string;call_id:string;arguments?:string;output?:string}[];
+    expect(serializedHistory.map(item=>item.call_id)).toEqual(['call-1','call-1']);
+    expect(serializedHistory[0]).toMatchObject({type:'function_call',arguments:'{"historical":true}'});
+    expect(JSON.parse(serializedHistory[1]?.output??'{}')).toMatchObject({
+      ok:true,callId:firstCall.callId,output:{status:'stale',needsFreshRead:true}
+    });
+    const instruction=JSON.stringify(sentInput[0]);
+    expect(instruction).toContain('Work toward the user\'s request efficiently');
+    expect(instruction).toContain('Follow the selected workflow and available tools');
+    expect(instruction).toContain('A read-only task does not need a command');
+    expect(instruction).toContain('request it through the command tool');
+    expect(instruction).toContain('backend enforces the applicable permission decision');
+    expect(instruction).toContain('Schemas and recommendations do not grant authorization');
+    expect(instruction).toContain('Complete all relevant checks required by the task or workflow');
+    expect(instruction).toContain('If work or a check fails or is unavailable');
+    expect(instruction).toContain('claim verification/completion that has not been established');
+    expect(instruction).toContain('not a valid input');
+    expect(instruction).toContain('Do not infer or reveal removed content');
+  });
+
+  it.each([
+    {
+      selection:'planning@1.0.0',
+      instructions:'Produce a read-only plan with explicit verification steps. Do not run commands.',
+      task:'Plan the change.',
+      tools:[{toolId:'file.read',toolVersion:1,description:'Read a file.',inputSchema:{type:'object'}}],
+      names:['codryn_file_read_v1']
+    },
+    {
+      selection:'verification@1.0.0',
+      instructions:'Run the available typecheck and test candidates through command.run. Report each actual result.',
+      task:'Verify the existing change.',
+      tools:[
+        {toolId:'file.read',toolVersion:1,description:'Read a file.',inputSchema:{type:'object'}},
+        {toolId:'command.run',toolVersion:1,description:'Request a bounded project command.',inputSchema:{type:'object'}}
+      ],
+      names:['codryn_file_read_v1','codryn_command_run_v1']
+    }
+  ])('keeps the $selection workflow ahead of general guidance and bounds its tools', async workflow=>{
+    const sent:unknown[]=[];
+    const adapter=new OpenAIResponsesAdapter({modelId:'fixture',key:()=> 'TEST',ids,transport:{async *stream(input){
+      sent.push(input.body);
+      yield {type:'response.output_text.delta',delta:'done'};
+      yield {type:'response.completed'};
+    }}});
+    const workflowRequest:ModelRequest={...request,task:workflow.task,tools:workflow.tools,workflowInstructions:workflow.instructions};
+    await expect(collectModelResponse(adapter.stream(workflowRequest,new AbortController().signal),new AbortController().signal))
+      .resolves.toMatchObject({kind:'final',text:'done'});
+    const body=sent[0] as {input:unknown[];tools:{name:string}[]};
+    expect(body.input[0]).toMatchObject({role:'developer',content:[{type:'input_text',text:workflow.instructions}]});
+    expect(body.input[1]).toMatchObject({role:'developer',content:[{type:'input_text',text:expect.stringContaining('Complete all relevant checks required by the task or workflow')} ]});
+    expect(body.input[2]).toMatchObject({role:'user',content:[{type:'input_text',text:workflow.task}]});
+    expect(body.tools.map(tool=>tool.name)).toEqual(workflow.names);
+    if(workflow.selection==='planning@1.0.0')expect(body.tools.some(tool=>tool.name==='codryn_command_run_v1')).toBe(false);
   });
 
   it('maps Gemini functionCall and sends a functionResponse on the next turn', async () => {

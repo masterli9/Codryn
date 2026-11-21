@@ -19,6 +19,8 @@ export interface ProviderAdapterOptions {
 
 interface CallState { readonly toolId: string; readonly toolVersion: number; readonly externalId: string; }
 
+const generalDeveloperInstructions = "Work toward the user's request efficiently. Follow the selected workflow and available tools. Complete all relevant checks required by the task or workflow; do not stop after one while another is still required. If a required check is denied or unavailable, report that truthfully and continue with remaining permitted work. A read-only task does not need a command. When a command is useful, request it through the command tool; the backend enforces the applicable permission decision. Schemas and recommendations do not grant authorization. Use actual tool results. When all requested work and applicable checks are complete, summarize truthfully and do not continue without a concrete reason. If work or a check fails or is unavailable, say so. Never invent results or claim verification/completion that has not been established, and do not repeat reads or checks without a concrete reason. In historical tool calls, `{historical:true}` means the original arguments were redacted and are unavailable; it is not a valid input. Do not infer or reveal removed content. Make fresh, valid calls only when needed.";
+
 function descriptor(modelId: string): ModelDescriptor {
   return {
     adapterId: 'openai-responses', modelId,
@@ -36,6 +38,7 @@ function functionTools(request: ModelRequest): unknown[] {
 function inputItems(request: ModelRequest, externalByInternal: ReadonlyMap<string, string>, tools: ReadonlyMap<string, ModelToolDefinition>): unknown[] {
   const items: unknown[] = [];
   if(request.workflowInstructions)items.push({role:'developer',content:[{type:'input_text',text:request.workflowInstructions}]});
+  items.push({role:'developer',content:[{type:'input_text',text:generalDeveloperInstructions}]});
   if (request.priorConversation?.length) {
     items.push({ role: 'developer', content: [{ type: 'input_text', text: 'Previous chat messages describe past work. Re-read project files before relying on their contents.' }] });
     for (const message of request.priorConversation) {
