@@ -1,0 +1,242 @@
+{
+  "schemaVersion": 1,
+  "datasetId": "r4-user-task-v2",
+  "datasetHash": "f05439b572d2ebe33f182478b6770900aa6d78cd12b8c8ec3c05614c38d7bfce",
+  "sourceHash": "2d119a4616c7caa351c5e78531d616b0cf11ac1558e295c06772d10d55bdc89e",
+  "evalIdentity": {
+    "runnerSha256": "15b94bef7e378cb18f2088d1759d0b54556c2bd4189f5b9d83794c9fad596e0c",
+    "fixtureBuilderSha256": "d376828e117b1395d4bc678b18da3fcefe64f0cec86823aec136e01927e5aa79",
+    "counterOracleSha256": "fe79d9755d547b6c15f875f74e99b77a5d3038d562ba67ba2d9ebc1aace9d206",
+    "budgetSha256": "c038ad723fec05e03040085c9aaf7e7b9ea2062f32e708586be1d6c060981b88",
+    "safeOutputSha256": "5744552f9a9a36eabebb55e406f73af7a523716df3b0ab529e99e87244066552",
+    "reportSchemaSha256": "bb73122dfbb92dd0577f27add2cd00efad94e6eeae78277c1fcacabbc84f8543",
+    "r4ModelEvalDiagnosticsSha256": "94ddbc89667ccf82e3bcac3407efa7163605fcfa09225b830b4b811c1d7b4ce0",
+    "selectionSha256": "cb5f85d2bec18b7afdf8f52dcb88c5cb1615757354ede9826247583e8ca06a45",
+    "wrapperSha256": "faea1d9b51c1c07b940c02b05f7495e51d98f35a060515f8b110f8bec8b2716b",
+    "storageQuestionSha256": "ac027f896404943564d908995e267863fe89ff3a976d8e95a009bcb14ac556b7"
+  },
+  "series": "live",
+  "diagnostics": [
+    {
+      "id": "storage-question",
+      "runState": "finished",
+      "runFailureCode": null,
+      "resultStatus": "completed",
+      "verificationStatus": "verified",
+      "questionTotal": 1,
+      "counterOracleStatus": "not_applicable",
+      "commandExitCodes": [
+        0,
+        0
+      ],
+      "storageAssessment": {
+        "success": true,
+        "resumedFromScopeAnswer": true,
+        "changedAfterAnswer": true,
+        "testPassed": true,
+        "typecheckPassed": true,
+        "answerDelivered": true,
+        "editedOnlyStorage": true,
+        "protectedFilesIntact": true,
+        "storageChanged": true
+      },
+      "modelToolIds": [
+        "ask_user",
+        "file.read",
+        "text.search",
+        "file.read",
+        "file.patch",
+        "file.read",
+        "command.run",
+        "command.run"
+      ],
+      "toolAudit": [
+        {
+          "toolId": "file.read",
+          "state": "succeeded",
+          "errorCode": null
+        },
+        {
+          "toolId": "text.search",
+          "state": "succeeded",
+          "errorCode": null
+        },
+        {
+          "toolId": "file.read",
+          "state": "succeeded",
+          "errorCode": null
+        },
+        {
+          "toolId": "file.patch",
+          "state": "succeeded",
+          "errorCode": null
+        },
+        {
+          "toolId": "file.read",
+          "state": "succeeded",
+          "errorCode": null
+        },
+        {
+          "toolId": "command.run",
+          "state": "succeeded",
+          "errorCode": null
+        },
+        {
+          "toolId": "command.run",
+          "state": "succeeded",
+          "errorCode": null
+        }
+      ],
+      "fileReadCalls": [
+        {
+          "fields": [
+            {
+              "name": "path",
+              "type": "string"
+            },
+            {
+              "name": "startLine",
+              "type": "integer"
+            },
+            {
+              "name": "maxLines",
+              "type": "integer"
+            }
+          ],
+          "unknownFieldCount": 0,
+          "reasons": [],
+          "rejected": false
+        },
+        {
+          "fields": [
+            {
+              "name": "path",
+              "type": "string"
+            },
+            {
+              "name": "startLine",
+              "type": "integer"
+            },
+            {
+              "name": "maxLines",
+              "type": "integer"
+            }
+          ],
+          "unknownFieldCount": 0,
+          "reasons": [],
+          "rejected": false
+        },
+        {
+          "fields": [
+            {
+              "name": "path",
+              "type": "string"
+            },
+            {
+              "name": "startLine",
+              "type": "integer"
+            },
+            {
+              "name": "maxLines",
+              "type": "integer"
+            }
+          ],
+          "unknownFieldCount": 0,
+          "reasons": [],
+          "rejected": false
+        }
+      ],
+      "filePatchCalls": [
+        {
+          "fields": [
+            {
+              "name": "path",
+              "type": "string"
+            },
+            {
+              "name": "expectedHash",
+              "type": "string"
+            },
+            {
+              "name": "edits",
+              "type": "array"
+            }
+          ],
+          "missingFields": [],
+          "unknownFieldCount": 0,
+          "editCount": 1,
+          "editShapes": [
+            {
+              "fields": [
+                {
+                  "name": "oldText",
+                  "type": "string"
+                },
+                {
+                  "name": "newText",
+                  "type": "string"
+                }
+              ],
+              "missingFields": [],
+              "unknownFieldCount": 0,
+              "reasons": []
+            }
+          ],
+          "reasons": [],
+          "preSchemaGuardMatches": [],
+          "rejected": false,
+          "operationError": null
+        }
+      ],
+      "staleResultsByTurn": [
+        {
+          "turn": 1,
+          "previousToolResultCount": 0,
+          "staleResultCount": 0
+        },
+        {
+          "turn": 2,
+          "previousToolResultCount": 1,
+          "staleResultCount": 0
+        },
+        {
+          "turn": 3,
+          "previousToolResultCount": 2,
+          "staleResultCount": 0
+        },
+        {
+          "turn": 4,
+          "previousToolResultCount": 3,
+          "staleResultCount": 0
+        },
+        {
+          "turn": 5,
+          "previousToolResultCount": 4,
+          "staleResultCount": 0
+        },
+        {
+          "turn": 6,
+          "previousToolResultCount": 5,
+          "staleResultCount": 2
+        },
+        {
+          "turn": 7,
+          "previousToolResultCount": 6,
+          "staleResultCount": 2
+        },
+        {
+          "turn": 8,
+          "previousToolResultCount": 7,
+          "staleResultCount": 2
+        },
+        {
+          "turn": 9,
+          "previousToolResultCount": 8,
+          "staleResultCount": 2
+        }
+      ],
+      "validatedToolArgumentsAndQuestions": 8,
+      "rejectedInputCount": 0
+    }
+  ]
+}

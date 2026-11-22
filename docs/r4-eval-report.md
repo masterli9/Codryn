@@ -29,6 +29,16 @@ Hostitelský offline průchod po poslední cenové změně prošel 3/3 a ověři
 
 Jde o šest pokusů nad třemi malými syntetickými úlohami, nikoli odhad obecné spolehlivosti modelu nebo celé aplikace. Série rozšiřuje živý důkaz o opakovanou opravu a aktuálnost navazujícího chatu, ale neuzavírá celou původní devítipřípadovou bránu, osobní přijetí ani nový zabalený GUI průchod. `FR-LLM-12`, `AC-O1-25` a celé R4 zůstávají otevřené. Historické neúspěchy a jejich omezení níže se tím nepřepisují.
 
+## Samostatná doplňková diagnostika v2 — 22. listopadu 2026
+
+Po uzavření v3 vznikl právě jeden samostatný pokus původního `storage-question` v2 s větší rezervací: 0,10 USD a nejvýše 24 API požadavků při stejných 24 krocích a 240 sekundách. Protokol byl před API zafixován a odeslán v `6594395`. Kód, prompty, hodnoticí podmínky ani guard v3 se neměnily; preflight ověřil všech 11 zmrazených identit, shodu ukládacího zadání v2 s v3 a odmítnutí vyššího capu guardem v3. [Samostatný protokol](evals/r4-storage-v2-supplemental-protocol.md)
+
+Doplněk prošel **1/1**: otázka před první změnou, pevná odpověď dostupná po obnově stejného běhu, pouze modul ukládání změněn a původní typy i všechny čtyři testy po posledním zápisu prošly (`[0,0]`). Backend uložil ověřené dokončení. Platných bylo 8/8 návrhů, latence 33 021 ms. Všech devět požadavků má známou spotřebu: 18 696 vstupních, 1 374 výstupních a z nich 454 uvažovacích tokenů. Horní odhad se sazbami 0,125/0,50 činí **0,003024 USD**, rezervace **0,04767325 USD**. Deset pro v2 použitých identit i produktový zdroj souhlasí se zmrazením. [Report](evals/r4-live-storage-v2-supplemental-2026-11-22.json) · [Diagnostika](evals/r4-live-storage-v2-supplemental-2026-11-22-diagnostics.json) · [Cenový souhrn](evals/r4-storage-v2-supplemental-summary-2026-11-22.json)
+
+**V3 zůstává 5/6 a ukládání v ní 1/2.** Doplňkový výsledek nevstupuje do tohoto podílu a nenahrazuje neúspěch. Tento nový pokus dokonce nevyužil rezervaci vyšší než původních 0,054 USD; nedokazuje, že vyšší cap způsobil úspěch nebo jak by dopadl dřívější neúspěšný pokus.
+
+Před novým požadavkem jsme zadrželi celé všechny dosavadní rezervace 0,496797125 USD a přidělili nejvýše 0,10 USD: krajní součet 0,596797125 USD byl pod autorizovanými 0,60 USD. Po dokončení činí historie s celými všemi novými rezervacemi **0,544470375 USD**; při účtování známých nových horních odhadů a zachování historických rezervací činí **0,287553 USD**. Nejde o fakturu. Žádný další pokus se neprovedl a celkové R4 přijetí zůstává otevřené.
+
 ## Opravený otázkový scénář v2 — 22. listopadu 2026
 
 Samostatná sada obsahuje jeden úkol `storage-question`. Model má propojit ukládání čítače s předaným úložištěm až po otázce o místním či sdíleném rozsahu. Ovladač odpovídá pevnou volnou odpovědí „pouze místně“, takže model nerozhoduje o tom, která nabídka bude vybrána. Rozpoznání smyslu otázky sleduje obě alternativy v textu nebo nabídkách a podporuje české i anglické formulace. Jde o heuristiku a neznámá formulace se může projevit jako nesplněné kritérium. Sada má SHA-256 `f05439b572d2ebe33f182478b6770900aa6d78cd12b8c8ec3c05614c38d7bfce`, 24 modelových kroků a 240 sekund na scénář. [Dataset v2](../tests/support/r4-eval/dataset-v2.json)

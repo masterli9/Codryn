@@ -1,0 +1,67 @@
+{
+  "schemaVersion": 1,
+  "kind": "supplemental_diagnostic",
+  "protocolCommit": "6594395",
+  "notPartOfV3": true,
+  "v3Passed": 5,
+  "v3Total": 6,
+  "reportFile": "r4-live-storage-v2-supplemental-2026-11-22.json",
+  "reportSha256": "3d86a75013cbb08d10b455f29126d293a153512853bdbcbb7bb736352db6525e",
+  "diagnosticsFile": "r4-live-storage-v2-supplemental-2026-11-22-diagnostics.json",
+  "diagnosticsSha256": "0b7f9383fc897074b50d37562b84e6e14bfcfc1b02db97fa33177b85bb34591a",
+  "datasetHash": "f05439b572d2ebe33f182478b6770900aa6d78cd12b8c8ec3c05614c38d7bfce",
+  "sourceHash": "2d119a4616c7caa351c5e78531d616b0cf11ac1558e295c06772d10d55bdc89e",
+  "allApplicableFrozenIdentitiesMatch": true,
+  "passed": 1,
+  "total": 1,
+  "result": {
+    "id": "storage-question",
+    "success": true,
+    "taskCompleted": true,
+    "recovery": false,
+    "failureOwner": null,
+    "reason": null,
+    "toolCalls": 8,
+    "validArguments": 8,
+    "latencyMs": 33021,
+    "requests": 9,
+    "inputTokens": 18696,
+    "outputTokens": 1374,
+    "reasoningTokens": 454,
+    "estimatedCostUsd": 0.0030239999999999998,
+    "observedUsage": {
+      "knownRequests": 9,
+      "unknownRequests": 0,
+      "inputTokens": 18696,
+      "outputTokens": 1374,
+      "reasoningTokens": 454,
+      "estimatedCostUsd": 0.0030239999999999998
+    }
+  },
+  "storageAssessment": {
+    "success": true,
+    "resumedFromScopeAnswer": true,
+    "changedAfterAnswer": true,
+    "testPassed": true,
+    "typecheckPassed": true,
+    "answerDelivered": true,
+    "editedOnlyStorage": true,
+    "protectedFilesIntact": true,
+    "storageChanged": true
+  },
+  "commandExitCodes": [
+    0,
+    0
+  ],
+  "fullPriorReservationsUsd": 0.496797125,
+  "reservedUsd": 0.04767325,
+  "upperEstimateUsd": 0.0030239999999999998,
+  "historicalPlusAllReservationsUsd": 0.544470375,
+  "historicalPlusKnownUpperEstimatesUsd": 0.287553,
+  "authorizedUsd": 0.6,
+  "limitations": [
+    "One separate diagnostic; no replacement of any frozen v3 attempt.",
+    "The run used nine requests and a reservation below the original .054 slot cap.",
+    "Success does not establish how the earlier failed attempt would have ended or a causal effect of raising the cap."
+  ]
+}
