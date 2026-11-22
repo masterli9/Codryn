@@ -1,0 +1,53 @@
+{
+  "schemaVersion": 1,
+  "series": "live",
+  "model": "gpt-6-luna",
+  "createdAt": "2026-11-22T09:16:42.538Z",
+  "datasetHash": "00fdb7d02920f9dab7b53193d92353cfe3fa9b72d9c6e418cd3e85bd912fd502",
+  "sourceHash": "20e6dd1816de44606c26a972ac78269c50d585d4d2443273e4e8dc0e80128df9",
+  "evalIdentity": {
+    "runnerSha256": "f6751f7c607135fba191fc1d022b40ea307f7a5f4646129ab52d5788291f9c39",
+    "fixtureBuilderSha256": "ed8fdbcb1b76ced91108a905cde0683f7a98214b5045c46c2ff4a1dee0769ddd",
+    "counterOracleSha256": "fe79d9755d547b6c15f875f74e99b77a5d3038d562ba67ba2d9ebc1aace9d206",
+    "budgetSha256": "d99ff75377e37cf1253a01dc8dba55a4ba1cd7b98e9b9fcb3467f83191565d20",
+    "safeOutputSha256": "5744552f9a9a36eabebb55e406f73af7a523716df3b0ab529e99e87244066552",
+    "reportSchemaSha256": "95d561dc26d6c746339c8d5c044b947d894e48342a958a6189777bd6d54d64b3",
+    "r4ModelEvalDiagnosticsSha256": "f9a10aa9d38f76353685453dbba3dadc9fab4d35105a21491df2b3275a981d0f",
+    "selectionSha256": "4ed1dc2997fae5e5f33a02f7211988a9b9a68f69254a3758fc367a687ee92734",
+    "wrapperSha256": "18287d24440f2e1592fc372bc23f65559fb7a7c8a0dcd8da32bf1864f9537888"
+  },
+  "paidRequests": 12,
+  "reservedUsd": 0.054866700000000004,
+  "approvedBudgetUsd": 0.07,
+  "pricing": {
+    "inputUsdPerMillion": 0.1,
+    "outputUsdPerMillion": 0.5,
+    "maxRequests": 14,
+    "maxOutputTokens": 4096
+  },
+  "pricingSource": "https://developers.openai.com/api/docs/models/gpt-6-luna",
+  "passed": 0,
+  "total": 1,
+  "results": [
+    {
+      "id": "question",
+      "success": false,
+      "taskCompleted": false,
+      "recovery": false,
+      "failureOwner": "model",
+      "reason": "expected_behavior_not_observed",
+      "toolCalls": 12,
+      "validArguments": 12,
+      "latencyMs": 36703,
+      "requests": 12,
+      "inputTokens": 22747,
+      "outputTokens": 1796,
+      "reasoningTokens": 1155,
+      "estimatedCostUsd": 0.0031727000000000005
+    }
+  ],
+  "selection": {
+    "kind": "case",
+    "id": "question"
+  }
+}
