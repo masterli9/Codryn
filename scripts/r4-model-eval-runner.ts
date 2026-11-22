@@ -6,7 +6,7 @@ import { join, resolve, relative, isAbsolute } from 'node:path';
 import { fileReadInputSchema, r3ModelDescriptor, type ModelAdapter, type SecretProtector } from '@codryn/core';
 import { createR3Infrastructure, createDesktopRuntimeFactory, FetchProviderTransport, OpenAIResponsesAdapter, UuidGenerator } from '@codryn/infrastructure';
 import type { ProviderTransport } from '@codryn/infrastructure';
-import { builtinWorkflowSchema, patchInputSchema, type ModelRequest, type JsonValue } from '@codryn/shared';
+import { builtinWorkflowSchema, patchInputSchema, type ModelRequest, type JsonValue, type QuestionAnswer } from '@codryn/shared';
 import { createR4EvalProjectFixture } from '@codryn/test-support';
 import { sourceHash } from './r3-build-identity.mjs';
 import { createR4UsageMetrics, isSafeR4EvalId, r4EvalReportSchema } from './r4-eval-report.mjs';
@@ -14,29 +14,42 @@ import { R4RequestBudget } from './r4-eval-budget.mjs';
 import { writeR4EvalOutput } from './r4-safe-output.mjs';
 import { counterOracle } from './r4-counter-oracle.mjs';
 import { diagnoseFileReadArguments, diagnosePatchInputArguments, diagnosePatchPreSchemaGuards, finalizePatchInputDiagnostic, summarizeStaleResultsByTurn } from './r4-model-eval-diagnostics.mjs';
-import { effectiveR4EvalMaxSteps, readR4EvalOptions, selectR4EvalCases } from './r4-eval-selection.mjs';
+import { effectiveR4EvalMaxSteps, r4EvalDatasetPath, readR4EvalOptions, selectR4EvalCases } from './r4-eval-selection.mjs';
+import { evaluateStorageQuestion, isStorageScopeQuestion, protectedStorageFiles, readStorageQuestionAudit, storageFilesMatch, storagePath } from './r4-storage-question.mjs';
 
-interface EvalCase { id: string; mode: 'git'|'non-git'; variant: string; prompt: string; expected: string; workflow?: string }
+interface EvalCase { id: string; mode: 'git'|'non-git'; variant: string; prompt: string; expected: string; workflow?: string; answer?: string }
 const diagnosticToolIds = new Set(['file.read','file.patch','text.search','command.run','typescript.query','change.revert','ask_user']);
 const diagnosticToolStates = new Set(['received','schema_validated','waiting_for_approval','permission_decided','queued','running','succeeded','failed','denied','timed_out','cancelled']);
 const diagnosticErrorCodes = new Set(['R3_SECRET_UNAVAILABLE','R3_SECRET_UNAVAILABLE:ACL_APPLY','R3_SECRET_UNAVAILABLE:ACL_VERIFY',
   'R3_CONSENT_REQUIRED','R3_INPUT_INVALID','R3_PROJECT_BUSY','R3_NOT_FOUND','R3_INTERNAL','R3_STALE_VIEW',
   'R1_TOOL_INPUT_INVALID','R1_TOOL_UNKNOWN','R1_TOOL_PERMISSION_DENIED','R1_TOOL_EXECUTION_FAILED','R1_STEP_LIMIT_EXCEEDED',
   'R1_MODEL_RESPONSE_UNSUPPORTED','R1_CANCELLED','R2_TOOL_CONTEXT_INVALID','R2_PERMISSION_PENDING',
-  'R4_EVAL_BUDGET_EXHAUSTED','R4_EVAL_CHECK_UNAVAILABLE','R4_EVAL_ACL_PROBE_OFFLINE_ONLY']);
+  'R4_EVAL_BUDGET_EXHAUSTED','R4_EVAL_CHECK_UNAVAILABLE','R4_EVAL_ACL_PROBE_OFFLINE_ONLY','R4_EVAL_QUESTION_ANSWER_REJECTED']);
+const diagnosticPatchCodes = new Set(['R2_PATCH_STALE','R2_PATCH_SOURCE_MISSING','R2_PATCH_AMBIGUOUS','R2_PATCH_OVERLAP',
+  'R2_PATCH_NO_CHANGE','R2_PATCH_REJECTED','R2_PATCH_NUL','R2_PATCH_BINARY_CONTENT','R2_PATCH_FILE_TOO_LARGE',
+  'R2_PATCH_INPUT_INVALID','R2_GUARD_WORKER_EXITED','R2_GUARD_OPERATION_FAILED','R2_GUARD_PROTOCOL_INVALID',
+  'R2_RECOVERY_REQUIRED','R2_PATH_SENSITIVE','R2_PATH_REPARSE','R2_PATH_OUTSIDE_ROOT','R2_PATH_HARDLINK','R2_FILE_NOT_FOUND']);
 const args = process.argv.slice(2);
 const value = (flag: string) => {const index=args.indexOf(flag);return index<0?undefined:args[index+1];};
-const {caseId,maxStepsOverride}=readR4EvalOptions(args);
+const options=readR4EvalOptions(args);
+const {maxStepsOverride}=options;
+const storageDataset=options.datasetVersion==='v2';
 const live = args.includes('--live');
 const maxRequests = live ? Number(value('--max-requests')) : 0;
 const maxCost = live ? Number(value('--max-cost-usd')) : 0;
 const inputPrice = Number(value('--input-usd-per-million'));
 const outputPrice = Number(value('--output-usd-per-million'));
 const budget = live ? new R4RequestBudget({maxRequests,maxCostUsd:maxCost,inputPrice,outputPrice}) : null;
-const datasetBytes = await readFile('tests/support/r4-eval/dataset-v1.json');
-const dataset = JSON.parse(datasetBytes.toString('utf8')) as { schemaVersion: number; maxSteps: number; cases: EvalCase[] };
-if (dataset.schemaVersion !== 1 || dataset.cases.length !== 9 || new Set(dataset.cases.map(item => item.id)).size !== 9
-  || !dataset.cases.every(item => isSafeR4EvalId(item.id))) throw new Error('R4_EVAL_DATASET_INVALID');
+const datasetBytes = await readFile(r4EvalDatasetPath(options.datasetVersion));
+const dataset = JSON.parse(datasetBytes.toString('utf8')) as { schemaVersion: number; id: string; maxSteps: number; caseTimeoutMs?: number; cases: EvalCase[] };
+const caseCount = storageDataset ? 1 : 9;
+if (dataset.schemaVersion !== 1 || dataset.cases.length !== caseCount || new Set(dataset.cases.map(item => item.id)).size !== caseCount
+  || !dataset.cases.every(item => isSafeR4EvalId(item.id))
+  || (storageDataset && (dataset.id!=='r4-user-task-v2'||dataset.maxSteps!==24||dataset.caseTimeoutMs!==240000
+    ||dataset.cases[0]?.id!=='storage-question'||dataset.cases[0].variant!=='storage-question'||!dataset.cases[0].answer)))
+  throw new Error('R4_EVAL_DATASET_INVALID');
+const caseId=options.caseId??(storageDataset?dataset.cases[0]?.id:undefined);
+const caseTimeoutMs=dataset.caseTimeoutMs??90_000;
 const selectedCases=selectR4EvalCases(dataset.cases,caseId);
 const effectiveMaxSteps=effectiveR4EvalMaxSteps(dataset.maxSteps,maxStepsOverride);
 const key = live ? process.env.R2_PROVIDER_API_KEY ?? '' : '';
@@ -57,7 +70,8 @@ const evalIdentity = {
   reportSchemaSha256: hash(await readFile(new URL('./r4-eval-report.mjs', import.meta.url))),
   r4ModelEvalDiagnosticsSha256: hash(await readFile(new URL('./r4-model-eval-diagnostics.mjs', import.meta.url))),
   selectionSha256: hash(await readFile(new URL('./r4-eval-selection.mjs', import.meta.url))),
-  wrapperSha256: hash(await readFile(new URL('./eval-r4-model.mjs', import.meta.url)))
+  wrapperSha256: hash(await readFile(new URL('./eval-r4-model.mjs', import.meta.url))),
+  ...(storageDataset?{storageQuestionSha256:hash(await readFile(new URL('./r4-storage-question.mjs',import.meta.url)))}:{})
 };
 
 // Test-owned profiles use an ephemeral authenticated key. No provider key is
@@ -80,7 +94,11 @@ const protector: SecretProtector = {
 try {
   for (const item of selectedCases) {
     const started = performance.now(), projectRoot = join(root,item.id), profile = join(root,item.id+'-profile');
-    await createR4EvalProjectFixture(projectRoot,item.variant,item.variant==='verification' ? fixtureSource.replace('value - 1','value + 1') : fixtureSource);
+    const storageQuestion=item.variant==='storage-question';
+    const storageAnswer=item.answer??'';
+    await createR4EvalProjectFixture(projectRoot,item.variant,item.variant==='verification'||storageQuestion ? fixtureSource.replace('value - 1','value + 1') : fixtureSource);
+    const protectedFiles=storageQuestion?await Promise.all(protectedStorageFiles.map(async path=>[path,await readFile(join(projectRoot,path))] as const)):[];
+    const initialStorage=storageQuestion?await readFile(join(projectRoot,storagePath)):null;
     if(item.mode==='git')for(const command of [['init','-b','main'],['config','user.name','R4 Eval'],['config','user.email','r4@invalid.local'],['add','.'],['commit','-m','fixture']]){
       execFileSync('git',command,{cwd:projectRoot,windowsHide:true,timeout:5000,stdio:'ignore'});
     }
@@ -88,18 +106,22 @@ try {
     const fileReadShapes: {callId:string;shape:ReturnType<typeof diagnoseFileReadArguments>}[] = [];
     const filePatchShapes: {callId:string;shape:ReturnType<typeof diagnosePatchInputArguments>;preSchemaGuardMatches:ReturnType<typeof diagnosePatchPreSchemaGuards>}[] = [];
     const fileReadRejections = new Map<string,string|null>();
-    const filePatchRejections = new Map<string,string|null>();
+    const filePatchRejections = new Map<string,{code:string|null;operationError:string|null}>();
     let inputTokens=0,outputTokens=0,reasoningTokens=0,usageKnown=true,reasoningKnown=true,observedReasoningKnown=true,actualCost=0,requestCount=0,usageRequestCount=0;
     let budgetHit=false,validArguments=0,projectId:string|undefined,runFailureCode:string|null=null,runState:string|null=null;
     let resultStatus:string|null=null,verificationStatus:string|null=null,questionTotal=0,counterOracleStatus:'verified'|'mismatch'|'unsupported'|'not_applicable'='not_applicable';
     let commandExitCodes:(number|null)[]=[];
+    let scopeQuestionId:string|null=null,storageAssessment:ReturnType<typeof evaluateStorageQuestion>|null=null;
+    const signal=AbortSignal.timeout(caseTimeoutMs);
     const toolAudit:{toolId:string;state:string;errorCode:string|null}[]=[];
-    const transport:ProviderTransport={async *stream(request,signal){
+    const transport:ProviderTransport={async *stream(request,requestSignal){
       if(!budget)throw new Error('R4_EVAL_NOT_AUTHORIZED');
+      const bounded=AbortSignal.any([signal,requestSignal]);
+      bounded.throwIfAborted();
       try{budget.reserve(request.body);}catch(error){budgetHit=true;throw error;}
       requestCount++;
       let used=false;
-      try{for await(const event of new FetchProviderTransport({maxRateLimitRetries:0}).stream(request,signal)){
+      try{for await(const event of new FetchProviderTransport({maxRateLimitRetries:0}).stream(request,bounded)){
         const raw=event as {type?:string;response?:{usage?:{input_tokens?:number;output_tokens?:number;output_tokens_details?:{reasoning_tokens?:number}}}};
         const usage=raw.type==='response.completed'?raw.response?.usage:undefined;
         if(!used&&usage&&Number.isSafeInteger(usage.input_tokens)&&Number.isSafeInteger(usage.output_tokens)&&typeof usage.input_tokens==='number'&&typeof usage.output_tokens==='number'){
@@ -116,18 +138,26 @@ try {
       const succeeded=(id:string)=>calls.some(call=>call.toolId===id);
       const latest=outputs.at(-1);
       const readOutput=outputs.findLast(result=>result.ok&&typeof result.output==='object'&&result.output!==null&&'contentHash' in result.output);
-      let toolId='file.read',argumentsValue:JsonValue={path:'src/counter.ts'};
+      let toolId='file.read',argumentsValue:JsonValue={path:storageQuestion?storagePath:'src/counter.ts'};
       if(item.variant==='ignored'){
         if(calls.length){yield {type:'text_delta',text:'The ignored input cannot be read.'};yield {type:'completed'};return;}
         argumentsValue={path:'private/data.txt'};
       }
-      else if(item.variant==='question'&&!succeeded('ask_user')){
-        toolId='ask_user';argumentsValue={reason:'Storage scope changes the feature.',prompt:'Where should the state live?',options:[{id:'local',label:'Local'},{id:'shared',label:'Shared'}]};
+      else if((item.variant==='question'||storageQuestion)&&!succeeded('ask_user')){
+        toolId='ask_user';argumentsValue=storageQuestion
+          ?{reason:'Způsob uložení ovlivní dostupnost hodnoty.',prompt:'Má být hodnota sdílená, nebo místní?',options:[{id:'shared',label:'Sdílené'},{id:'local',label:'Místní'}]}
+          :{reason:'Storage scope changes the feature.',prompt:'Where should the state live?',options:[{id:'local',label:'Local'},{id:'shared',label:'Shared'}]};
       }else if(item.variant==='planning'||item.variant==='continuation'||item.variant==='ignored'){
         if(succeeded('file.read')){
           yield {type:'text_delta',text:'Reviewed the current file. Proposed bounded steps and verification are ready.'};yield {type:'completed'};return;
         }
       }else{
+        if(storageQuestion){
+          const questionCall=calls.find(call=>call.toolId==='ask_user');
+          const response=outputs.find(result=>result.callId===questionCall?.callId);
+          if(!response?.ok||JSON.stringify(response.output)!==JSON.stringify({kind:'text',text:storageAnswer}))
+            throw new Error('R4_EVAL_QUESTION_ANSWER_REJECTED');
+        }
         const checkCalls=calls.filter(call=>call.toolId==='command.run').length;
         const patches=outputs.filter(result=>result.ok&&typeof result.output==='object'&&result.output!==null&&'status' in result.output&&result.output.status==='applied');
         const repaired=patches.length>0||item.variant==='verification';
@@ -141,7 +171,10 @@ try {
           yield {type:'text_delta',text:'Change completed and actual checks inspected.'};yield {type:'completed'};return;
         }else if(readOutput?.ok&&latest?.ok&&typeof latest.output==='object'&&latest.output!==null&&'contentHash' in latest.output){
           const output=readOutput.output as {contentHash:string};
-          toolId='file.patch';argumentsValue={path:'src/counter.ts',expectedHash:output.contentHash,edits:[{oldText:'value - 1',newText:'value + 1'}]};
+          toolId='file.patch';argumentsValue={path:storageQuestion?storagePath:'src/counter.ts',expectedHash:output.contentHash,edits:storageQuestion?[
+            {oldText:'// TODO: persist the count.',newText:'storage.setItem("counter", String(value));'},
+            {oldText:'// TODO: return the persisted count when available.\n  return 0;',newText:'return Number(storage.getItem("counter") ?? 0);'}
+          ]:[{oldText:'value - 1',newText:'value + 1'}]};
         }
       }
       yield {type:'tool_call',call:{callId:randomUUID(),toolId,toolVersion:1,arguments:argumentsValue}};
@@ -162,7 +195,7 @@ try {
                 if(event.type==='tool_call'){
                   trace.push({toolId:event.call.toolId});
                   if(event.call.toolId==='file.read')fileReadShapes.push({callId:event.call.callId,shape:diagnoseFileReadArguments(event.call.arguments,fileReadInputSchema)});
-                  if(event.call.toolId==='file.patch')filePatchShapes.push({callId:event.call.callId,shape:diagnosePatchInputArguments(event.call.arguments,patchInputSchema),preSchemaGuardMatches:diagnosePatchPreSchemaGuards(event.call.arguments)});
+                  if(event.call.toolId==='file.patch')filePatchShapes.push({callId:event.call.callId,shape:diagnosePatchInputArguments(event.call.arguments,patchInputSchema),preSchemaGuardMatches:diagnosePatchPreSchemaGuards(event.call.arguments,key)});
                   if(item.variant==='stale'&&event.call.toolId==='file.patch'&&!staleInjected){
                     await writeFile(join(projectRoot,'src/counter.ts'),fixtureSource+'// external edit\n');staleInjected=true;
                   }
@@ -179,7 +212,7 @@ try {
         const settings=await host.settings.get();
         await host.settings.confirmDataPolicy(settings.dataPolicyVersion);
       }
-      const signal=AbortSignal.timeout(90_000),project=await host.projects.open(projectRoot,signal);projectId=project.id;
+      const project=await host.projects.open(projectRoot,signal);projectId=project.id;
       const chat=await host.chats.create(project.id,'Frozen eval');
       const activeHost=host;
       const execute=async(task:string)=>{
@@ -189,18 +222,25 @@ try {
           signal.throwIfAborted();
           const snapshot=await activeHost.snapshot(chat.id,signal);
           if(snapshot.question){
-            await activeHost.manager.wait(accepted.jobId);
-            await activeHost.answerQuestion(chat.id,project.id,snapshot.question.runId,snapshot.question.id,randomUUID(),{kind:'option',optionId:snapshot.question.options[0]?.id??'local'});
+            let answer:QuestionAnswer={kind:'option',optionId:snapshot.question.options[0]?.id??'local'};
+            if(storageQuestion){
+              const scope=isStorageScopeQuestion(snapshot.question);
+              if(scope)scopeQuestionId??=snapshot.question.id;
+              answer={kind:'text',text:storageAnswer};
+            }else await activeHost.manager.wait(accepted.jobId);
+            const response=await activeHost.answerQuestion(chat.id,project.id,snapshot.question.runId,snapshot.question.id,randomUUID(),answer);
+            if(response.status==='rejected')throw new Error('R4_EVAL_QUESTION_ANSWER_REJECTED');
           }
           for(const permission of snapshot.permissions){
-            const allowed=captured.at(-1)?.recommendedChecks?.some(check=>check.available&&JSON.stringify(check.command)===JSON.stringify(permission.command));
+            const recommended=captured.at(-1)?.recommendedChecks?.some(check=>check.available&&JSON.stringify(check.command)===JSON.stringify(permission.command));
+            const allowed=recommended&&(!storageQuestion||await storageFilesMatch(projectRoot,protectedFiles));
             await activeHost.answerPermission(chat.id,project.id,{id:permission.id,digest:permission.digest,decision:allowed?'allow_once':'deny'});
           }
           if(snapshot.run&&['finished','interrupted'].includes(snapshot.run.state)){runState=snapshot.run.state;return snapshot.run;}
-          await new Promise(resolve=>setTimeout(resolve,30));
+          await new Promise(resolve=>setTimeout(resolve,storageQuestion?100:30));
         }
       };
-      let done=await execute(item.prompt+' Files are src/counter.ts, src/Counter.tsx and counter.test.mjs. Inspect recommended checks before running commands.');
+      let done=await execute(storageQuestion?item.prompt:item.prompt+' Files are src/counter.ts, src/Counter.tsx and counter.test.mjs. Inspect recommended checks before running commands.');
       if(item.variant==='continuation'){
         await writeFile(join(projectRoot,'src/counter.ts'),fixtureSource+'// current continuation value\n');
         done=await execute('Pokračuj v předchozím zjištění a znovu přečti src/counter.ts.');
@@ -208,6 +248,7 @@ try {
       taskCompleted=done.result?.status==='completed';
       resultStatus=done.result?.status??null;
       verificationStatus=done.result?.verification.status??null;
+      if(done.failure?.code)runFailureCode=diagnosticErrorCodes.has(done.failure.code)?done.failure.code:'OTHER_FAILURE';
       const rows=host.resources.database.prepare('SELECT tool_id,safe_result_json FROM tool_calls').all();
       const stale=rows.some(row=>String(row.safe_result_json).includes('R2_PATCH_STALE'));
       const commandResults=host.resources.database.prepare("SELECT result_json FROM desktop_command_results").all().map(row=>JSON.parse(String(row.result_json)) as {exitCode:number});
@@ -217,8 +258,6 @@ try {
       if(['change','stale','question','repair','verification'].includes(item.variant))counterOracleStatus=counterOracle(finalSource);
       const questionCount=Number(host.resources.database.prepare("SELECT COUNT(*) AS n FROM r4_questions WHERE status='answered' AND run_id=?").get(done.runId??'')?.n??0);
       questionTotal=Number(host.resources.database.prepare('SELECT COUNT(*) AS n FROM r4_questions').get()?.n??0);
-      validArguments=Number(host.resources.database.prepare("SELECT COUNT(*) AS n FROM events WHERE event_type='tool_call.schema_validated'").get()?.n??0)
-        +Number(host.resources.database.prepare("SELECT COUNT(*) AS n FROM r4_questions").get()?.n??0);
       recovery=item.variant==='stale'?stale&&taskCompleted&&counterOracleStatus==='verified'&&finalSource.includes('// external edit')&&rows.filter(row=>row.tool_id==='file.read').length>=2
         :item.variant==='repair'?failedCheck&&taskCompleted&&passedChecks>=2&&counterOracleStatus==='verified':false;
       const noIgnored=!captured.some(request=>JSON.stringify([request.context,request.previousToolResults]).includes('SYNTHETIC_IGNORED_MARKER'));
@@ -226,7 +265,13 @@ try {
       if(item.variant==='ignored')success=noIgnored&&rows.some(row=>row.tool_id==='file.read');
       else if(item.variant==='continuation')success=taskCompleted&&captured.some(request=>request.priorConversation?.length)&&JSON.stringify(captured.at(-1)?.previousToolResults).includes('current continuation value');
       else if(item.variant==='stale'||item.variant==='repair')success=recovery;
-      else if(item.variant==='question')success=checksPassed&&questionCount===1&&counterOracleStatus==='verified';
+      else if(storageQuestion){
+        storageAssessment=evaluateStorageQuestion({taskCompleted,verificationStatus,questionTotal,scopeQuestion:scopeQuestionId!==null,
+          ...readStorageQuestionAudit(host.resources.database,done.runId,scopeQuestionId,storageAnswer,captured),
+          protectedFilesIntact:await storageFilesMatch(projectRoot,protectedFiles),
+          storageChanged:initialStorage!==null&&!(await readFile(join(projectRoot,storagePath))).equals(initialStorage)});
+        success=storageAssessment.success;
+      }else if(item.variant==='question')success=checksPassed&&questionCount===1&&counterOracleStatus==='verified';
       else if(item.variant==='planning')success=taskCompleted&&rows.length>0&&rows.every(row=>['file.read','text.search','typescript.query'].includes(String(row.tool_id)));
       else success=checksPassed&&counterOracleStatus==='verified';
       if(!success){
@@ -240,13 +285,23 @@ try {
     finally{if(host){
       try {
         if(projectId){
-          const rows=host.resources.database.prepare('SELECT call_id,tool_id,state,error_code FROM tool_calls WHERE project_id=? ORDER BY created_at,call_id').all(projectId);
+          questionTotal=Number(host.resources.database.prepare('SELECT COUNT(*) AS n FROM r4_questions').get()?.n??0);
+          validArguments=Number(host.resources.database.prepare("SELECT COUNT(*) AS n FROM events WHERE event_type='tool_call.schema_validated'").get()?.n??0)+questionTotal;
+          commandExitCodes=host.resources.database.prepare("SELECT json_extract(result_json,'$.exitCode') AS exit_code FROM desktop_command_results").all()
+            .map(row=>typeof row.exit_code==='number'&&Number.isInteger(row.exit_code)?row.exit_code:null);
+          const rows=host.resources.database.prepare(`SELECT call_id,tool_id,state,error_code,
+            json_extract(safe_result_json,'$.code') AS operation_error
+            FROM tool_calls WHERE project_id=? ORDER BY created_at,call_id`).all(projectId);
           for(const row of rows){
             const toolId=typeof row.tool_id==='string'&&diagnosticToolIds.has(row.tool_id)?row.tool_id:'unknown';
             const state=typeof row.state==='string'&&diagnosticToolStates.has(row.state)?row.state:'unknown';
             const code=typeof row.error_code==='string'?(diagnosticErrorCodes.has(row.error_code)?row.error_code:'OTHER_FAILURE'):null;
             if(row.tool_id==='file.read'&&typeof row.call_id==='string')fileReadRejections.set(row.call_id,code);
-            if(row.tool_id==='file.patch'&&typeof row.call_id==='string')filePatchRejections.set(row.call_id,code);
+            if(row.tool_id==='file.patch'&&typeof row.call_id==='string'){
+              const operationError=typeof row.operation_error==='string'&&code===null?
+                (diagnosticPatchCodes.has(row.operation_error)?row.operation_error:'OTHER_PATCH_FAILURE'):null;
+              filePatchRejections.set(row.call_id,{code,operationError});
+            }
             toolAudit.push({toolId,state,errorCode:code});
           }
         }
@@ -254,16 +309,17 @@ try {
         runFailureCode??='AUDIT_FAILURE';
         if(success){success=false;owner='harness';reason='audit_failed';}
       }
-      try { await host.shutdown(AbortSignal.timeout(10000)); }
-      catch {
+      let stopped=false;
+      try { stopped=(await host.shutdown(AbortSignal.timeout(10000))).stopped; }
+      catch { /* The safe diagnostic is shared with an incomplete shutdown. */ }
+      if(!stopped){
         runFailureCode??='SHUTDOWN_FAILURE';
         if(success){success=false;owner='harness';reason='shutdown_failed';}
-      } finally {
-        try { host.close(); }
-        catch {
-          runFailureCode??='HOST_CLOSE_FAILURE';
-          if(success){success=false;owner='harness';reason='host_close_failed';}
-        }
+      }
+      try { host.close(); }
+      catch {
+        runFailureCode??='HOST_CLOSE_FAILURE';
+        if(success){success=false;owner='harness';reason='host_close_failed';}
       }
     }}
     const fileReadCalls=fileReadShapes.map(({callId,shape})=>{
@@ -271,10 +327,12 @@ try {
       return { ...shape, rejected, reasons:shape.reasons.length?shape.reasons:rejected?['pre_schema_safety_check']:[] };
     });
     const filePatchCalls=filePatchShapes.map(({callId,shape,preSchemaGuardMatches})=>{
-      const rejected=filePatchRejections.get(callId)==='R1_TOOL_INPUT_INVALID';
-      return finalizePatchInputDiagnostic(shape,rejected,preSchemaGuardMatches);
+      const result=filePatchRejections.get(callId);
+      return {...finalizePatchInputDiagnostic(shape,result?.code==='R1_TOOL_INPUT_INVALID',preSchemaGuardMatches),
+        operationError:result?.operationError??null};
     });
     diagnostics.push({id:item.id,runState,runFailureCode,resultStatus,verificationStatus,questionTotal,counterOracleStatus,commandExitCodes,
+      ...(storageQuestion?{storageAssessment}:{}),
       modelToolIds:trace.map(call=>diagnosticToolIds.has(call.toolId)?call.toolId:'unknown'),toolAudit,
       fileReadCalls,filePatchCalls,staleResultsByTurn:summarizeStaleResultsByTurn(captured),
       validatedToolArgumentsAndQuestions:validArguments,
@@ -285,11 +343,12 @@ try {
         usageKnown,reasoningKnown,observedReasoningKnown,estimatedCostUsd:actualCost})});
   }
   const report={schemaVersion:1,series:live?'live':'offline',model:live?'gpt-6-luna':'scripted-fake',createdAt:new Date().toISOString(),
-    datasetHash:hash(datasetBytes),sourceHash:await sourceHash(),evalIdentity,paidRequests:budget?.requests??0,reservedUsd:budget?.reservedUsd??0,approvedBudgetUsd:live?maxCost:null,
+    datasetHash:hash(datasetBytes),datasetId:dataset.id,sourceHash:await sourceHash(),evalIdentity,paidRequests:budget?.requests??0,reservedUsd:budget?.reservedUsd??0,approvedBudgetUsd:live?maxCost:null,
     pricing:live?{inputUsdPerMillion:inputPrice,outputUsdPerMillion:outputPrice,maxRequests,maxOutputTokens:4096}:null,
     pricingSource:live?value('--pricing-source'):null,passed:results.filter(item=>item.success).length,total:results.length,results,
     ...(caseId===undefined?{}:{selection:{kind:'case',id:caseId,effectiveMaxSteps,
-      maxStepsOverride:maxStepsOverride??null,profile:maxStepsOverride===undefined?'frozen_dataset':'diagnostic_max_steps_override'}})};
+      maxStepsOverride:maxStepsOverride??null,profile:maxStepsOverride===undefined?'frozen_dataset':'diagnostic_max_steps_override',
+      ...(storageDataset?{caseTimeoutMs}:{})}})};
   const defaultReport=caseId===undefined?(live?'docs/evals/r4-live-report.json':'docs/evals/r4-offline-report.json'):
     `docs/evals/r4-${live?'live':'offline'}-case-${caseId}-report.json`;
   const output=resolve(value('--report')??defaultReport);
@@ -301,8 +360,8 @@ try {
   if(diagnosticPath){
     const target=resolve(diagnosticPath),diagnosticRelative=relative(resolve('docs/evals'),target);
     if(isAbsolute(diagnosticRelative)||diagnosticRelative.startsWith('..')||!diagnosticRelative.endsWith('.json'))throw new Error('R4_EVAL_DIAGNOSTIC_OUTPUT_INVALID');
-    await writeR4EvalOutput(resolve('docs/evals'),target,JSON.stringify({schemaVersion:1,sourceHash:await sourceHash(),evalIdentity,
-      counterOracle:{kind:'bounded_expression_ast',input:1,expected:2,scope:'exported one-parameter function or arrow with a single return expression; numeric literals, parameter, parentheses and + - * / % **'},
+    await writeR4EvalOutput(resolve('docs/evals'),target,JSON.stringify({schemaVersion:1,datasetId:dataset.id,datasetHash:hash(datasetBytes),sourceHash:await sourceHash(),evalIdentity,
+      ...(!storageDataset?{counterOracle:{kind:'bounded_expression_ast',input:1,expected:2,scope:'exported one-parameter function or arrow with a single return expression; numeric literals, parameter, parentheses and + - * / % **'}}:{}),
       series:live?'live':'offline',diagnostics},null,2)+'\n');
   }
   console.log(`R4 ${report.series} evaluation ${report.passed}/${report.total}, paid requests ${report.paidRequests}.`);

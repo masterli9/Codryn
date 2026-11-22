@@ -143,3 +143,12 @@ test('does not label rejected patch pre-schema when edit schema reasons already 
   assert.deepEqual(diagnostic.reasons,[]);
   assert.deepEqual(diagnostic.editShapes[0]?.reasons,['oldText_below_minimum']);
 });
+
+test('reports a configured sensitive value match without recording the value',()=>{
+  const canary='SYNTHETIC-R4-PRIVATE-VALUE';
+  const args={path:'src/counter.ts',expectedHash:'a'.repeat(64),edits:[{oldText:'before',newText:'const value = "'+canary+'";'}]};
+  const matches=diagnosePatchPreSchemaGuards(args,canary);
+  assert.deepEqual(matches,['configured_sensitive_value']);
+  assert.equal(JSON.stringify(matches).includes(canary),false);
+  assert.deepEqual(diagnosePatchPreSchemaGuards(args,''),[]);
+});

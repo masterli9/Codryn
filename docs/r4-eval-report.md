@@ -1,5 +1,15 @@
 # Rozšířený eval R4
 
+## Opravený otázkový scénář v2 — 22. listopadu 2026
+
+Samostatná sada obsahuje jeden úkol `storage-question`. Model má propojit ukládání čítače s předaným úložištěm až po otázce o místním či sdíleném rozsahu. Ovladač odpovídá pevnou volnou odpovědí „pouze místně“, takže model nerozhoduje o tom, která nabídka bude vybrána. Rozpoznání smyslu otázky sleduje obě alternativy v textu nebo nabídkách a podporuje české i anglické formulace. Jde o heuristiku a neznámá formulace se může projevit jako nesplněné kritérium. Sada má SHA-256 `f05439b572d2ebe33f182478b6770900aa6d78cd12b8c8ec3c05614c38d7bfce`, 24 modelových kroků a 240 sekund na scénář. [Dataset v2](../tests/support/r4-eval/dataset-v2.json)
+
+Úspěch vyžaduje doloženou odpověď v modelovém vstupu po obnově stejného běhu, první zápis až po obnově a změny omezené na modul ukládání. Ovladač samostatně schvaluje jen doporučené příkazy se zachovanými původními kontrolními soubory. Vyhodnocení potřebuje skutečné úspěšné provedení typové kontroly a všech čtyř testů po poslední změně. Funkční kontroly sledují výchozí nulu, načtení po novém načtení modulu, přepis na nulu a nezávislost dvou úložišť. Mezi instancemi modulu přecházejí jen serializované položky úložiště. Kontext Node VM pomáhá oddělit stav instancí a zabraňuje běžnému přepsání testovacích objektů. Tvrdou izolaci nedůvěryhodného kódu na úrovni operačního systému tím nedokládáme. [Dokumentace Node VM](https://nodejs.org/api/vm.html)
+
+Hostitelský `node scripts/eval-r4-model.mjs --offline --dataset v2` prošel 1/1 bez placeného požadavku. Prošel všech pět návrhů nástrojů včetně otázky, oba ověřovací příkazy měly návratový kód 0 a backend zapsal ověřené dokončení. Offline model volí předem připravenou opravu a potvrzuje funkčnost ovladače. První vývojový průchod uvnitř sandboxu nedokázal zapsat změnu a skončil 0/1; hostitelský výsledek má vlastní důkaz. [Offline report](evals/r4-offline-storage-v2-2026-11-22.json) · [Diagnostika](evals/r4-offline-storage-v2-2026-11-22-diagnostics.json)
+
+Diagnostika patche nyní odlišuje známá odmítnutí uvnitř nástroje od vstupních chyb a může označit shodu s konfigurovanou citlivou hodnotou. Ukládá pouze pevné kategorie, bez hodnot argumentů nebo klíče. Příčinu dřívějších předběžných odmítnutí z původní evidence stále nelze určit.
+
 ## Cílené ověření historie — 22. listopadu 2026
 
 OpenAI adapter nahrazuje redigovanou historickou dvojici volání a výsledku omezenými, označenými metadaty; neposílá modelu placeholder jako vzor skutečného volání. Smíšené čerstvé dvojice si zachovávají párování i pořadí, odpověď na otázku zůstává dostupná a staré obsahy se neodesílají. Review i cílené testy pokrývají pořadí, souběžné volání, obnovu po otázce a nepovolené výstupy.

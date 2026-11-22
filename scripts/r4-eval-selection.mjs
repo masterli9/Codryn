@@ -12,15 +12,24 @@ export function readR4EvalCase(args) {
 
 export function readR4EvalOptions(args) {
   const caseId=readR4EvalCase(args);
+  const datasetIndex=args.indexOf('--dataset');
+  const datasetVersion=datasetIndex===-1?undefined:args[datasetIndex+1];
+  if(datasetIndex!==-1&&(args.lastIndexOf('--dataset')!==datasetIndex||!['v1','v2'].includes(datasetVersion)))
+    throw new Error('R4_EVAL_DATASET_ARGUMENT_INVALID');
+  const datasetOption=datasetVersion===undefined?{}:{datasetVersion};
   const indices=[];
   for(let index=0;index<args.length;index++)if(args[index]==='--max-steps')indices.push(index);
-  if(indices.length===0)return {caseId,maxStepsOverride:undefined};
+  if(indices.length===0)return {caseId,maxStepsOverride:undefined,...datasetOption};
   if(indices.length!==1||indices[0]===args.length-1||args[indices[0]+1]?.startsWith('--'))
     throw new Error('R4_EVAL_MAX_STEPS_INVALID');
   if(caseId===undefined)throw new Error('R4_EVAL_MAX_STEPS_REQUIRES_CASE');
   const raw=args[indices[0]+1];
   if(!/^(?:[1-9]|[12]\d|3[0-2])$/u.test(raw))throw new Error('R4_EVAL_MAX_STEPS_INVALID');
-  return {caseId,maxStepsOverride:Number(raw)};
+  return {caseId,maxStepsOverride:Number(raw),...datasetOption};
+}
+
+export function r4EvalDatasetPath(version) {
+  return version==='v2'?'tests/support/r4-eval/dataset-v2.json':'tests/support/r4-eval/dataset-v1.json';
 }
 
 export function effectiveR4EvalMaxSteps(datasetMaxSteps, override) {

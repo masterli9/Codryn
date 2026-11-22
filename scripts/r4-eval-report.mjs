@@ -21,10 +21,12 @@ export function createR4UsageMetrics({live,requestCount,knownRequests,inputToken
 export const r4EvalReportSchema = z.object({
   schemaVersion:z.literal(1),series:z.enum(['offline','live']),model:z.string().min(1),createdAt:z.iso.datetime(),
   datasetHash:z.string().regex(/^[a-f0-9]{64}$/u),sourceHash:z.string().regex(/^[a-f0-9]{64}$/u),
+  datasetId:z.enum(['r4-user-task-v1','r4-user-task-v2']).optional(),
   evalIdentity:z.object({runnerSha256:z.string().regex(/^[a-f0-9]{64}$/u),fixtureBuilderSha256:z.string().regex(/^[a-f0-9]{64}$/u),counterOracleSha256:z.string().regex(/^[a-f0-9]{64}$/u),
     budgetSha256:z.string().regex(/^[a-f0-9]{64}$/u),safeOutputSha256:z.string().regex(/^[a-f0-9]{64}$/u),reportSchemaSha256:z.string().regex(/^[a-f0-9]{64}$/u),
     r4ModelEvalDiagnosticsSha256:z.string().regex(/^[a-f0-9]{64}$/u).optional(),
-    selectionSha256:z.string().regex(/^[a-f0-9]{64}$/u).optional(),wrapperSha256:z.string().regex(/^[a-f0-9]{64}$/u).optional()}).strict().optional(),
+    selectionSha256:z.string().regex(/^[a-f0-9]{64}$/u).optional(),wrapperSha256:z.string().regex(/^[a-f0-9]{64}$/u).optional(),
+    storageQuestionSha256:z.string().regex(/^[a-f0-9]{64}$/u).optional()}).strict().optional(),
   paidRequests:count,reservedUsd:z.number().nonnegative(),approvedBudgetUsd:metric,pricingSource:z.string().nullable(),
   pricing:z.object({inputUsdPerMillion:z.number().positive(),outputUsdPerMillion:z.number().positive(),maxRequests:count,maxOutputTokens:count}).strict().nullable().optional(),
   passed:count,total:count,
@@ -33,7 +35,8 @@ export const r4EvalReportSchema = z.object({
     z.object({kind:z.literal('case'),id:z.string().refine(isSafeR4EvalId),
       effectiveMaxSteps:z.number().int().min(1).max(32).optional(),
       maxStepsOverride:z.number().int().min(1).max(32).nullable().optional(),
-      profile:z.enum(['frozen_dataset','diagnostic_max_steps_override']).optional()}).strict()
+      profile:z.enum(['frozen_dataset','diagnostic_max_steps_override']).optional(),
+      caseTimeoutMs:z.number().int().positive().max(240000).optional()}).strict()
   ]).optional(),
   results:z.array(z.object({
     id:z.string().min(1),success:z.boolean(),taskCompleted:z.boolean(),recovery:z.boolean(),
@@ -65,6 +68,8 @@ export const r4EvalReportSchema = z.object({
     && report.total===report.results.length
     && (full?(report.total===9&&new Set(report.results.map(item=>item.id)).size===9)
       :(report.total===1&&report.results[0]?.id===report.selection.id))
+    && (report.datasetId!=='r4-user-task-v2'||(!full&&selection.id==='storage-question'
+      && selection.caseTimeoutMs===240000&&report.evalIdentity?.storageQuestionSha256!==undefined))
     && stepMetadataValid && usageValid
     && report.paidRequests===report.results.reduce((count,item)=>count+item.requests,0)
     && report.results.every(item=>item.validArguments<=item.toolCalls && item.success===(item.failureOwner===null&&item.reason===null)

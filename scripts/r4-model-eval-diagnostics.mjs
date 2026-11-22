@@ -108,11 +108,12 @@ export function diagnosePatchInputArguments(args,schema) {
 }
 
 /** Mirrors the fixed pre-schema guards without returning serialized input or match details. */
-export function diagnosePatchPreSchemaGuards(args) {
+export function diagnosePatchPreSchemaGuards(args, configuredSensitiveValue) {
   const serialized=JSON.stringify(args);
   const matches=[];
   if(Buffer.byteLength(serialized,'utf8')>MAX_TOOL_INPUT_BYTES)matches.push('over_size_limit');
   if(PRE_SCHEMA_SENSITIVE_ASSIGNMENT.test(serialized))matches.push('sensitive_assignment_pattern');
+  if(configuredSensitiveValue&&serialized.includes(configuredSensitiveValue))matches.push('configured_sensitive_value');
   return matches;
 }
 
