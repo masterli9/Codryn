@@ -1,0 +1,13 @@
+# Doplňková diagnostika ukládání v2 — 22. listopadu 2026
+
+Po ukončení zmrazené v3 série 5/6 provedeme právě jeden další samostatný pokus `storage-question` nad původním datasetem v2. Smyslem je pozorovat jedno nové provedení s větší rezervací; případný výsledek nedokazuje, jak by skončil první v3 slot. Tento pokus nenahrazuje žádný z šesti v3 slotů, nemění jejich souhrn a nevstupuje do jejich podílu.
+
+Použije GPT‑6 Luna, původní v2 prompt, stejnou pevnou volnou odpověď i hodnoticí podmínky jako ukládací případ v3. Každé zadání má nejvýše 24 kroků a celý scénář 240 sekund. Limit tohoto jediného doplňku je 24 API požadavků, nejvýše 4 096 výstupních tokenů na požadavek a 0,10 USD nevratné konzervativní rezervace. Všechny vstupní tokeny počítáme horní sazbou 0,125 USD za milion a výstup včetně uvažování sazbou 0,50 USD. Není to fakturace ani skutečný rozpad cache. [Ceník](https://developers.openai.com/api/docs/models/gpt-6-luna) · [Pravidla cache](https://developers.openai.com/api/docs/guides/prompt-caching)
+
+Konzervativní historie včetně všech plných rezervací dokončené v3 činí 0,496797125 USD. Přidělení plného nového stropu znamená 0,596797125 USD pod autorizovaným součtem 0,60 USD. Nevyužitá část se nepřevádí na další pokus. Pokud běh skončí bez úplné spotřeby, zachováme celou skutečnou rezervaci; chybějící report znamená započtení celého stropu 0,10 USD. Neprovádí se náhradní pokus.
+
+Před startem se ověří, že neexistuje ani `r4-live-storage-v2-supplemental-2026-11-22.json`, ani `r4-live-storage-v2-supplemental-2026-11-22-diagnostics.json` v `docs/evals/`. Běh se provede sériově po všech v3 slotech. Po dokončení uložíme i případný neúspěch a provedeme kontrolu identit, úplnosti spotřeby a nepřítomnosti hodnoty klíče.
+
+Vyšší cap používá existující v2 vstup. Oba validátory vyžadují přísnější `.054/12` guard pouze pro v3; tento guard, všechny zmrazené soubory ani oprávnění neměníme. Před startem znovu ověříme 11 identit proti zmrazení, shodu v2 a v3 ukládacího zadání, dataset v2 a to, že tentýž vyšší cap guard v3 odmítá. [Identita v3](r4-reliability-v3-frozen-identity.json) · [Dataset v2](../../tests/support/r4-eval/dataset-v2.json)
+
+Příkaz: `node --env-file=.env scripts/eval-r4-model.mjs --live --dataset v2 --case storage-question --confirm-paid-api --max-cost-usd 0.10 --max-requests 24 --input-usd-per-million 0.125 --output-usd-per-million 0.50 --pricing-source https://developers.openai.com/api/docs/models/gpt-6-luna --consent-version openai-api-2026-11-14 --report docs/evals/r4-live-storage-v2-supplemental-2026-11-22.json --diagnostics docs/evals/r4-live-storage-v2-supplemental-2026-11-22-diagnostics.json`.

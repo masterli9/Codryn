@@ -4,7 +4,7 @@
 
 Předem určených šest pokusů dosáhlo **5/6**: ukládání s otázkou **1/2**, oprava po neúspěšných testech v Gitu **2/2**, navazující chat po ruční změně zdroje **2/2**. První ukládací pokus zůstává neúspěšný. Série běžela se skutečným GPT‑6 Luna přes běžný desktopový backend, sériově a nad oddělenými projekty. [Strojový souhrn se všemi reporty a otisky](evals/r4-live-reliability-v3-summary-2026-11-22.json)
 
-Metodika, prompty, chráněné soubory, hodnoticí podmínky, pořadí i finanční pravidla byly před prvním placeným požadavkem zmrazeny a odeslány v commitu `80d4e92`. Všech šest slotů zůstalo ve jmenovateli, žádný se neopakoval a očekávání ani limity se během série neměnily. Každý slot měl 24 kroků, 240 sekund, nejvýše 12 API požadavků a 0,054 USD konzervativní rezervace. Navazující scénář obsahuje dvě zadání ve stejném chatu, která sdílejí tento strop. [Protokol](evals/r4-reliability-v3-protocol.md) · [Dataset v3](../tests/support/r4-eval/dataset-v3.json)
+Metodika, prompty, chráněné soubory, hodnoticí podmínky, pořadí i finanční pravidla byly před prvním placeným požadavkem zmrazeny a odeslány v commitu `80d4e92`. Všech šest slotů zůstalo ve jmenovateli, žádný se neopakoval a očekávání ani limity se během série neměnily. Každé zadání mělo limit až 24 kroků; celý slot nejvýše 240 sekund, 12 API požadavků a 0,054 USD konzervativní rezervace. Navazující scénář obsahuje dvě zadání ve stejném chatu, která sdílejí časový, požadavkový i finanční strop slotu. [Protokol](evals/r4-reliability-v3-protocol.md) · [Dataset v3](../tests/support/r4-eval/dataset-v3.json)
 
 | Slot | Scénář | Výsledek | Požadavky | Platné / obsloužené / všechny návrhy | Čas (ms) | Horní odhad (USD) | Rezervace (USD) |
 | --- | --- | --- | ---: | ---: | ---: | ---: | ---: |
