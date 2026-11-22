@@ -97,7 +97,7 @@ export class RunAgentLoop {
         this.abort(signal);
         if (steps >= request.maxSteps) throw { code: 'R1_STEP_LIMIT_EXCEEDED' };
         state = await this.transition(runId, request.requestId, state, 'waiting_for_model', steps);
-        const modelRequest: ModelRequest = { runId, task: request.task, project: { id: 'project' }, context: [...context.modelContent], tools: [...this.dependencies.registry.descriptors], previousToolResults: [...results] };
+        const modelRequest: ModelRequest = { runId, task: request.task, project: { id: 'project' }, context: [...context.modelContent], tools: [...this.dependencies.registry.descriptors], previousToolResults: [...results], stepProgress: { currentStep: steps + 1, maxSteps: request.maxSteps } };
         await this.append(runId, request.requestId, 'model.requested', { step: steps + 1, toolCount: modelRequest.tools.length, contextSourceCount: modelRequest.context.length, previousToolResultCount: modelRequest.previousToolResults.length });
         let response;
         try { response = await collectModelResponse(this.dependencies.model.stream(modelRequest, signal), signal); }
@@ -199,6 +199,7 @@ export class RunAgentLoop {
         let modelRequest: ModelRequest = {
           runId, task: request.task, project: { id: projectId }, context: [...context.modelContent],
           tools: [...this.dependencies.registry.descriptors.filter(tool=>!options.workflow||options.workflow.toolIds.includes(tool.toolId)), ...(options.questions ? [questionTool] : [])], previousToolResults, history: [...history],
+          stepProgress: { currentStep: steps + 1, maxSteps: request.maxSteps },
           ...(options.workflow?{workflowInstructions:options.workflow.instructions}:{}),
           ...(conversation?.length ? { priorConversation: conversation } : {}),
           ...(projectChecks?.checks.length ? { recommendedChecks: projectChecks.checks } : {})

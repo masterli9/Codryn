@@ -46,6 +46,17 @@ describe('R1 model contracts', () => {
   it('accepts a complete descriptor and request', () => {
     expect(modelDescriptorSchema.parse(descriptor)).toEqual(descriptor);
     expect(modelRequestSchema.parse(request)).toEqual(request);
+    expect(modelRequestSchema.parse({ ...request, stepProgress: { currentStep: 1, maxSteps: 12 } }))
+      .toMatchObject({ stepProgress: { currentStep: 1, maxSteps: 12 } });
+  });
+
+  it.each([
+    { currentStep: 0, maxSteps: 12 },
+    { currentStep: 13, maxSteps: 12 },
+    { currentStep: 1, maxSteps: 0 },
+    { currentStep: 1.5, maxSteps: 12 }
+  ])('rejects invalid model step progress %j', stepProgress => {
+    expect(() => modelRequestSchema.parse({ ...request, stepProgress })).toThrow();
   });
 
   it('rejects unknown capability values and unknown descriptor fields', () => {

@@ -72,6 +72,10 @@ export const modelRequestSchema = z.object({
   history: z.array(modelTurnSchema).max(64).optional(),
   priorConversation: priorConversationSchema.optional(),
   recommendedChecks: z.array(projectCheckCandidateSchema).max(2).optional(),
+  stepProgress: z.object({
+    currentStep: z.number().int().min(1).max(32),
+    maxSteps: z.number().int().min(1).max(32)
+  }).strict().refine(progress => progress.currentStep <= progress.maxSteps).optional(),
   workflowInstructions:z.string().min(1).max(4000).optional()
 }).strict();
 

@@ -85,6 +85,7 @@ function inputItems(request: ModelRequest, externalByInternal: ReadonlyMap<strin
   const items: unknown[] = [];
   if(request.workflowInstructions)items.push({role:'developer',content:[{type:'input_text',text:request.workflowInstructions}]});
   items.push({role:'developer',content:[{type:'input_text',text:generalDeveloperInstructions}]});
+  if(request.stepProgress)items.push({role:'developer',content:[{type:'input_text',text:`Current model step: ${request.stepProgress.currentStep} of ${request.stepProgress.maxSteps}. Every model response, including the final answer, uses one step.`}]});
   if (request.priorConversation?.length) {
     items.push({ role: 'developer', content: [{ type: 'input_text', text: 'Previous chat messages describe past work. Re-read project files before relying on their contents.' }] });
     for (const message of request.priorConversation) {

@@ -50,6 +50,10 @@ for (const restart of [false, true]) it(`resumes the same durable run once with 
     const done = await host.manager.wait(accepted.jobId);
     expect(done.result).toMatchObject({ runId: waiting.runId, status: 'completed' });
     expect(requests).toHaveLength(4);
+    expect(requests.map(request => request.stepProgress)).toEqual([
+      { currentStep: 1, maxSteps: 8 }, { currentStep: 2, maxSteps: 8 },
+      { currentStep: 3, maxSteps: 8 }, { currentStep: 4, maxSteps: 8 }
+    ]);
     expect(requests[2]?.previousToolResults[0]).toMatchObject({ output: { status: 'stale' } });
     expect(JSON.stringify(requests[3]?.previousToolResults)).toContain('new value');
     expect(host.resources.database.prepare("SELECT COUNT(*) AS n FROM tool_calls WHERE tool_id='file.read'").get()?.n).toBe(2);

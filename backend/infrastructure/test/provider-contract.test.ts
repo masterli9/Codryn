@@ -147,6 +147,16 @@ describe('R2 provider adapters', () => {
     expect(instruction).toContain('Do not infer or reveal removed content');
   });
 
+  it('serializes backend model step progress as brief developer information', async () => {
+    const sent:unknown[]=[];
+    const adapter=new OpenAIResponsesAdapter({modelId:'fixture',key:()=> 'TEST',ids,transport:{async *stream(input){sent.push(input.body);yield {type:'response.output_text.delta',delta:'done'};yield {type:'response.completed'};}}});
+    await collectModelResponse(adapter.stream({...request,stepProgress:{currentStep:11,maxSteps:12}},new AbortController().signal),new AbortController().signal);
+    const input=(sent[0] as {input:{role?:string;content?:{text?:string}[]}[]}).input;
+    expect(input[1]).toMatchObject({role:'developer',content:[{type:'input_text',text:expect.stringContaining('Current model step: 11 of 12')}]});
+    expect(input[1]?.content?.[0]?.text).toContain('Every model response, including the final answer, uses one step');
+    expect(JSON.stringify(input[1])).not.toMatch(/verification.*verified/iu);
+  });
+
   it('atomically omits redacted history pairs and serializes only allowlisted metadata', async () => {
     const sent:unknown[]=[];
     const adapter=new OpenAIResponsesAdapter({modelId:'fixture',key:()=> 'TEST',ids,transport:{async *stream(input){
