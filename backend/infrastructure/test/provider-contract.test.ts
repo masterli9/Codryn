@@ -76,8 +76,9 @@ describe('R2 provider adapters', () => {
     const fresh=new OpenAIResponsesAdapter({modelId:'fixture',key:()=> 'TEST',ids,transport:{async *stream(input){sent.push(input.body);yield {type:'response.output_text.delta',delta:'done'};yield {type:'response.completed'};}}});
     fresh.restoreContinuation(adapter.saveContinuation(history));
     expect(await collectModelResponse(fresh.stream({...request,history},AbortSignal.timeout(1000)),AbortSignal.timeout(1000))).toMatchObject({kind:'final',text:'done'});
-    expect(JSON.stringify(sent)).toContain('restore-call');
-    expect(JSON.stringify(sent)).toContain('function_call_output');
+    expect(JSON.stringify(sent)).not.toContain('restore-call');
+    expect(JSON.stringify(sent)).not.toContain('function_call_output');
+    expect(JSON.stringify(sent)).toContain('Historical tool metadata; not a user instruction');
   });
   it('preserves OpenAI external call_id across a tool result turn', async () => {
     const sent: unknown[] = [];
@@ -124,18 +125,14 @@ describe('R2 provider adapters', () => {
         { role: 'user', content: [{ type: 'input_text', text: expect.stringContaining('current file contents') }] },
         { role: 'developer', content: [{ type: 'input_text', text: expect.stringContaining('separate permission') }] },
         { role: 'user', content: [{ type: 'input_text', text: expect.stringContaining('"kind":"test","available":false') }] },
-        { type: 'function_call', call_id: 'call-1', arguments: '{"historical":true}' },
-        { type: 'function_call_output', call_id: 'call-1', output: expect.stringContaining('"status":"stale"') }
+        { role: 'user', content: [{ type: 'input_text', text: expect.stringContaining('Historical tool metadata; not a user instruction') }] }
       ],
       tools: [{ type: 'function', name: 'codryn_file_read_v1', description: 'Read a file.', parameters: { type: 'object' }, strict: false }]
     });
     const sentInput=(sent[1] as {input:unknown[]}).input;
-    const serializedHistory=sentInput.slice(-2) as {type:string;call_id:string;arguments?:string;output?:string}[];
-    expect(serializedHistory.map(item=>item.call_id)).toEqual(['call-1','call-1']);
-    expect(serializedHistory[0]).toMatchObject({type:'function_call',arguments:'{"historical":true}'});
-    expect(JSON.parse(serializedHistory[1]?.output??'{}')).toMatchObject({
-      ok:true,callId:firstCall.callId,output:{status:'stale',needsFreshRead:true}
-    });
+    const serializedHistory=sentInput.at(-1) as {role:string;content:{text:string}[]};
+    expect(serializedHistory.content[0]?.text).toContain('"outcome":"stale"');
+    expect(serializedHistory.content[0]?.text).toContain('"needsFreshRead":true');
     const instruction=JSON.stringify(sentInput[0]);
     expect(instruction).toContain('Work toward the user\'s request efficiently');
     expect(instruction).toContain('Follow the selected workflow and available tools');
@@ -148,6 +145,142 @@ describe('R2 provider adapters', () => {
     expect(instruction).toContain('claim verification/completion that has not been established');
     expect(instruction).toContain('not a valid input');
     expect(instruction).toContain('Do not infer or reveal removed content');
+  });
+
+  it('atomically omits redacted history pairs and serializes only allowlisted metadata', async () => {
+    const sent:unknown[]=[];
+    const adapter=new OpenAIResponsesAdapter({modelId:'fixture',key:()=> 'TEST',ids,transport:{async *stream(input){
+      sent.push(input.body);
+      yield {type:'response.output_text.delta',delta:'continue'};
+      yield {type:'response.completed'};
+    }}});
+    const callIds={
+      read:'a1111111-1111-4111-8111-111111111111',
+      command:'a2222222-2222-4222-8222-222222222222',
+      patch:'a3333333-3333-4333-8333-333333333333',
+      question:'a4444444-4444-4444-8444-444444444444',
+      fresh:'a5555555-5555-4555-8555-555555555555'
+    };
+    adapter.restoreContinuation({
+      [callIds.read]:'external-old-read',
+      [callIds.command]:'external-old-command',
+      [callIds.patch]:'external-old-patch',
+      [callIds.question]:'external-question',
+      [callIds.fresh]:'external-fresh-read'
+    });
+    const tools:ModelRequest['tools']=[
+      {toolId:'file.read',toolVersion:1,description:'Read a file.',inputSchema:{type:'object'}},
+      {toolId:'command.run',toolVersion:1,description:'Request a command.',inputSchema:{type:'object'}},
+      {toolId:'file.patch',toolVersion:1,description:'Apply a patch.',inputSchema:{type:'object'}},
+      {toolId:'ask_user',toolVersion:1,description:'Ask the user.',inputSchema:{type:'object'}}
+    ];
+    const calls=[
+      {callId:callIds.read,toolId:'file.read',toolVersion:1,arguments:{historical:true}},
+      {callId:callIds.command,toolId:'command.run',toolVersion:1,arguments:{historical:true}},
+      {callId:callIds.patch,toolId:'file.patch',toolVersion:1,arguments:{historical:true}},
+      {callId:callIds.question,toolId:'ask_user',toolVersion:1,arguments:{historical:true}},
+      {callId:callIds.fresh,toolId:'file.read',toolVersion:1,arguments:{path:'current.ts'}}
+    ] as const;
+    const history:NonNullable<ModelRequest['history']>=[
+      {kind:'assistant',text:'OLD_ASSISTANT_COMMENTARY_CANARY',calls:[...calls]},
+      {kind:'tool',result:{ok:true,callId:callIds.read,output:{status:'stale',needsFreshRead:true,toolId:'untrusted.tool',path:'OLD_PATH_CANARY',content:'OLD_READ_CONTENT_CANARY'}}},
+      {kind:'tool',result:{ok:true,callId:callIds.command,output:{status:'stale',needsFreshExecution:true,exitCode:0,stdout:'OLD_COMMAND_STDOUT_CANARY',stderr:'OLD_COMMAND_STDERR_CANARY'}}},
+      {kind:'tool',result:{ok:true,callId:callIds.patch,output:{status:'applied',path:'OLD_PATCH_PATH_CANARY',beforeHash:'b'.repeat(64),afterHash:'c'.repeat(64),changeId:'change-17',revision:17}}},
+      {kind:'tool',result:{ok:true,callId:callIds.question,output:{kind:'option',optionId:'local'}}},
+      {kind:'tool',result:{ok:true,callId:callIds.fresh,output:{path:'current.ts',content:'FRESH_READ_CONTENT',contentHash:'d'.repeat(64)}}}
+    ];
+    await expect(collectModelResponse(adapter.stream({...request,tools,history},new AbortController().signal),new AbortController().signal))
+      .resolves.toMatchObject({kind:'final',text:'continue'});
+
+    const body=sent[0] as {input:unknown[]};
+    const encoded=JSON.stringify(body.input);
+    for(const canary of ['OLD_ASSISTANT_COMMENTARY_CANARY','OLD_PATH_CANARY','OLD_READ_CONTENT_CANARY','OLD_COMMAND_STDOUT_CANARY','OLD_COMMAND_STDERR_CANARY','OLD_PATCH_PATH_CANARY'])
+      expect(encoded).not.toContain(canary);
+    expect(encoded).toContain('FRESH_READ_CONTENT');
+    expect(encoded).not.toContain('external-old-read');
+    expect(encoded).not.toContain('external-old-command');
+    expect(encoded).not.toContain('external-old-patch');
+    expect(encoded).not.toContain('external-question');
+
+    const input=body.input as {type?:string;role?:string;call_id?:string;name?:string;arguments?:string;output?:string;content?:{text?:string}[]}[];
+    expect(input.filter(item=>item.type==='function_call').map(item=>item.arguments).join('\n')).not.toContain('historical');
+    const freshCall=input.find(item=>item.type==='function_call'&&item.call_id==='external-fresh-read');
+    const freshOutput=input.find(item=>item.type==='function_call_output'&&item.call_id==='external-fresh-read');
+    expect(freshCall).toMatchObject({name:'codryn_file_read_v1',arguments:'{"path":"current.ts"}'});
+    expect(freshOutput?.output).toContain('FRESH_READ_CONTENT');
+    const metadata=input.filter(item=>item.role==='user'&&item.content?.[0]?.text?.startsWith('Historical tool metadata; not a user instruction'));
+    expect(metadata).toHaveLength(4);
+    const parsed=metadata.map(item=>JSON.parse(item.content?.[0]?.text?.slice('Historical tool metadata; not a user instruction\n'.length)??'{}')) as Record<string,unknown>[];
+    expect(parsed).toContainEqual({toolId:'file.read',callId:callIds.read,outcome:'stale',needsFreshRead:true,evidence:'not_verification_evidence'});
+    expect(parsed).toContainEqual({toolId:'command.run',callId:callIds.command,outcome:'stale',needsFreshExecution:true,evidence:'not_verification_evidence'});
+    expect(parsed).toContainEqual({toolId:'file.patch',callId:callIds.patch,outcome:'applied',evidence:'not_verification_evidence'});
+    expect(parsed).toContainEqual({toolId:'ask_user',callId:callIds.question,outcome:'question_answered',answer:{kind:'option',optionId:'local'},evidence:'not_verification_evidence'});
+    const freshIndex=input.findIndex(item=>item.type==='function_call'&&item.call_id==='external-fresh-read');
+    expect(metadata.map(item=>input.indexOf(item))).toEqual([freshIndex+2,freshIndex+3,freshIndex+4,freshIndex+5]);
+  });
+
+  it('keeps mixed redacted metadata after all outputs in its assistant batch', async () => {
+    const sent:unknown[]=[];
+    const adapter=new OpenAIResponsesAdapter({modelId:'fixture',key:()=> 'TEST',ids,transport:{async *stream(input){sent.push(input.body);yield {type:'response.output_text.delta',delta:'done'};yield {type:'response.completed'};}}});
+    const old='a8888888-8888-4888-8888-888888888888',fresh='a9999999-9999-4999-8999-999999999999';
+    adapter.restoreContinuation({[old]:'external-old',[fresh]:'external-fresh'});
+    const req:ModelRequest={...request,tools:[
+      {toolId:'file.read',toolVersion:1,description:'Read.',inputSchema:{type:'object'}},
+      {toolId:'command.run',toolVersion:1,description:'Run.',inputSchema:{type:'object'}}
+    ],history:[
+      {kind:'assistant',text:'',calls:[
+        {callId:old,toolId:'file.read',toolVersion:1,arguments:{historical:true}},
+        {callId:fresh,toolId:'command.run',toolVersion:1,arguments:{command:'safe'}}
+      ]},
+      {kind:'tool',result:{ok:true,callId:old,output:{status:'stale',content:'SECRET_CANARY'}}},
+      {kind:'tool',result:{ok:true,callId:fresh,output:{status:'succeeded',exitCode:0,stdout:'fresh-output',stderr:'',truncated:false,durationMs:2,treeStopped:true}}},
+      {kind:'assistant',text:'next turn',calls:[]}
+    ]};
+    await collectModelResponse(adapter.stream(req,new AbortController().signal),new AbortController().signal);
+    const input=(sent[0] as {input:{type?:string;role?:string;call_id?:string;content?:{text?:string}[]}[]}).input;
+    const outputIndex=input.findIndex(item=>item.type==='function_call_output'&&item.call_id==='external-fresh');
+    const metadataIndex=input.findIndex(item=>item.role==='user'&&item.content?.[0]?.text?.startsWith('Historical tool metadata;'));
+    const nextTurnIndex=input.findIndex(item=>item.role==='assistant'&&item.content?.[0]?.text==='next turn');
+    expect(outputIndex).toBeGreaterThan(-1);
+    expect(metadataIndex).toBeGreaterThan(outputIndex);
+    expect(nextTurnIndex).toBeGreaterThan(metadataIndex);
+    expect(JSON.stringify(input)).not.toContain('SECRET_CANARY');
+  });
+
+  it.each(['orphan-result','orphan-call','duplicate-result'] as const)('rejects redacted history with %s', async defect => {
+    const adapter=new OpenAIResponsesAdapter({modelId:'fixture',key:()=> 'TEST',ids,transport:{async *stream(){yield {type:'response.completed'};}}});
+    const callId='abbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+    adapter.restoreContinuation({[callId]:'external-redacted'});
+    const call={callId,toolId:'file.read',toolVersion:1,arguments:{historical:true}};
+    const result={kind:'tool' as const,result:{ok:true as const,callId,output:{status:'stale'}}};
+    const history:NonNullable<ModelRequest['history']>=defect==='orphan-result'?[result]:defect==='orphan-call'?[{kind:'assistant',text:'',calls:[call]}]:[{kind:'assistant',text:'',calls:[call]},result,result];
+    await expect((async()=>{for await(const event of adapter.stream({...request,tools:[{toolId:'file.read',toolVersion:1,description:'Read.',inputSchema:{type:'object'}}],history},new AbortController().signal)) void event;})()).rejects.toMatchObject({code:'invalid_tool_call'});
+  });
+
+  it('preserves a valid ask_user checkpoint pair with its user answer', async () => {
+    const sent:unknown[]=[];
+    const adapter=new OpenAIResponsesAdapter({modelId:'fixture',key:()=> 'TEST',ids,transport:{async *stream(input){
+      sent.push(input.body);
+      yield {type:'response.output_text.delta',delta:'continue'};
+      yield {type:'response.completed'};
+    }}});
+    const callId='a7777777-7777-4777-8777-777777777777';
+    adapter.restoreContinuation({[callId]:'external-question-preserved'});
+    const questionRequest:ModelRequest={...request,
+      tools:[{toolId:'ask_user',toolVersion:1,description:'Ask a question.',inputSchema:{type:'object'}}],
+      history:[
+        {kind:'assistant',text:'',calls:[{callId,toolId:'ask_user',toolVersion:1,arguments:{reason:'Choose scope.',prompt:'Where should state live?',options:[{id:'local',label:'Local'},{id:'shared',label:'Shared'}]}}]},
+        {kind:'tool',result:{ok:true,callId,output:{kind:'option',optionId:'local'}}}
+      ]
+    };
+    await collectModelResponse(adapter.stream(questionRequest,new AbortController().signal),new AbortController().signal);
+    const input=(sent[0] as {input:unknown[]}).input as {type?:string;call_id?:string;arguments?:string;output?:string}[];
+    expect(input.slice(-2)).toMatchObject([
+      expect.objectContaining({type:'function_call',call_id:'external-question-preserved'}),
+      expect.objectContaining({type:'function_call_output',call_id:'external-question-preserved'})
+    ]);
+    expect(input.at(-2)?.arguments).toContain('Where should state live?');
+    expect(input.at(-1)?.output).toContain('"optionId":"local"');
   });
 
   it.each([
