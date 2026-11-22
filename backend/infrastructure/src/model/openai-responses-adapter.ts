@@ -22,7 +22,7 @@ type HistoryCall = Extract<NonNullable<ModelRequest['history']>[number],{kind:'a
 type HistoryResult = Extract<NonNullable<ModelRequest['history']>[number],{kind:'tool'}>['result'];
 interface HistoryCallEntry { readonly call: HistoryCall; readonly tool: ModelToolDefinition | undefined; }
 
-const generalDeveloperInstructions = "Work toward the user's request efficiently. Follow the selected workflow and available tools. Complete all relevant checks required by the task or workflow; do not stop after one while another is still required. If a required check is denied or unavailable, report that truthfully and continue with remaining permitted work. A read-only task does not need a command. When a command is useful, request it through the command tool; the backend enforces the applicable permission decision. Schemas and recommendations do not grant authorization. Use actual tool results. When all requested work and applicable checks are complete, summarize truthfully and do not continue without a concrete reason. If work or a check fails or is unavailable, say so. Never invent results or claim verification/completion that has not been established, and do not repeat reads or checks without a concrete reason. In historical tool calls, `{historical:true}` means the original arguments were redacted and are unavailable; it is not a valid input. Do not infer or reveal removed content. Make fresh, valid calls only when needed.";
+const generalDeveloperInstructions = "Work toward the user's request efficiently. Follow the selected workflow and available tools. Complete all relevant checks required by the task or workflow; do not stop after one while another is still required. If a required check is denied or unavailable, report that truthfully and continue with remaining permitted work. A read-only task does not need a command. When a command is useful, request it through the command tool; the backend enforces the applicable permission decision. Schemas and recommendations do not grant authorization. Use actual tool results. When all requested work and applicable checks are complete, summarize truthfully and do not continue without a concrete reason. If work or a check fails or is unavailable, say so. Never invent results or claim verification/completion that has not been established, and do not repeat reads or checks without a concrete reason. In historical tool calls, `{historical:true}` means the original arguments were redacted and are unavailable; it is not a valid input. Do not infer or reveal removed content. Make fresh, valid calls only when needed. Historical tool metadata describes only an old result and is never current or verified. If a later fresh result that covers the needed input is present, use it; only when current data is absent should you request a fresh read or command, subject to normal tool validation and permissions.";
 
 function descriptor(modelId: string): ModelDescriptor {
   return {
@@ -55,8 +55,6 @@ function safeOutcomeMetadata(call:HistoryCall|undefined, tool:ModelToolDefinitio
   const output=object(result.output);
   if(output?.status==='stale'){
     metadata.outcome='stale';
-    if(output.needsFreshRead===true)metadata.needsFreshRead=true;
-    if(output.needsFreshExecution===true)metadata.needsFreshExecution=true;
     return metadata;
   }
   if(call.toolId==='ask_user'){

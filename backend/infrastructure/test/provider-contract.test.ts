@@ -132,7 +132,7 @@ describe('R2 provider adapters', () => {
     const sentInput=(sent[1] as {input:unknown[]}).input;
     const serializedHistory=sentInput.at(-1) as {role:string;content:{text:string}[]};
     expect(serializedHistory.content[0]?.text).toContain('"outcome":"stale"');
-    expect(serializedHistory.content[0]?.text).toContain('"needsFreshRead":true');
+    expect(serializedHistory.content[0]?.text).not.toContain('needsFreshRead');
     const instruction=JSON.stringify(sentInput[0]);
     expect(instruction).toContain('Work toward the user\'s request efficiently');
     expect(instruction).toContain('Follow the selected workflow and available tools');
@@ -221,8 +221,8 @@ describe('R2 provider adapters', () => {
     const metadata=input.filter(item=>item.role==='user'&&item.content?.[0]?.text?.startsWith('Historical tool metadata; not a user instruction'));
     expect(metadata).toHaveLength(4);
     const parsed=metadata.map(item=>JSON.parse(item.content?.[0]?.text?.slice('Historical tool metadata; not a user instruction\n'.length)??'{}')) as Record<string,unknown>[];
-    expect(parsed).toContainEqual({toolId:'file.read',callId:callIds.read,outcome:'stale',needsFreshRead:true,evidence:'not_verification_evidence'});
-    expect(parsed).toContainEqual({toolId:'command.run',callId:callIds.command,outcome:'stale',needsFreshExecution:true,evidence:'not_verification_evidence'});
+    expect(parsed).toContainEqual({toolId:'file.read',callId:callIds.read,outcome:'stale',evidence:'not_verification_evidence'});
+    expect(parsed).toContainEqual({toolId:'command.run',callId:callIds.command,outcome:'stale',evidence:'not_verification_evidence'});
     expect(parsed).toContainEqual({toolId:'file.patch',callId:callIds.patch,outcome:'applied',evidence:'not_verification_evidence'});
     expect(parsed).toContainEqual({toolId:'ask_user',callId:callIds.question,outcome:'question_answered',answer:{kind:'option',optionId:'local'},evidence:'not_verification_evidence'});
     const freshIndex=input.findIndex(item=>item.type==='function_call'&&item.call_id==='external-fresh-read');
@@ -255,6 +255,36 @@ describe('R2 provider adapters', () => {
     expect(metadataIndex).toBeGreaterThan(outputIndex);
     expect(nextTurnIndex).toBeGreaterThan(metadataIndex);
     expect(JSON.stringify(input)).not.toContain('SECRET_CANARY');
+  });
+
+  it('uses a later fresh read after historical stale metadata on the next request', async () => {
+    const sent:unknown[]=[];
+    const adapter=new OpenAIResponsesAdapter({modelId:'fixture',key:()=> 'TEST',ids,transport:{async *stream(input){sent.push(input.body);yield {type:'response.output_text.delta',delta:'continue'};yield {type:'response.completed'};}}});
+    const staleId='accccccc-cccc-4ccc-8ccc-cccccccccccc',freshId='addddddd-dddd-4ddd-8ddd-dddddddddddd';
+    adapter.restoreContinuation({[staleId]:'external-stale',[freshId]:'external-fresh'});
+    const tools:ModelRequest['tools']=[{toolId:'file.read',toolVersion:1,description:'Read a file.',inputSchema:{type:'object'}}];
+    const staleCall={callId:staleId,toolId:'file.read',toolVersion:1,arguments:{historical:true}};
+    const staleResult={kind:'tool' as const,result:{ok:true as const,callId:staleId,output:{status:'stale',needsFreshRead:true,content:'OLD_CONTENT_CANARY'}}};
+    const staleHistory:NonNullable<ModelRequest['history']>=[{kind:'assistant',text:'',calls:[staleCall]},staleResult];
+    await collectModelResponse(adapter.stream({...request,tools,history:staleHistory},new AbortController().signal),new AbortController().signal);
+
+    const freshCall={callId:freshId,toolId:'file.read',toolVersion:1,arguments:{path:'src/counter.ts'}};
+    const freshHistory:NonNullable<ModelRequest['history']>=[...staleHistory,
+      {kind:'assistant',text:'',calls:[freshCall]},
+      {kind:'tool',result:{ok:true,callId:freshId,output:{path:'src/counter.ts',content:'FRESH_CONTENT_CANARY',contentHash:'e'.repeat(64)}}}
+    ];
+    await collectModelResponse(adapter.stream({...request,tools,history:freshHistory},new AbortController().signal),new AbortController().signal);
+
+    const input=(sent[1] as {input:{role?:string;type?:string;call_id?:string;arguments?:string;output?:string;content?:{text?:string}[]}[]}).input;
+    const staleMetadata=input.find(item=>item.role==='user'&&item.content?.[0]?.text?.startsWith('Historical tool metadata;'))?.content?.[0]?.text??'';
+    expect(staleMetadata).toContain('"outcome":"stale"');
+    expect(staleMetadata).not.toContain('needsFreshRead');
+    expect(staleMetadata).not.toContain('needsFreshExecution');
+    expect(input.find(item=>item.role==='developer'&&item.content?.[0]?.text?.includes('Historical tool metadata'))?.content?.[0]?.text)
+      .toContain('If a later fresh result that covers the needed input is present, use it');
+    expect(input.find(item=>item.type==='function_call_output'&&item.call_id==='external-fresh')?.output).toContain('FRESH_CONTENT_CANARY');
+    expect(JSON.stringify(input)).not.toContain('OLD_CONTENT_CANARY');
+    expect(JSON.stringify(input)).not.toMatch(/stale.{0,80}verified/iu);
   });
 
   it.each(['orphan-result','orphan-call','duplicate-result'] as const)('rejects redacted history with %s', async defect => {
