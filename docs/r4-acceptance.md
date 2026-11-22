@@ -1,5 +1,11 @@
 # R4 — ověření návaznosti chatu
 
+## Opakovaná živá série v3 — 22. listopadu 2026
+
+Předem zmrazené měření dosáhlo 5/6: ukládání s otázkou 1/2, Git oprava po neúspěšných testech 2/2 a navazující chat s novým zdrojem 2/2. První slot zastavil pevný strop konzervativní rezervace před testy; zůstává ve výsledku a nemá náhradní pokus. Všech 43 placených požadavků má známou spotřebu, všech 36 návrhů bylo platných a obsloužených backendem. [Report a limity](r4-eval-report.md) · [Souhrn všech šesti slotů](evals/r4-live-reliability-v3-summary-2026-11-22.json)
+
+Po cenové korekci prošly host offline 3/3, cílená sada 38 passed / 1 skipped a typy/lint/závislosti (405 modulů / 1 383 vazeb). Úplná sada po dřívější opravě jednoho testu znovu neběžela. Měření není nové packaged GUI ověření ani osobní přijetí a neuzavírá obecnou spolehlivost, FR-LLM-12, AC-O1-25 či celé R4.
+
 ## Aktuální balíček — 22. listopadu 2026
 
 Po změnách modelové historie, předávání kroku a bezpečného návodu pro patch byl desktop znovu sestaven. Zabalená aplikace prošla R3 kontrolou 8/8 (`.r3-artifacts/packaged-GFZcjA/r3-report.json`); ověřený zdroj `2d119a4616c7caa351c5e78531d616b0cf11ac1558e295c06772d10d55bdc89e`, ASAR `4b1cc5a1301a4bc462223b648a14946acc28139d6adf55c5e91a2815b1672ba9`, EXE `b0691c3ee235c1077ae43ea82923ca3ad3f5ec9b41ff80a9915b419170f91113`. Kontrola typů, lint a závislostí prošly (405 modulů / 1 383 hran). Úplná sada 798/4 skipped níže předcházela pozdějším úpravám; ty pokrývají cílené regrese a nejde o nové úplné R4 přijetí. Stav živého modelu a omezení měření jsou v [eval reportu](r4-eval-report.md).

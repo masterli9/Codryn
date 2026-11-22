@@ -1,0 +1,68 @@
+{
+  "schemaVersion": 1,
+  "series": "live",
+  "model": "gpt-6-luna",
+  "createdAt": "2026-11-22T19:49:57.287Z",
+  "datasetHash": "dea9315b966b36d4e7edc310785c8cf6eadf551707ea19fcd30d51ee56fccc30",
+  "datasetId": "r4-user-task-v3",
+  "sourceHash": "2d119a4616c7caa351c5e78531d616b0cf11ac1558e295c06772d10d55bdc89e",
+  "evalIdentity": {
+    "runnerSha256": "15b94bef7e378cb18f2088d1759d0b54556c2bd4189f5b9d83794c9fad596e0c",
+    "fixtureBuilderSha256": "d376828e117b1395d4bc678b18da3fcefe64f0cec86823aec136e01927e5aa79",
+    "counterOracleSha256": "fe79d9755d547b6c15f875f74e99b77a5d3038d562ba67ba2d9ebc1aace9d206",
+    "budgetSha256": "c038ad723fec05e03040085c9aaf7e7b9ea2062f32e708586be1d6c060981b88",
+    "safeOutputSha256": "5744552f9a9a36eabebb55e406f73af7a523716df3b0ab529e99e87244066552",
+    "reportSchemaSha256": "bb73122dfbb92dd0577f27add2cd00efad94e6eeae78277c1fcacabbc84f8543",
+    "r4ModelEvalDiagnosticsSha256": "94ddbc89667ccf82e3bcac3407efa7163605fcfa09225b830b4b811c1d7b4ce0",
+    "selectionSha256": "cb5f85d2bec18b7afdf8f52dcb88c5cb1615757354ede9826247583e8ca06a45",
+    "wrapperSha256": "faea1d9b51c1c07b940c02b05f7495e51d98f35a060515f8b110f8bec8b2716b",
+    "storageQuestionSha256": "ac027f896404943564d908995e267863fe89ff3a976d8e95a009bcb14ac556b7",
+    "reliabilityEvalSha256": "3752dd407fed20f220e7a0e4b7301ea4b070ad7eda78fa49509a3478cd178718"
+  },
+  "paidRequests": 8,
+  "reservedUsd": 0.04219625,
+  "approvedBudgetUsd": 0.054,
+  "pricing": {
+    "inputUsdPerMillion": 0.125,
+    "outputUsdPerMillion": 0.5,
+    "maxRequests": 12,
+    "maxOutputTokens": 4096
+  },
+  "pricingSource": "https://developers.openai.com/api/docs/models/gpt-6-luna",
+  "passed": 1,
+  "total": 1,
+  "results": [
+    {
+      "id": "repair-git",
+      "success": true,
+      "taskCompleted": true,
+      "recovery": true,
+      "failureOwner": null,
+      "reason": null,
+      "toolCalls": 7,
+      "validArguments": 7,
+      "latencyMs": 56013,
+      "requests": 8,
+      "inputTokens": 16940,
+      "outputTokens": 1375,
+      "reasoningTokens": 498,
+      "estimatedCostUsd": 0.0028049999999999998,
+      "observedUsage": {
+        "knownRequests": 8,
+        "unknownRequests": 0,
+        "inputTokens": 16940,
+        "outputTokens": 1375,
+        "reasoningTokens": 498,
+        "estimatedCostUsd": 0.0028049999999999998
+      }
+    }
+  ],
+  "selection": {
+    "kind": "case",
+    "id": "repair-git",
+    "effectiveMaxSteps": 24,
+    "maxStepsOverride": null,
+    "profile": "frozen_dataset",
+    "caseTimeoutMs": 240000
+  }
+}

@@ -1,5 +1,34 @@
 # Rozšířený eval R4
 
+## Opakovaná živá série v3 — 22. listopadu 2026
+
+Předem určených šest pokusů dosáhlo **5/6**: ukládání s otázkou **1/2**, oprava po neúspěšných testech v Gitu **2/2**, navazující chat po ruční změně zdroje **2/2**. První ukládací pokus zůstává neúspěšný. Série běžela se skutečným GPT‑6 Luna přes běžný desktopový backend, sériově a nad oddělenými projekty. [Strojový souhrn se všemi reporty a otisky](evals/r4-live-reliability-v3-summary-2026-11-22.json)
+
+Metodika, prompty, chráněné soubory, hodnoticí podmínky, pořadí i finanční pravidla byly před prvním placeným požadavkem zmrazeny a odeslány v commitu `80d4e92`. Všech šest slotů zůstalo ve jmenovateli, žádný se neopakoval a očekávání ani limity se během série neměnily. Každý slot měl 24 kroků, 240 sekund, nejvýše 12 API požadavků a 0,054 USD konzervativní rezervace. Navazující scénář obsahuje dvě zadání ve stejném chatu, která sdílejí tento strop. [Protokol](evals/r4-reliability-v3-protocol.md) · [Dataset v3](../tests/support/r4-eval/dataset-v3.json)
+
+| Slot | Scénář | Výsledek | Požadavky | Platné / obsloužené / všechny návrhy | Čas (ms) | Horní odhad (USD) | Rezervace (USD) |
+| --- | --- | --- | ---: | ---: | ---: | ---: | ---: |
+| 1 | ukládání s otázkou | neúspěch: rozpočtová brána | 9 | 9 / 9 / 9 | 33 953 | 0,00328525 | 0,048908875 |
+| 2 | oprava v Gitu | ověřené dokončení | 8 | 7 / 7 / 7 | 56 013 | 0,002805 | 0,04219625 |
+| 3 | navazující chat | dokončení obou zadání | 4 | 2 / 2 / 2 | 8 853 | 0,000741125 | 0,019882 |
+| 4 | ukládání s otázkou | ověřené dokončení | 9 | 8 / 8 / 8 | 36 611 | 0,003147625 | 0,047745 |
+| 5 | oprava v Gitu | ověřené dokončení | 9 | 8 / 8 / 8 | 69 329 | 0,00358025 | 0,04795575 |
+| 6 | navazující chat | dokončení obou zadání | 4 | 2 / 2 / 2 | 9 400 | 0,0007425 | 0,019882 |
+
+Ve slotu 1 model položil požadovanou otázku, dostal pevnou volnou odpověď, obnovil stejný běh a upravil pouze modul ukládání. Kontrola typů prošla. Před spuštěním testů ovladač odmítl další placený požadavek, protože jeho předběžná rezervace by překročila limit. Známe spotřebu všech devíti požadavků; důvodem zastavení je konzervativní rozpočtová brána, nikoli změřená fakturace 0,054 USD. Není doloženo, že by tento pokus při větším stropu uspěl. Slot 4 prošel všemi podmínkami včetně původních čtyř testů po poslední změně.
+
+Obě opravy doložily očekávané tři původní testové chyby před prvním zápisem a úplné původní testy i typy po poslední změně. Návratové kódy byly v obou pokusech `[1,0,0,0]`; neúspěšný první test je zamýšlenou částí scénáře. Oba navazující pokusy doložily předchozí dvojici zpráv v novém modelovém vstupu, čerstvý zdroj po ruční změně, správnou novou hodnotu a žádný agentní zápis. U read-only odpovědí se nevyžaduje změnový verification record.
+
+Celkem bylo 36/36 návrhů platných a všech 36 backend obsloužil; tato metrika nevydává očekávaně selhaný test za úspěšný příkaz. Součet latencí scénářů je 214 159 ms a nezahrnuje čas mezi sloty ani start obalového procesu. Všech 43 API požadavků mělo známou spotřebu: 87 670 vstupních a 6 686 výstupních tokenů, z toho 2 900 uvažovacích. Všechny reporty i diagnostiky mají shodný dataset, produktový zdroj a všech 11 zmrazených identit ovladače a hodnoticích souborů. Produktový zdroj má SHA-256 `2d119a4616c7caa351c5e78531d616b0cf11ac1558e295c06772d10d55bdc89e`; [úplná identita](evals/r4-reliability-v3-frozen-identity.json) odděluje produkt od evaluačních skriptů.
+
+Při přípravě jsme ověřili, že zápis do cache při výchozí době 30 minut stojí 0,125 USD za milion vstupních tokenů. Nové rezervace i horní odhady proto používají tuto sazbu na celý vstup a 0,50 USD na celý výstup; slevu za čtení cache neodečítají. Původní historický základ byl přepočten podle uložených tokenů a rezervací na **0,27022725 USD**. Všem šesti slotům jsme ještě před zmrazením snížili strop z 0,06 na 0,054 USD, aby krajní plánované maximum bylo 0,59422725 USD z autorizovaných 0,60 USD. Původní reporty zůstaly zachovány. [Přesný audit přepočtu](evals/r4-reliability-v3-pricing-audit.json) · [Oficiální ceník](https://developers.openai.com/api/docs/models/gpt-6-luna) · [Účtování cache](https://developers.openai.com/api/docs/guides/prompt-caching)
+
+Horní odhad známé nové spotřeby činí **0,01430175 USD**, součet nových rezervací **0,226569875 USD**. Podle předem určeného pravidla je konzervativní historie včetně této série **0,284529 USD**; i při zadržení celých všech nových rezervací by činila **0,496797125 USD**, tedy méně než 0,60 USD. Nejde o ověřenou fakturu ani měření skutečného rozdělení cache.
+
+Hostitelský offline průchod po poslední cenové změně prošel 3/3 a ověřil všechny identity. Cílená závěrečná sada prošla na hostiteli 38 testů, jeden symlink test Windows nepovolil. První sandbox průchod měl 37/39 kvůli odmítnuté kanonické dočasné cestě ve dvou testech bezpečného výstupu; hostitelský hardlink a outside-root test prošly bez změny kódu. Čerstvé typy, lint a kontrola závislostí prošly (405 modulů / 1 383 vazeb). Kontrola 39 změněných a nových souborů v UTF-8 i UTF-16LE neobsahovala přesnou hodnotu použitého klíče. Úplná testovací sada po dřívější opravě jednoho testu znovu spuštěna nebyla; nejde o nový doklad úplné regrese.
+
+Jde o šest pokusů nad třemi malými syntetickými úlohami, nikoli odhad obecné spolehlivosti modelu nebo celé aplikace. Série rozšiřuje živý důkaz o opakovanou opravu a aktuálnost navazujícího chatu, ale neuzavírá celou původní devítipřípadovou bránu, osobní přijetí ani nový zabalený GUI průchod. `FR-LLM-12`, `AC-O1-25` a celé R4 zůstávají otevřené. Historické neúspěchy a jejich omezení níže se tím nepřepisují.
+
 ## Opravený otázkový scénář v2 — 22. listopadu 2026
 
 Samostatná sada obsahuje jeden úkol `storage-question`. Model má propojit ukládání čítače s předaným úložištěm až po otázce o místním či sdíleném rozsahu. Ovladač odpovídá pevnou volnou odpovědí „pouze místně“, takže model nerozhoduje o tom, která nabídka bude vybrána. Rozpoznání smyslu otázky sleduje obě alternativy v textu nebo nabídkách a podporuje české i anglické formulace. Jde o heuristiku a neznámá formulace se může projevit jako nesplněné kritérium. Sada má SHA-256 `f05439b572d2ebe33f182478b6770900aa6d78cd12b8c8ec3c05614c38d7bfce`, 24 modelových kroků a 240 sekund na scénář. [Dataset v2](../tests/support/r4-eval/dataset-v2.json)

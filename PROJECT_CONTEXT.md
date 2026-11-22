@@ -1,5 +1,11 @@
 # Kontext projektu – maturitní práce
 
+## Opakovaná živá evidence R4 — 22. listopadu 2026
+
+- Předem zmrazená série v3 na `80d4e92` dosáhla 5/6: ukládání s otázkou 1/2, oprava po neúspěšném testu 2/2, navazující chat po ruční změně zdroje 2/2. První ukládací slot zastavila konzervativní rozpočtová rezervace před testy. Všech šest pokusů je zachováno bez náhrad; 43 API požadavků má známou spotřebu, 36/36 návrhů bylo platných a obsloužených backendem.
+- Ověření oficiální ceny cache writes vedlo před sérií k sazbě 0,125 USD za milion všech vstupních tokenů pro horní odhady a rezervace. Historický konzervativní základ je po opravě 0,27022725 USD; nové známé horní odhady činí 0,01430175 USD a nové rezervace 0,226569875 USD. I se všemi rezervacemi jde o 0,496797125 USD z autorizovaných 0,60 USD. Nejde o fakturu.
+- Host offline po cenové opravě 3/3, cílené testy 38 passed / 1 skipped, typy/lint/závislosti prošly. Úplná sada po dřívější opravě jednoho testu znovu neběžela. Šest syntetických pokusů neprokazuje obecnou spolehlivost ani celé R4, osobní přijetí či nový GUI průchod. Důkazy, otisky i omezení jsou v `docs/r4-eval-report.md` a `docs/evals/r4-live-reliability-v3-summary-2026-11-22.json`; `FR-LLM-12` a `AC-O1-25` zůstávají otevřené.
+
 ## Směr R4 — 10. listopadu 2026
 
 - Autor zvolil plánování R4 přes běžný uživatelský úkol: vlastní prompt v malém TypeScript/React projektu se skutečným modelem a postupné doplnění kontextu, strukturálních nástrojů, relevantního ověření a lokálního Gitu.
