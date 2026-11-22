@@ -14,7 +14,7 @@ import { R4RequestBudget } from './r4-eval-budget.mjs';
 import { writeR4EvalOutput } from './r4-safe-output.mjs';
 import { counterOracle } from './r4-counter-oracle.mjs';
 import { diagnoseFileReadArguments, diagnosePatchInputArguments, diagnosePatchPreSchemaGuards, finalizePatchInputDiagnostic, summarizeStaleResultsByTurn } from './r4-model-eval-diagnostics.mjs';
-import { readR4EvalCase, selectR4EvalCases } from './r4-eval-selection.mjs';
+import { effectiveR4EvalMaxSteps, readR4EvalOptions, selectR4EvalCases } from './r4-eval-selection.mjs';
 
 interface EvalCase { id: string; mode: 'git'|'non-git'; variant: string; prompt: string; expected: string; workflow?: string }
 const diagnosticToolIds = new Set(['file.read','file.patch','text.search','command.run','typescript.query','change.revert','ask_user']);
@@ -26,7 +26,7 @@ const diagnosticErrorCodes = new Set(['R3_SECRET_UNAVAILABLE','R3_SECRET_UNAVAIL
   'R4_EVAL_BUDGET_EXHAUSTED','R4_EVAL_CHECK_UNAVAILABLE','R4_EVAL_ACL_PROBE_OFFLINE_ONLY']);
 const args = process.argv.slice(2);
 const value = (flag: string) => {const index=args.indexOf(flag);return index<0?undefined:args[index+1];};
-const caseId=readR4EvalCase(args);
+const {caseId,maxStepsOverride}=readR4EvalOptions(args);
 const live = args.includes('--live');
 const maxRequests = live ? Number(value('--max-requests')) : 0;
 const maxCost = live ? Number(value('--max-cost-usd')) : 0;
@@ -38,6 +38,7 @@ const dataset = JSON.parse(datasetBytes.toString('utf8')) as { schemaVersion: nu
 if (dataset.schemaVersion !== 1 || dataset.cases.length !== 9 || new Set(dataset.cases.map(item => item.id)).size !== 9
   || !dataset.cases.every(item => isSafeR4EvalId(item.id))) throw new Error('R4_EVAL_DATASET_INVALID');
 const selectedCases=selectR4EvalCases(dataset.cases,caseId);
+const effectiveMaxSteps=effectiveR4EvalMaxSteps(dataset.maxSteps,maxStepsOverride);
 const key = live ? process.env.R2_PROVIDER_API_KEY ?? '' : '';
 if (live && (!args.includes('--confirm-paid-api') || value('--consent-version')!=='openai-api-2026-11-14'
   || !key || !Number.isFinite(maxCost) || maxCost <= 0 || !Number.isInteger(maxRequests) || maxRequests < 1 || maxRequests>100
@@ -182,7 +183,7 @@ try {
       const chat=await host.chats.create(project.id,'Frozen eval');
       const activeHost=host;
       const execute=async(task:string)=>{
-        const accepted=await activeHost.manager.submit({requestId:randomUUID(),chatId:chat.id,mode:live?'openai':'demo',maxSteps:dataset.maxSteps,task,
+        const accepted=await activeHost.manager.submit({requestId:randomUUID(),chatId:chat.id,mode:live?'openai':'demo',maxSteps:effectiveMaxSteps,task,
           ...(item.workflow?{workflow:builtinWorkflowSchema.parse(item.workflow)}:{})});
         while(true){
           signal.throwIfAborted();
@@ -287,7 +288,8 @@ try {
     datasetHash:hash(datasetBytes),sourceHash:await sourceHash(),evalIdentity,paidRequests:budget?.requests??0,reservedUsd:budget?.reservedUsd??0,approvedBudgetUsd:live?maxCost:null,
     pricing:live?{inputUsdPerMillion:inputPrice,outputUsdPerMillion:outputPrice,maxRequests,maxOutputTokens:4096}:null,
     pricingSource:live?value('--pricing-source'):null,passed:results.filter(item=>item.success).length,total:results.length,results,
-    ...(caseId===undefined?{}:{selection:{kind:'case',id:caseId}})};
+    ...(caseId===undefined?{}:{selection:{kind:'case',id:caseId,effectiveMaxSteps,
+      maxStepsOverride:maxStepsOverride??null,profile:maxStepsOverride===undefined?'frozen_dataset':'diagnostic_max_steps_override'}})};
   const defaultReport=caseId===undefined?(live?'docs/evals/r4-live-report.json':'docs/evals/r4-offline-report.json'):
     `docs/evals/r4-${live?'live':'offline'}-case-${caseId}-report.json`;
   const output=resolve(value('--report')??defaultReport);

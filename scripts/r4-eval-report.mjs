@@ -14,7 +14,10 @@ export const r4EvalReportSchema = z.object({
   passed:count,total:count,
   selection:z.discriminatedUnion('kind',[
     z.object({kind:z.literal('full')}).strict(),
-    z.object({kind:z.literal('case'),id:z.string().refine(isSafeR4EvalId)}).strict()
+    z.object({kind:z.literal('case'),id:z.string().refine(isSafeR4EvalId),
+      effectiveMaxSteps:z.number().int().min(1).max(32).optional(),
+      maxStepsOverride:z.number().int().min(1).max(32).nullable().optional(),
+      profile:z.enum(['frozen_dataset','diagnostic_max_steps_override']).optional()}).strict()
   ]).optional(),
   results:z.array(z.object({
     id:z.string().min(1),success:z.boolean(),taskCompleted:z.boolean(),recovery:z.boolean(),
@@ -24,10 +27,18 @@ export const r4EvalReportSchema = z.object({
   }).strict())
 }).strict().superRefine((report,context)=>{
   const full=report.selection===undefined||report.selection.kind==='full';
+  const selection=report.selection?.kind==='case'?report.selection:undefined;
+  const hasStepMetadata=selection!==undefined&&['effectiveMaxSteps','maxStepsOverride','profile'].some(key=>Object.hasOwn(selection,key));
+  const stepMetadataValid=!hasStepMetadata||(selection!==undefined
+    &&typeof selection.effectiveMaxSteps==='number'&&Object.hasOwn(selection,'maxStepsOverride')
+    &&Object.hasOwn(selection,'profile')
+    &&(selection.profile==='frozen_dataset'&&selection.maxStepsOverride===null
+      ||selection.profile==='diagnostic_max_steps_override'&&selection.maxStepsOverride===selection.effectiveMaxSteps));
   const valid=report.passed===report.results.filter(item=>item.success).length
     && report.total===report.results.length
     && (full?(report.total===9&&new Set(report.results.map(item=>item.id)).size===9)
       :(report.total===1&&report.results[0]?.id===report.selection.id))
+    && stepMetadataValid
     && report.paidRequests===report.results.reduce((count,item)=>count+item.requests,0)
     && report.results.every(item=>item.validArguments<=item.toolCalls && item.success===(item.failureOwner===null&&item.reason===null)
       && (item.reasoningTokens===null||item.outputTokens!==null))

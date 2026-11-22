@@ -4,7 +4,7 @@ import { spawnSync } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { isSafeR4EvalId, r4EvalReportSchema } from './r4-eval-report.mjs';
-import { selectR4EvalCases } from './r4-eval-selection.mjs';
+import { effectiveR4EvalMaxSteps, readR4EvalOptions, selectR4EvalCases } from './r4-eval-selection.mjs';
 test('live evaluation stays opt-in before any provider call',()=>{
   const result=spawnSync(process.execPath,['scripts/eval-r4-model.mjs','--live'],{cwd:process.cwd(),encoding:'utf8',timeout:5000,windowsHide:true});
   assert.equal(result.status,2);
@@ -45,11 +45,26 @@ test('case filter selects exactly one frozen case and rejects unknown IDs',async
   assert.deepEqual(selectR4EvalCases(dataset.cases,undefined),dataset.cases);
   assert.throws(()=>selectR4EvalCases(dataset.cases,'unknown-case'),/R4_EVAL_CASE_UNKNOWN:unknown-case/u);
 });
+test('step overrides are strict, case-scoped, and leave the frozen default intact',()=>{
+  assert.deepEqual(readR4EvalOptions(['--case','question']),{caseId:'question',maxStepsOverride:undefined});
+  assert.deepEqual(readR4EvalOptions(['--case','question','--max-steps','1']),{caseId:'question',maxStepsOverride:1});
+  assert.deepEqual(readR4EvalOptions(['--max-steps','32','--case','question']),{caseId:'question',maxStepsOverride:32});
+  assert.equal(effectiveR4EvalMaxSteps(12,undefined),12);
+  assert.equal(effectiveR4EvalMaxSteps(12,24),24);
+  for(const value of ['0','33','1.5','1e1',' 12',''])
+    assert.throws(()=>readR4EvalOptions(['--case','question','--max-steps',value]),/R4_EVAL_MAX_STEPS_INVALID/u);
+  assert.throws(()=>readR4EvalOptions(['--max-steps','16']),/R4_EVAL_MAX_STEPS_REQUIRES_CASE/u);
+  assert.throws(()=>readR4EvalOptions(['--case','question','--max-steps','16','--max-steps','18']),/R4_EVAL_MAX_STEPS_INVALID/u);
+});
 test('report schema distinguishes a one-case run and still accepts historical full reports',async()=>{
   const report=JSON.parse(await readFile('docs/evals/r4-offline-report.json','utf8'));
   const selected={...report,total:1,passed:1,results:[report.results[0]],selection:{kind:'case',id:report.results[0].id}};
   assert.equal(r4EvalReportSchema.safeParse(selected).success,true);
   assert.equal(r4EvalReportSchema.safeParse({...selected,selection:{kind:'case',id:'different-case'}}).success,false);
+  const diagnostic={...selected,selection:{kind:'case',id:report.results[0].id,effectiveMaxSteps:24,maxStepsOverride:24,profile:'diagnostic_max_steps_override'}};
+  assert.equal(r4EvalReportSchema.safeParse(diagnostic).success,true);
+  assert.equal(r4EvalReportSchema.safeParse({...diagnostic,selection:{...diagnostic.selection,effectiveMaxSteps:12}}).success,false);
+  assert.equal(r4EvalReportSchema.safeParse({...selected,selection:{kind:'case',id:report.results[0].id,effectiveMaxSteps:12,maxStepsOverride:null,profile:'frozen_dataset'}}).success,true);
   assert.equal(r4EvalReportSchema.safeParse({...report,total:1}).success,false);
   assert.equal(r4EvalReportSchema.safeParse(report).success,true);
 });
@@ -57,4 +72,14 @@ test('unknown --case is rejected before live authorization or provider dispatch'
   const result=spawnSync(process.execPath,['scripts/eval-r4-model.mjs','--live','--case','unknown-case'],{cwd:process.cwd(),encoding:'utf8',timeout:5000,windowsHide:true});
   assert.equal(result.status,2);
   assert.deepEqual(JSON.parse(result.stdout),{status:'not_run',reason:'unknown_case',caseId:'unknown-case'});
+});
+test('invalid or unscoped --max-steps is rejected before live authorization or child dispatch',()=>{
+  for(const args of [
+    ['--live','--case','question','--max-steps','33'],
+    ['--live','--max-steps','16']
+  ]){
+    const result=spawnSync(process.execPath,['scripts/eval-r4-model.mjs',...args],{cwd:process.cwd(),encoding:'utf8',timeout:5000,windowsHide:true});
+    assert.equal(result.status,2);
+    assert.equal(JSON.parse(result.stdout).status,'not_run');
+  }
 });
