@@ -1,5 +1,9 @@
 # R4 — ověření návaznosti chatu
 
+## Aktuální balíček — 22. listopadu 2026
+
+Po změnách modelové historie, předávání kroku a bezpečného návodu pro patch byl desktop znovu sestaven. Zabalená aplikace prošla R3 kontrolou 8/8 (`.r3-artifacts/packaged-GFZcjA/r3-report.json`); ověřený zdroj `2d119a4616c7caa351c5e78531d616b0cf11ac1558e295c06772d10d55bdc89e`, ASAR `4b1cc5a1301a4bc462223b648a14946acc28139d6adf55c5e91a2815b1672ba9`, EXE `b0691c3ee235c1077ae43ea82923ca3ad3f5ec9b41ff80a9915b419170f91113`. Kontrola typů, lint a závislostí prošly (405 modulů / 1 383 hran). Úplná sada 798/4 skipped níže předcházela pozdějším úpravám; ty pokrývají cílené regrese a nejde o nové úplné R4 přijetí. Stav živého modelu a omezení měření jsou v [eval reportu](r4-eval-report.md).
+
 ## Doplnění instrukce modelu — 21. listopadu 2026
 
 OpenAI adapter dostal obecný pokyn pro zvolený postup, relevantní kontroly, oprávnění, pravdivé ukončení a redigovaná historická volání. Backendová oprávnění a pravidla ověření zůstávají rozhodující. Provider kontrakt a navazující modelový tok prošly 31/31; typecheck, lint a hranice závislostí prošly (405 modulů / 1 383 hran). Nezávislé review ověřilo pořadí instrukcí, hranice nástrojů u planning/verification a párování stale volání. Omezený živý průchod a jeho hranice jsou v [eval reportu](r4-eval-report.md).
