@@ -1,20 +1,35 @@
 import { spawnSync } from 'node:child_process';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { readFile } from 'node:fs/promises';
 import { readProviderKey, providerChildEnvironment } from './r2-provider-key.mjs';
+import { readR4EvalCase, selectR4EvalCases } from './r4-eval-selection.mjs';
 
 const args = process.argv.slice(2);
 const value = flag => {const index=args.indexOf(flag);return index<0?undefined:args[index+1];};
 const offline = args.includes('--offline');
 const live = args.includes('--live');
+let caseId, caseError;
+try {
+  caseId=readR4EvalCase(args);
+  if(caseId!==undefined){
+    const dataset=JSON.parse((await readFile('tests/support/r4-eval/dataset-v1.json')).toString('utf8'));
+    selectR4EvalCases(dataset.cases,caseId);
+  }
+} catch(error) { caseError=error; }
 const positive = flag => Number.isFinite(Number(value(flag))) && Number(value(flag)) > 0;
-const authorized = live && !offline && args.includes('--confirm-paid-api') && readProviderKey('openai')
+const authorized = () => live && !offline && args.includes('--confirm-paid-api') && readProviderKey('openai')
   && value('--consent-version') === 'openai-api-2026-11-14'
   && positive('--max-cost-usd') && positive('--max-requests') && Number(value('--max-requests')) <= 100
   && Number.isInteger(Number(value('--max-requests')))
   && positive('--input-usd-per-million') && positive('--output-usd-per-million')
   && /^https:\/\//u.test(value('--pricing-source') ?? '');
-if ((!offline && !authorized) || (offline && live)) {
+if(caseError){
+  const message=caseError instanceof Error?caseError.message:'';
+  const unknown=/^R4_EVAL_CASE_UNKNOWN:([a-z0-9-]+)$/u.exec(message);
+  process.stdout.write(JSON.stringify(unknown?{status:'not_run',reason:'unknown_case',caseId:unknown[1]}:{status:'not_run',reason:'invalid_case_argument'})+'\n');
+  process.exitCode=2;
+} else if ((!offline && !authorized()) || (offline && live)) {
   process.stdout.write(JSON.stringify({ status: 'not_run', reason: 'Choose --offline, or provide an approved live budget, request cap, pricing, current consent and --confirm-paid-api.' }) + '\n');
   process.exitCode = 2;
 } else {

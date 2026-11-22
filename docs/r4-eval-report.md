@@ -1,5 +1,13 @@
 # Rozšířený eval R4
 
+## Cílené ověření historie — 22. listopadu 2026
+
+OpenAI adapter nahrazuje redigovanou historickou dvojici volání a výsledku omezenými, označenými metadaty; neposílá modelu placeholder jako vzor skutečného volání. Smíšené čerstvé dvojice si zachovávají párování i pořadí, odpověď na otázku zůstává dostupná a staré obsahy se neodesílají. Review i cílené testy pokrývají pořadí, souběžné volání, obnovu po otázce a nepovolené výstupy.
+
+[Jeden živý scénář `question`](evals/r4-live-question-history-2026-11-22.json) po této změně skončil 0/1: model položil jednu otázku, ale po 12 krocích nespustil kontroly ani nedokončil úlohu. [Diagnostika](evals/r4-live-question-history-2026-11-22-diagnostics.json) nezaznamenala jediné opakování redigovaného placeholderu u `file.read`; jde o jeden pokus, nikoli důkaz spolehlivosti. Spotřeboval 12 požadavků za odhad 0,0042101 USD; součet dosud zaznamenaných sedmi živých běhů je 0,0663631 USD, nikoli ověřená faktura.
+
+Review navíc zjistilo nesoulad otázkového případu datasetu v1: prompt žádá přidat ukládání hodnoty, ale jeho hodnoticí brána vyžaduje také opravu výpočtu čítače, kterou zadání neobsahuje, a neověřuje samotnou implementaci ukládání. Offline model tuto nesrovnalost zakrývá připravenou opravou čítače. Původní dataset a reporty zůstávají zachovány; výsledek tohoto případu nelze považovat za úplné měření splnění uživatelského zadání. Vyžaduje budoucí samostatnou opravenou sadu s předem určeným a skutečně ověřovaným očekáváním. V tomto běhu ovšem neproběhly ani kontroly a úloha nedosáhla dokončení.
+
 ## Zafixovaná sada a rozsah
 
 Dataset `tests/support/r4-eval/dataset-v1.json` byl zafixován v commitu `916e520` před vyhodnocením. Obsahuje devět případů nad malou TypeScript/React fixture. Generátor vytváří oddělené dočasné projekty s komponentou, funkcí čítače, TypeScript konfigurací a skutečným testem Node. Vyhodnocení používá běžný desktopový backend, původní nástroje a jednotlivá oprávnění příkazů.

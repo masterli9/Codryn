@@ -14,6 +14,7 @@ import { R4RequestBudget } from './r4-eval-budget.mjs';
 import { writeR4EvalOutput } from './r4-safe-output.mjs';
 import { counterOracle } from './r4-counter-oracle.mjs';
 import { diagnoseFileReadArguments, summarizeStaleResultsByTurn } from './r4-model-eval-diagnostics.mjs';
+import { readR4EvalCase, selectR4EvalCases } from './r4-eval-selection.mjs';
 
 interface EvalCase { id: string; mode: 'git'|'non-git'; variant: string; prompt: string; expected: string; workflow?: string }
 const diagnosticToolIds = new Set(['file.read','file.patch','text.search','command.run','typescript.query','change.revert','ask_user']);
@@ -25,6 +26,7 @@ const diagnosticErrorCodes = new Set(['R3_SECRET_UNAVAILABLE','R3_SECRET_UNAVAIL
   'R4_EVAL_BUDGET_EXHAUSTED','R4_EVAL_CHECK_UNAVAILABLE','R4_EVAL_ACL_PROBE_OFFLINE_ONLY']);
 const args = process.argv.slice(2);
 const value = (flag: string) => {const index=args.indexOf(flag);return index<0?undefined:args[index+1];};
+const caseId=readR4EvalCase(args);
 const live = args.includes('--live');
 const maxRequests = live ? Number(value('--max-requests')) : 0;
 const maxCost = live ? Number(value('--max-cost-usd')) : 0;
@@ -35,6 +37,7 @@ const datasetBytes = await readFile('tests/support/r4-eval/dataset-v1.json');
 const dataset = JSON.parse(datasetBytes.toString('utf8')) as { schemaVersion: number; maxSteps: number; cases: EvalCase[] };
 if (dataset.schemaVersion !== 1 || dataset.cases.length !== 9 || new Set(dataset.cases.map(item => item.id)).size !== 9
   || !dataset.cases.every(item => isSafeR4EvalId(item.id))) throw new Error('R4_EVAL_DATASET_INVALID');
+const selectedCases=selectR4EvalCases(dataset.cases,caseId);
 const key = live ? process.env.R2_PROVIDER_API_KEY ?? '' : '';
 if (live && (!args.includes('--confirm-paid-api') || value('--consent-version')!=='openai-api-2026-11-14'
   || !key || !Number.isFinite(maxCost) || maxCost <= 0 || !Number.isInteger(maxRequests) || maxRequests < 1 || maxRequests>100
@@ -51,7 +54,9 @@ const evalIdentity = {
   budgetSha256: hash(await readFile(new URL('./r4-eval-budget.mjs', import.meta.url))),
   safeOutputSha256: hash(await readFile(new URL('./r4-safe-output.mjs', import.meta.url))),
   reportSchemaSha256: hash(await readFile(new URL('./r4-eval-report.mjs', import.meta.url))),
-  r4ModelEvalDiagnosticsSha256: hash(await readFile(new URL('./r4-model-eval-diagnostics.mjs', import.meta.url)))
+  r4ModelEvalDiagnosticsSha256: hash(await readFile(new URL('./r4-model-eval-diagnostics.mjs', import.meta.url))),
+  selectionSha256: hash(await readFile(new URL('./r4-eval-selection.mjs', import.meta.url))),
+  wrapperSha256: hash(await readFile(new URL('./eval-r4-model.mjs', import.meta.url)))
 };
 
 // Test-owned profiles use an ephemeral authenticated key. No provider key is
@@ -72,7 +77,7 @@ const protector: SecretProtector = {
 };
 
 try {
-  for (const item of dataset.cases) {
+  for (const item of selectedCases) {
     const started = performance.now(), projectRoot = join(root,item.id), profile = join(root,item.id+'-profile');
     await createR4EvalProjectFixture(projectRoot,item.variant,item.variant==='verification' ? fixtureSource.replace('value - 1','value + 1') : fixtureSource);
     if(item.mode==='git')for(const command of [['init','-b','main'],['config','user.name','R4 Eval'],['config','user.email','r4@invalid.local'],['add','.'],['commit','-m','fixture']]){
@@ -273,8 +278,11 @@ try {
   const report={schemaVersion:1,series:live?'live':'offline',model:live?'gpt-6-luna':'scripted-fake',createdAt:new Date().toISOString(),
     datasetHash:hash(datasetBytes),sourceHash:await sourceHash(),evalIdentity,paidRequests:budget?.requests??0,reservedUsd:budget?.reservedUsd??0,approvedBudgetUsd:live?maxCost:null,
     pricing:live?{inputUsdPerMillion:inputPrice,outputUsdPerMillion:outputPrice,maxRequests,maxOutputTokens:4096}:null,
-    pricingSource:live?value('--pricing-source'):null,passed:results.filter(item=>item.success).length,total:results.length,results};
-  const output=resolve(value('--report')??(live?'docs/evals/r4-live-report.json':'docs/evals/r4-offline-report.json'));
+    pricingSource:live?value('--pricing-source'):null,passed:results.filter(item=>item.success).length,total:results.length,results,
+    ...(caseId===undefined?{}:{selection:{kind:'case',id:caseId}})};
+  const defaultReport=caseId===undefined?(live?'docs/evals/r4-live-report.json':'docs/evals/r4-offline-report.json'):
+    `docs/evals/r4-${live?'live':'offline'}-case-${caseId}-report.json`;
+  const output=resolve(value('--report')??defaultReport);
   const outputRelative=relative(resolve('docs/evals'),output);
   if(isAbsolute(outputRelative)||outputRelative.startsWith('..')||!outputRelative.endsWith('.json'))throw new Error('R4_EVAL_OUTPUT_INVALID');
   r4EvalReportSchema.parse(report);
