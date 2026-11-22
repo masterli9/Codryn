@@ -36,8 +36,10 @@ const messages = Object.freeze({
 });
 type HarnessCode = keyof typeof messages;
 
-function failed(callId: Uuid, code: HarnessCode): ToolResult {
-  return { ok: false, callId, error: { code, message: messages[code] } };
+const filePatchInputGuidance = 'file.patch expects an existing project-relative path of 1–1024 characters; expectedHash must be the 64-character lowercase hexadecimal contentHash from a fresh file.read; edits must be an array of 1–16 objects with non-empty oldText and string newText. Do not add fields. Text must contain no NUL characters, and combined oldText/newText UTF-8 size must not exceed 64 KiB.';
+
+function failed(callId: Uuid, code: HarnessCode, message: string = messages[code]): ToolResult {
+  return { ok: false, callId, error: { code, message } };
 }
 
 function safeResult(result: ToolResult): JsonValue {
@@ -92,7 +94,8 @@ export class ToolExecutionHarness {
         return await this.reject(call, runId, state, 'failed', 'R2_TOOL_CONTEXT_INVALID');
       }
       const parsed = definition.inputSchema.safeParse(call.arguments);
-      if (!parsed.success) return await this.reject(call, runId, state, 'failed', 'R1_TOOL_INPUT_INVALID');
+      if (!parsed.success) return await this.reject(call, runId, state, 'failed', 'R1_TOOL_INPUT_INVALID',
+        call.toolId === 'file.patch' ? filePatchInputGuidance : undefined);
       state = await this.transition(call.callId, runId, state, 'schema_validated');
 
       if (definition.risk === 'command_project') {
@@ -168,8 +171,8 @@ export class ToolExecutionHarness {
     }
   }
 
-  private async reject(call: ModelToolCall, runId: Uuid, from: ToolCallState, to: Extract<ToolCallState, 'failed' | 'denied' | 'cancelled'>, code: HarnessCode): Promise<ToolResult> {
-    const result = failed(call.callId, code);
+  private async reject(call: ModelToolCall, runId: Uuid, from: ToolCallState, to: Extract<ToolCallState, 'failed' | 'denied' | 'cancelled'>, code: HarnessCode, message?: string): Promise<ToolResult> {
+    const result = failed(call.callId, code, message ?? messages[code]);
     await this.transition(call.callId, runId, from, to, { errorCode: code, ...(to === 'denied' ? { permissionResult: 'denied' as const } : {}), safeResult: safeResult(result) });
     return result;
   }

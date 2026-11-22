@@ -1,0 +1,147 @@
+{
+  "schemaVersion": 1,
+  "sourceHash": "2d119a4616c7caa351c5e78531d616b0cf11ac1558e295c06772d10d55bdc89e",
+  "evalIdentity": {
+    "runnerSha256": "b1cae3547b88e7c0b03cb67479a8300164ee8b8c649cadaebb0f91c0fc67902a",
+    "fixtureBuilderSha256": "ed8fdbcb1b76ced91108a905cde0683f7a98214b5045c46c2ff4a1dee0769ddd",
+    "counterOracleSha256": "fe79d9755d547b6c15f875f74e99b77a5d3038d562ba67ba2d9ebc1aace9d206",
+    "budgetSha256": "d99ff75377e37cf1253a01dc8dba55a4ba1cd7b98e9b9fcb3467f83191565d20",
+    "safeOutputSha256": "5744552f9a9a36eabebb55e406f73af7a523716df3b0ab529e99e87244066552",
+    "reportSchemaSha256": "95d561dc26d6c746339c8d5c044b947d894e48342a958a6189777bd6d54d64b3",
+    "r4ModelEvalDiagnosticsSha256": "f0fffac4fcc57a282ad0d780e8225816513cc086e73f66a43874d827e8797554",
+    "selectionSha256": "4ed1dc2997fae5e5f33a02f7211988a9b9a68f69254a3758fc367a687ee92734",
+    "wrapperSha256": "18287d24440f2e1592fc372bc23f65559fb7a7c8a0dcd8da32bf1864f9537888"
+  },
+  "counterOracle": {
+    "kind": "bounded_expression_ast",
+    "input": 1,
+    "expected": 2,
+    "scope": "exported one-parameter function or arrow with a single return expression; numeric literals, parameter, parentheses and + - * / % **"
+  },
+  "series": "offline",
+  "diagnostics": [
+    {
+      "id": "counter-non-git",
+      "runState": "finished",
+      "runFailureCode": null,
+      "resultStatus": "completed",
+      "verificationStatus": "verified",
+      "questionTotal": 0,
+      "counterOracleStatus": "verified",
+      "commandExitCodes": [
+        0,
+        0
+      ],
+      "modelToolIds": [
+        "file.read",
+        "file.patch",
+        "command.run",
+        "command.run"
+      ],
+      "toolAudit": [
+        {
+          "toolId": "file.read",
+          "state": "succeeded",
+          "errorCode": null
+        },
+        {
+          "toolId": "file.patch",
+          "state": "succeeded",
+          "errorCode": null
+        },
+        {
+          "toolId": "command.run",
+          "state": "succeeded",
+          "errorCode": null
+        },
+        {
+          "toolId": "command.run",
+          "state": "succeeded",
+          "errorCode": null
+        }
+      ],
+      "fileReadCalls": [
+        {
+          "fields": [
+            {
+              "name": "path",
+              "type": "string"
+            }
+          ],
+          "unknownFieldCount": 0,
+          "reasons": [],
+          "rejected": false
+        }
+      ],
+      "filePatchCalls": [
+        {
+          "fields": [
+            {
+              "name": "path",
+              "type": "string"
+            },
+            {
+              "name": "expectedHash",
+              "type": "string"
+            },
+            {
+              "name": "edits",
+              "type": "array"
+            }
+          ],
+          "missingFields": [],
+          "unknownFieldCount": 0,
+          "editCount": 1,
+          "editShapes": [
+            {
+              "fields": [
+                {
+                  "name": "oldText",
+                  "type": "string"
+                },
+                {
+                  "name": "newText",
+                  "type": "string"
+                }
+              ],
+              "missingFields": [],
+              "unknownFieldCount": 0,
+              "reasons": []
+            }
+          ],
+          "reasons": [],
+          "rejected": false
+        }
+      ],
+      "staleResultsByTurn": [
+        {
+          "turn": 1,
+          "previousToolResultCount": 0,
+          "staleResultCount": 0
+        },
+        {
+          "turn": 2,
+          "previousToolResultCount": 1,
+          "staleResultCount": 0
+        },
+        {
+          "turn": 3,
+          "previousToolResultCount": 2,
+          "staleResultCount": 1
+        },
+        {
+          "turn": 4,
+          "previousToolResultCount": 3,
+          "staleResultCount": 1
+        },
+        {
+          "turn": 5,
+          "previousToolResultCount": 4,
+          "staleResultCount": 1
+        }
+      ],
+      "validatedToolArgumentsAndQuestions": 4,
+      "rejectedInputCount": 0
+    }
+  ]
+}

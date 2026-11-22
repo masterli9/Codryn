@@ -6,14 +6,14 @@ import { join, resolve, relative, isAbsolute } from 'node:path';
 import { fileReadInputSchema, r3ModelDescriptor, type ModelAdapter, type SecretProtector } from '@codryn/core';
 import { createR3Infrastructure, createDesktopRuntimeFactory, FetchProviderTransport, OpenAIResponsesAdapter, UuidGenerator } from '@codryn/infrastructure';
 import type { ProviderTransport } from '@codryn/infrastructure';
-import { builtinWorkflowSchema, type ModelRequest, type JsonValue } from '@codryn/shared';
+import { builtinWorkflowSchema, patchInputSchema, type ModelRequest, type JsonValue } from '@codryn/shared';
 import { createR4EvalProjectFixture } from '@codryn/test-support';
 import { sourceHash } from './r3-build-identity.mjs';
 import { isSafeR4EvalId, r4EvalReportSchema } from './r4-eval-report.mjs';
 import { R4RequestBudget } from './r4-eval-budget.mjs';
 import { writeR4EvalOutput } from './r4-safe-output.mjs';
 import { counterOracle } from './r4-counter-oracle.mjs';
-import { diagnoseFileReadArguments, summarizeStaleResultsByTurn } from './r4-model-eval-diagnostics.mjs';
+import { diagnoseFileReadArguments, diagnosePatchInputArguments, summarizeStaleResultsByTurn } from './r4-model-eval-diagnostics.mjs';
 import { readR4EvalCase, selectR4EvalCases } from './r4-eval-selection.mjs';
 
 interface EvalCase { id: string; mode: 'git'|'non-git'; variant: string; prompt: string; expected: string; workflow?: string }
@@ -85,7 +85,9 @@ try {
     }
     const trace: {toolId:string}[] = [], captured:ModelRequest[]=[];
     const fileReadShapes: {callId:string;shape:ReturnType<typeof diagnoseFileReadArguments>}[] = [];
+    const filePatchShapes: {callId:string;shape:ReturnType<typeof diagnosePatchInputArguments>}[] = [];
     const fileReadRejections = new Map<string,string|null>();
+    const filePatchRejections = new Map<string,string|null>();
     let inputTokens=0,outputTokens=0,reasoningTokens=0,usageKnown=true,reasoningKnown=true,actualCost=0,requestCount=0;
     let budgetHit=false,validArguments=0,projectId:string|undefined,runFailureCode:string|null=null,runState:string|null=null;
     let resultStatus:string|null=null,verificationStatus:string|null=null,questionTotal=0,counterOracleStatus:'verified'|'mismatch'|'unsupported'|'not_applicable'='not_applicable';
@@ -159,6 +161,7 @@ try {
                 if(event.type==='tool_call'){
                   trace.push({toolId:event.call.toolId});
                   if(event.call.toolId==='file.read')fileReadShapes.push({callId:event.call.callId,shape:diagnoseFileReadArguments(event.call.arguments,fileReadInputSchema)});
+                  if(event.call.toolId==='file.patch')filePatchShapes.push({callId:event.call.callId,shape:diagnosePatchInputArguments(event.call.arguments,patchInputSchema)});
                   if(item.variant==='stale'&&event.call.toolId==='file.patch'&&!staleInjected){
                     await writeFile(join(projectRoot,'src/counter.ts'),fixtureSource+'// external edit\n');staleInjected=true;
                   }
@@ -242,6 +245,7 @@ try {
             const state=typeof row.state==='string'&&diagnosticToolStates.has(row.state)?row.state:'unknown';
             const code=typeof row.error_code==='string'?(diagnosticErrorCodes.has(row.error_code)?row.error_code:'OTHER_FAILURE'):null;
             if(row.tool_id==='file.read'&&typeof row.call_id==='string')fileReadRejections.set(row.call_id,code);
+            if(row.tool_id==='file.patch'&&typeof row.call_id==='string')filePatchRejections.set(row.call_id,code);
             toolAudit.push({toolId,state,errorCode:code});
           }
         }
@@ -265,9 +269,13 @@ try {
       const rejected=fileReadRejections.get(callId)==='R1_TOOL_INPUT_INVALID';
       return { ...shape, rejected, reasons:shape.reasons.length?shape.reasons:rejected?['pre_schema_safety_check']:[] };
     });
+    const filePatchCalls=filePatchShapes.map(({callId,shape})=>{
+      const rejected=filePatchRejections.get(callId)==='R1_TOOL_INPUT_INVALID';
+      return { ...shape, rejected, reasons:shape.reasons.length?shape.reasons:rejected?['pre_schema_safety_check']:[] };
+    });
     diagnostics.push({id:item.id,runState,runFailureCode,resultStatus,verificationStatus,questionTotal,counterOracleStatus,commandExitCodes,
       modelToolIds:trace.map(call=>diagnosticToolIds.has(call.toolId)?call.toolId:'unknown'),toolAudit,
-      fileReadCalls,staleResultsByTurn:summarizeStaleResultsByTurn(captured),
+      fileReadCalls,filePatchCalls,staleResultsByTurn:summarizeStaleResultsByTurn(captured),
       validatedToolArgumentsAndQuestions:validArguments,
       rejectedInputCount:toolAudit.filter(row=>row.errorCode==='R1_TOOL_INPUT_INVALID').length});
     results.push({id:item.id,success,taskCompleted,recovery,failureOwner:success?null:owner,reason,toolCalls:trace.length,

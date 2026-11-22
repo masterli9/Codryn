@@ -1,25 +1,32 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { EventEnvelope, Uuid } from '@codryn/shared';
 import type { ProjectFileReadResult, ToolCallStore } from '../src/agent/ports.js';
-import { R1PersistenceFailure, ControlledPermissionPolicy, ToolExecutionHarness, ToolRegistry, fileReadTool } from '../src/index.js';
+import { R1PersistenceFailure, ControlledPermissionPolicy, ToolExecutionHarness, ToolRegistry, filePatchTool, fileReadTool } from '../src/index.js';
 
 const ids = (...values: string[]) => ({ next: () => values.shift() as Uuid });
 const clock = { now: () => '2026-08-24T00:00:00.000Z' };
 const call = { callId: '11111111-1111-4111-8111-111111111111', toolId: 'file.read', toolVersion: 1, arguments: { path: 'README.md' } } as const;
 const runId = '22222222-2222-4222-8222-222222222222' as Uuid;
 
-function store(): ToolCallStore & { transitions: Array<{ to: string; event: EventEnvelope }> } {
-  const transitions: Array<{ to: string; event: EventEnvelope }> = [];
+function store(): ToolCallStore & { created: unknown[]; events: EventEnvelope[]; transitions: Array<{ to: string; event: EventEnvelope; safeResult?: unknown }> } {
+  const created: unknown[] = [];
+  const events: EventEnvelope[] = [];
+  const transitions: Array<{ to: string; event: EventEnvelope; safeResult?: unknown }> = [];
   return {
+    created,
+    events,
     transitions,
-    async createWithInitialEvent() {},
-    async transitionWithEvent(input) { transitions.push({ to: input.to, event: input.event }); }
+    async createWithInitialEvent(call, event) { created.push(call); events.push(event); },
+    async transitionWithEvent(input) {
+      events.push(input.event);
+      transitions.push({ to: input.to, event: input.event, ...(input.safeResult === undefined ? {} : { safeResult: input.safeResult }) });
+    }
   };
 }
 
 type ReadHandler = (input: { path: string; startLine: number; maxLines: number }, signal: AbortSignal) => Promise<ProjectFileReadResult>;
 
-function harness(handler: ReturnType<typeof vi.fn<ReadHandler>>, toolCallStore = store()): ToolExecutionHarness {
+function harness(handler: ReturnType<typeof vi.fn<ReadHandler>>, toolCallStore: ToolCallStore = store()): ToolExecutionHarness {
   return new ToolExecutionHarness({
     registry: new ToolRegistry([fileReadTool(handler)]),
     permissionPolicy: new ControlledPermissionPolicy(),
@@ -72,7 +79,56 @@ describe('ToolExecutionHarness', () => {
 
     expect(unknown).toMatchObject({ ok: false, error: { code: 'R1_TOOL_UNKNOWN' } });
     expect(invalid).toMatchObject({ ok: false, error: { code: 'R1_TOOL_INPUT_INVALID' } });
+    expect(invalid).toMatchObject({ error: { message: 'Tool input is invalid.' } });
     expect(handler).not.toHaveBeenCalled();
+  });
+
+  it('gives file.patch fixed schema guidance without echoing values or persisting details', async () => {
+    const toolCallStore = store();
+    const execute = vi.fn(async () => ({ status: 'rejected' as const, code: 'R2_PATCH_REJECTED' }));
+    const patchHarness = new ToolExecutionHarness({
+      registry: new ToolRegistry([filePatchTool({ execute })]),
+      permissionPolicy: new ControlledPermissionPolicy(), toolCallStore, clock, ids: ids('99999999-9999-4999-8999-999999999999')
+    });
+    const result = await patchHarness.execute({ ...call, toolId: 'file.patch', arguments: {
+      path: 'src/PATH_VALUE_CANARY.ts', expectedHash: 'HASH_VALUE_CANARY',
+      edits: [{ oldText: 'OLD_VALUE_CANARY', newText: 'NEW_VALUE_CANARY' }], extraFieldCanary: 'KEY_VALUE_CANARY'
+    } }, runId, new AbortController().signal, { projectId: runId, runId, callId: call.callId });
+
+    expect(result).toMatchObject({ ok: false, error: {
+      code: 'R1_TOOL_INPUT_INVALID',
+      message: expect.stringContaining('existing project-relative path')
+    } });
+    if (result.ok) throw new Error('Expected an invalid patch result.');
+    expect(result.error.message).toContain('64-character lowercase hexadecimal');
+    expect(result.error.message).toContain('file.read');
+    expect(result.error.message).toContain('1–16');
+    expect(result.error.message).toContain('non-empty oldText and string newText');
+    expect(result.error.message).toContain('64 KiB');
+    expect(result.error.message).not.toMatch(/PATH_VALUE_CANARY|HASH_VALUE_CANARY|OLD_VALUE_CANARY|NEW_VALUE_CANARY|KEY_VALUE_CANARY|extraFieldCanary/u);
+    expect(JSON.stringify({ created: toolCallStore.created, events: toolCallStore.events, transitions: toolCallStore.transitions, result }))
+      .not.toMatch(/PATH_VALUE_CANARY|HASH_VALUE_CANARY|OLD_VALUE_CANARY|NEW_VALUE_CANARY|KEY_VALUE_CANARY|extraFieldCanary/u);
+    expect(toolCallStore.transitions.map(item => item.to)).toEqual(['failed']);
+    expect(execute).not.toHaveBeenCalled();
+  });
+
+  it('keeps pre-schema secret rejection generic and does not echo or persist the secret', async () => {
+    const toolCallStore = store();
+    const execute = vi.fn(async () => ({ status: 'rejected' as const, code: 'R2_PATCH_REJECTED' }));
+    const patchHarness = new ToolExecutionHarness({
+      registry: new ToolRegistry([filePatchTool({ execute })]), permissionPolicy: new ControlledPermissionPolicy(),
+      toolCallStore, clock, ids: ids('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa')
+    });
+    const result = await patchHarness.execute({ ...call, toolId: 'file.patch', arguments: {
+      path: 'src/example.ts', expectedHash: 'a'.repeat(64),
+      edits: [{ oldText: 'TOKEN=SECRET_VALUE_CANARY', newText: 'safe' }]
+    } }, runId, new AbortController().signal, { projectId: runId, runId, callId: call.callId });
+
+    expect(result).toMatchObject({ ok: false, error: { code: 'R1_TOOL_INPUT_INVALID', message: 'Tool input is invalid.' } });
+    expect(JSON.stringify({ created: toolCallStore.created, events: toolCallStore.events, transitions: toolCallStore.transitions, result }))
+      .not.toContain('SECRET_VALUE_CANARY');
+    expect(toolCallStore.transitions.map(item => item.to)).toEqual(['failed']);
+    expect(execute).not.toHaveBeenCalled();
   });
 
   it('maps handler failures and invalid output to stable safe errors', async () => {

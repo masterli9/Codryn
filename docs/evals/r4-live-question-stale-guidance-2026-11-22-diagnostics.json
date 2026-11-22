@@ -1,0 +1,266 @@
+{
+  "schemaVersion": 1,
+  "sourceHash": "d081ed790aa5f7d75b986699dd5b4b06f9658d1f4efd8ec705b5cb0bcdf6d9ab",
+  "evalIdentity": {
+    "runnerSha256": "f6751f7c607135fba191fc1d022b40ea307f7a5f4646129ab52d5788291f9c39",
+    "fixtureBuilderSha256": "ed8fdbcb1b76ced91108a905cde0683f7a98214b5045c46c2ff4a1dee0769ddd",
+    "counterOracleSha256": "fe79d9755d547b6c15f875f74e99b77a5d3038d562ba67ba2d9ebc1aace9d206",
+    "budgetSha256": "d99ff75377e37cf1253a01dc8dba55a4ba1cd7b98e9b9fcb3467f83191565d20",
+    "safeOutputSha256": "5744552f9a9a36eabebb55e406f73af7a523716df3b0ab529e99e87244066552",
+    "reportSchemaSha256": "95d561dc26d6c746339c8d5c044b947d894e48342a958a6189777bd6d54d64b3",
+    "r4ModelEvalDiagnosticsSha256": "f9a10aa9d38f76353685453dbba3dadc9fab4d35105a21491df2b3275a981d0f",
+    "selectionSha256": "4ed1dc2997fae5e5f33a02f7211988a9b9a68f69254a3758fc367a687ee92734",
+    "wrapperSha256": "18287d24440f2e1592fc372bc23f65559fb7a7c8a0dcd8da32bf1864f9537888"
+  },
+  "counterOracle": {
+    "kind": "bounded_expression_ast",
+    "input": 1,
+    "expected": 2,
+    "scope": "exported one-parameter function or arrow with a single return expression; numeric literals, parameter, parentheses and + - * / % **"
+  },
+  "series": "live",
+  "diagnostics": [
+    {
+      "id": "question",
+      "runState": "finished",
+      "runFailureCode": null,
+      "resultStatus": "failed",
+      "verificationStatus": "unverified",
+      "questionTotal": 1,
+      "counterOracleStatus": "mismatch",
+      "commandExitCodes": [],
+      "modelToolIds": [
+        "ask_user",
+        "file.read",
+        "file.read",
+        "file.read",
+        "text.search",
+        "file.patch",
+        "file.patch",
+        "file.patch",
+        "file.read",
+        "file.read",
+        "file.patch",
+        "file.patch"
+      ],
+      "toolAudit": [
+        {
+          "toolId": "file.read",
+          "state": "succeeded",
+          "errorCode": null
+        },
+        {
+          "toolId": "file.read",
+          "state": "succeeded",
+          "errorCode": null
+        },
+        {
+          "toolId": "file.read",
+          "state": "succeeded",
+          "errorCode": null
+        },
+        {
+          "toolId": "text.search",
+          "state": "succeeded",
+          "errorCode": null
+        },
+        {
+          "toolId": "file.patch",
+          "state": "failed",
+          "errorCode": "R1_TOOL_INPUT_INVALID"
+        },
+        {
+          "toolId": "file.patch",
+          "state": "failed",
+          "errorCode": "R1_TOOL_INPUT_INVALID"
+        },
+        {
+          "toolId": "file.patch",
+          "state": "failed",
+          "errorCode": "R1_TOOL_INPUT_INVALID"
+        },
+        {
+          "toolId": "file.read",
+          "state": "succeeded",
+          "errorCode": null
+        },
+        {
+          "toolId": "file.read",
+          "state": "succeeded",
+          "errorCode": null
+        },
+        {
+          "toolId": "file.patch",
+          "state": "failed",
+          "errorCode": "R1_TOOL_INPUT_INVALID"
+        },
+        {
+          "toolId": "file.patch",
+          "state": "failed",
+          "errorCode": "R1_TOOL_INPUT_INVALID"
+        }
+      ],
+      "fileReadCalls": [
+        {
+          "fields": [
+            {
+              "name": "path",
+              "type": "string"
+            },
+            {
+              "name": "startLine",
+              "type": "integer"
+            },
+            {
+              "name": "maxLines",
+              "type": "integer"
+            }
+          ],
+          "unknownFieldCount": 0,
+          "reasons": [],
+          "rejected": false
+        },
+        {
+          "fields": [
+            {
+              "name": "path",
+              "type": "string"
+            },
+            {
+              "name": "startLine",
+              "type": "integer"
+            },
+            {
+              "name": "maxLines",
+              "type": "integer"
+            }
+          ],
+          "unknownFieldCount": 0,
+          "reasons": [],
+          "rejected": false
+        },
+        {
+          "fields": [
+            {
+              "name": "path",
+              "type": "string"
+            },
+            {
+              "name": "startLine",
+              "type": "integer"
+            },
+            {
+              "name": "maxLines",
+              "type": "integer"
+            }
+          ],
+          "unknownFieldCount": 0,
+          "reasons": [],
+          "rejected": false
+        },
+        {
+          "fields": [
+            {
+              "name": "path",
+              "type": "string"
+            },
+            {
+              "name": "startLine",
+              "type": "integer"
+            },
+            {
+              "name": "maxLines",
+              "type": "integer"
+            }
+          ],
+          "unknownFieldCount": 0,
+          "reasons": [],
+          "rejected": false
+        },
+        {
+          "fields": [
+            {
+              "name": "path",
+              "type": "string"
+            },
+            {
+              "name": "startLine",
+              "type": "integer"
+            },
+            {
+              "name": "maxLines",
+              "type": "integer"
+            }
+          ],
+          "unknownFieldCount": 0,
+          "reasons": [],
+          "rejected": false
+        }
+      ],
+      "staleResultsByTurn": [
+        {
+          "turn": 1,
+          "previousToolResultCount": 0,
+          "staleResultCount": 0
+        },
+        {
+          "turn": 2,
+          "previousToolResultCount": 1,
+          "staleResultCount": 0
+        },
+        {
+          "turn": 3,
+          "previousToolResultCount": 2,
+          "staleResultCount": 0
+        },
+        {
+          "turn": 4,
+          "previousToolResultCount": 3,
+          "staleResultCount": 0
+        },
+        {
+          "turn": 5,
+          "previousToolResultCount": 4,
+          "staleResultCount": 0
+        },
+        {
+          "turn": 6,
+          "previousToolResultCount": 5,
+          "staleResultCount": 0
+        },
+        {
+          "turn": 7,
+          "previousToolResultCount": 6,
+          "staleResultCount": 0
+        },
+        {
+          "turn": 8,
+          "previousToolResultCount": 7,
+          "staleResultCount": 0
+        },
+        {
+          "turn": 9,
+          "previousToolResultCount": 8,
+          "staleResultCount": 0
+        },
+        {
+          "turn": 10,
+          "previousToolResultCount": 9,
+          "staleResultCount": 0
+        },
+        {
+          "turn": 11,
+          "previousToolResultCount": 10,
+          "staleResultCount": 0
+        },
+        {
+          "turn": 12,
+          "previousToolResultCount": 11,
+          "staleResultCount": 0
+        }
+      ],
+      "validatedToolArgumentsAndQuestions": 7,
+      "rejectedInputCount": 5
+    }
+  ]
+}
