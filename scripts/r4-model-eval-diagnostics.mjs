@@ -1,9 +1,13 @@
+import { Buffer } from 'node:buffer';
+
 const FILE_READ_FIELDS = Object.freeze(['path', 'startLine', 'maxLines']);
 const fileReadFieldSet = new Set(FILE_READ_FIELDS);
 const PATCH_FIELDS = Object.freeze(['path','expectedHash','edits']);
 const PATCH_FIELD_SET = new Set(PATCH_FIELDS);
 const PATCH_EDIT_FIELDS = Object.freeze(['oldText','newText']);
 const patchEditFieldSet = new Set(PATCH_EDIT_FIELDS);
+const PRE_SCHEMA_SENSITIVE_ASSIGNMENT = /(?:API[_-]?KEY|TOKEN|SECRET|PASSWORD)\s*[=:]\s*\S+/i;
+const MAX_TOOL_INPUT_BYTES = 64 * 1024;
 
 function isRecord(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -101,6 +105,25 @@ export function diagnosePatchInputArguments(args,schema) {
   const reasons=new Set(redactedHistoryMarkerEcho?['redacted_history_marker_echo']:topIssues.map(issue=>classifyPatchIssue(issue,args)));
   if(unknownFieldCount>0&&!redactedHistoryMarkerEcho)reasons.add('unknown_field');
   return {fields,missingFields,unknownFieldCount,editCount:Array.isArray(args.edits)?args.edits.length:null,editShapes,reasons:[...reasons].sort()};
+}
+
+/** Mirrors the fixed pre-schema guards without returning serialized input or match details. */
+export function diagnosePatchPreSchemaGuards(args) {
+  const serialized=JSON.stringify(args);
+  const matches=[];
+  if(Buffer.byteLength(serialized,'utf8')>MAX_TOOL_INPUT_BYTES)matches.push('over_size_limit');
+  if(PRE_SCHEMA_SENSITIVE_ASSIGNMENT.test(serialized))matches.push('sensitive_assignment_pattern');
+  return matches;
+}
+
+/** Preserves the generic cause when none of the mirrored guards matched. */
+export function finalizePatchInputDiagnostic(shape,rejected,preSchemaGuardMatches) {
+  return {
+    ...shape,
+    preSchemaGuardMatches,
+    rejected,
+    reasons:shape.reasons.length?shape.reasons:rejected?['pre_schema_safety_check']:[]
+  };
 }
 
 /** Counts only stale statuses and result totals, never serializing tool result content. */

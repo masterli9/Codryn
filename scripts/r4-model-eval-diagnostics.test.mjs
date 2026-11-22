@@ -1,8 +1,9 @@
+import { Buffer } from 'node:buffer';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { fileReadInputSchema } from '@codryn/core';
 import { patchInputSchema } from '@codryn/shared';
-import { diagnoseFileReadArguments, diagnosePatchInputArguments, summarizeStaleResultsByTurn } from './r4-model-eval-diagnostics.mjs';
+import { diagnoseFileReadArguments, diagnosePatchInputArguments, diagnosePatchPreSchemaGuards, finalizePatchInputDiagnostic, summarizeStaleResultsByTurn } from './r4-model-eval-diagnostics.mjs';
 
 test('diagnoses file.read shape without serializing argument values or unknown field names', () => {
   const canary = 'SYNTHETIC_PRIVATE_PATH_CANARY';
@@ -104,4 +105,31 @@ test('recognizes only the exact redacted-history placeholder for file.patch',()=
   });
   assert.equal(JSON.stringify(exact).includes('historical'),false);
   assert.equal(JSON.stringify(exact).includes('true'),false);
+});
+
+test('reports only fixed pre-schema size and sensitive-assignment categories',()=>{
+  const canary='SUPERSECRET_ASSIGNMENT_CANARY';
+  const sensitive={path:'src/TOKEN='+canary,expectedHash:'a'.repeat(64),edits:[{oldText:'before',newText:'after'}]};
+  assert.equal(patchInputSchema.safeParse(sensitive).success,true);
+  const sensitiveMatches=diagnosePatchPreSchemaGuards(sensitive);
+  assert.deepEqual(sensitiveMatches,['sensitive_assignment_pattern']);
+  assert.equal(JSON.stringify(sensitiveMatches).includes(canary),false);
+
+  const large={path:'src/counter.ts',expectedHash:'a'.repeat(64),edits:[{oldText:'a'.repeat(32_750),newText:'b'.repeat(32_750)}]};
+  assert.equal(patchInputSchema.safeParse(large).success,true);
+  assert.ok(Buffer.byteLength(JSON.stringify(large),'utf8')>64*1024);
+  assert.deepEqual(diagnosePatchPreSchemaGuards(large),['over_size_limit']);
+
+  const ordinary={path:'src/counter.ts',expectedHash:'a'.repeat(64),edits:[{oldText:'before',newText:'after'}]};
+  assert.deepEqual(diagnosePatchPreSchemaGuards(ordinary),[]);
+  assert.equal(patchInputSchema.safeParse(ordinary).success,true);
+  const ordinaryShape=diagnosePatchInputArguments(ordinary,patchInputSchema);
+  assert.deepEqual(finalizePatchInputDiagnostic(ordinaryShape,true,[]),{
+    ...ordinaryShape,preSchemaGuardMatches:[],rejected:true,reasons:['pre_schema_safety_check']
+  });
+  const sensitiveShape=diagnosePatchInputArguments(sensitive,patchInputSchema);
+  const sensitiveDiagnostic=finalizePatchInputDiagnostic(sensitiveShape,true,sensitiveMatches);
+  assert.deepEqual(sensitiveDiagnostic.preSchemaGuardMatches,['sensitive_assignment_pattern']);
+  assert.deepEqual(sensitiveDiagnostic.reasons,['pre_schema_safety_check']);
+  assert.equal(JSON.stringify(sensitiveDiagnostic).includes(canary),false);
 });

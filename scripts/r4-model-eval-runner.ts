@@ -13,7 +13,7 @@ import { isSafeR4EvalId, r4EvalReportSchema } from './r4-eval-report.mjs';
 import { R4RequestBudget } from './r4-eval-budget.mjs';
 import { writeR4EvalOutput } from './r4-safe-output.mjs';
 import { counterOracle } from './r4-counter-oracle.mjs';
-import { diagnoseFileReadArguments, diagnosePatchInputArguments, summarizeStaleResultsByTurn } from './r4-model-eval-diagnostics.mjs';
+import { diagnoseFileReadArguments, diagnosePatchInputArguments, diagnosePatchPreSchemaGuards, finalizePatchInputDiagnostic, summarizeStaleResultsByTurn } from './r4-model-eval-diagnostics.mjs';
 import { readR4EvalCase, selectR4EvalCases } from './r4-eval-selection.mjs';
 
 interface EvalCase { id: string; mode: 'git'|'non-git'; variant: string; prompt: string; expected: string; workflow?: string }
@@ -85,7 +85,7 @@ try {
     }
     const trace: {toolId:string}[] = [], captured:ModelRequest[]=[];
     const fileReadShapes: {callId:string;shape:ReturnType<typeof diagnoseFileReadArguments>}[] = [];
-    const filePatchShapes: {callId:string;shape:ReturnType<typeof diagnosePatchInputArguments>}[] = [];
+    const filePatchShapes: {callId:string;shape:ReturnType<typeof diagnosePatchInputArguments>;preSchemaGuardMatches:ReturnType<typeof diagnosePatchPreSchemaGuards>}[] = [];
     const fileReadRejections = new Map<string,string|null>();
     const filePatchRejections = new Map<string,string|null>();
     let inputTokens=0,outputTokens=0,reasoningTokens=0,usageKnown=true,reasoningKnown=true,actualCost=0,requestCount=0;
@@ -161,7 +161,7 @@ try {
                 if(event.type==='tool_call'){
                   trace.push({toolId:event.call.toolId});
                   if(event.call.toolId==='file.read')fileReadShapes.push({callId:event.call.callId,shape:diagnoseFileReadArguments(event.call.arguments,fileReadInputSchema)});
-                  if(event.call.toolId==='file.patch')filePatchShapes.push({callId:event.call.callId,shape:diagnosePatchInputArguments(event.call.arguments,patchInputSchema)});
+                  if(event.call.toolId==='file.patch')filePatchShapes.push({callId:event.call.callId,shape:diagnosePatchInputArguments(event.call.arguments,patchInputSchema),preSchemaGuardMatches:diagnosePatchPreSchemaGuards(event.call.arguments)});
                   if(item.variant==='stale'&&event.call.toolId==='file.patch'&&!staleInjected){
                     await writeFile(join(projectRoot,'src/counter.ts'),fixtureSource+'// external edit\n');staleInjected=true;
                   }
@@ -269,9 +269,9 @@ try {
       const rejected=fileReadRejections.get(callId)==='R1_TOOL_INPUT_INVALID';
       return { ...shape, rejected, reasons:shape.reasons.length?shape.reasons:rejected?['pre_schema_safety_check']:[] };
     });
-    const filePatchCalls=filePatchShapes.map(({callId,shape})=>{
+    const filePatchCalls=filePatchShapes.map(({callId,shape,preSchemaGuardMatches})=>{
       const rejected=filePatchRejections.get(callId)==='R1_TOOL_INPUT_INVALID';
-      return { ...shape, rejected, reasons:shape.reasons.length?shape.reasons:rejected?['pre_schema_safety_check']:[] };
+      return finalizePatchInputDiagnostic(shape,rejected,preSchemaGuardMatches);
     });
     diagnostics.push({id:item.id,runState,runFailureCode,resultStatus,verificationStatus,questionTotal,counterOracleStatus,commandExitCodes,
       modelToolIds:trace.map(call=>diagnosticToolIds.has(call.toolId)?call.toolId:'unknown'),toolAudit,
