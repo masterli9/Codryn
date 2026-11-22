@@ -10,6 +10,10 @@ Hostitelský `node scripts/eval-r4-model.mjs --offline --dataset v2` prošel 1/1
 
 Diagnostika patche nyní odlišuje známá odmítnutí uvnitř nástroje od vstupních chyb a může označit shodu s konfigurovanou citlivou hodnotou. Ukládá pouze pevné kategorie, bez hodnot argumentů nebo klíče. Příčinu dřívějších předběžných odmítnutí z původní evidence stále nelze určit.
 
+První živý pokus nad commitem `710509f` prošel 1/1. GPT‑6 Luna položil jednu otázku, v témže běhu obdržel volnou odpověď, upravil modul a dokončil s ověřením. Zachoval kontrolní soubory, všech osm návrhů nástrojů bylo platných a oba samostatně schválené příkazy skončily kódem 0. Dokončení trvalo 37 279 ms. Tento pokus neměl předběžné odmítnutí vstupu, takže příčinu historických odmítnutí dál neobjasňuje. Ověřený průchod pokrývá jeden syntetický případ. Širší živé hodnocení R4 zůstává otevřené. [Živý report](evals/r4-live-storage-v2-2026-11-22.json) · [Diagnostika](evals/r4-live-storage-v2-2026-11-22-diagnostics.json)
+
+Všech devět požadavků mělo známou spotřebu. Odhad je 0,0026707 USD za 18 682 vstupních a 1 605 výstupních tokenů, z nichž 608 bylo uvažovacích. Rezervace dosáhla 0,0418376 USD ze stropu 0,15 USD. Součet známých odhadů je 0,0865272 USD. Po započtení celé rezervace předchozího přerušeného běhu a celé rezervace tohoto pokusu činí konzervativní součet 0,2348362 USD z povolených 0,60 USD. Částky používají standardní sazby poskytovatele a představují odhad spotřeby a její rezervaci. [Ceník GPT‑6 Luna](https://developers.openai.com/api/docs/models/gpt-6-luna)
+
 ## Cílené ověření historie — 22. listopadu 2026
 
 OpenAI adapter nahrazuje redigovanou historickou dvojici volání a výsledku omezenými, označenými metadaty; neposílá modelu placeholder jako vzor skutečného volání. Smíšené čerstvé dvojice si zachovávají párování i pořadí, odpověď na otázku zůstává dostupná a staré obsahy se neodesílají. Review i cílené testy pokrývají pořadí, souběžné volání, obnovu po otázce a nepovolené výstupy.
