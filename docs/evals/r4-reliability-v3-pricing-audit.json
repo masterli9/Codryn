@@ -1,0 +1,89 @@
+{
+  "schemaVersion": 1,
+  "createdBeforeLive": true,
+  "source": "https://developers.openai.com/api/docs/guides/prompt-caching",
+  "inputUpperUsdPerMillion": 0.125,
+  "outputUsdPerMillion": 0.5,
+  "knownRuns": [
+    {
+      "file": "r4-live-2026-11-21-host.json",
+      "inputTokens": 106292,
+      "previousEstimate": 0.0140177,
+      "correctedUpperEstimate": 0.016675
+    },
+    {
+      "file": "r4-live-2026-11-21.json",
+      "inputTokens": 0,
+      "previousEstimate": 0,
+      "correctedUpperEstimate": 0
+    },
+    {
+      "file": "r4-live-argument-diagnostic-2026-11-21.json",
+      "inputTokens": 37896,
+      "previousEstimate": 0.005795100000000001,
+      "correctedUpperEstimate": 0.006742500000000001
+    },
+    {
+      "file": "r4-live-final-2026-11-21.json",
+      "inputTokens": 106590,
+      "previousEstimate": 0.014827,
+      "correctedUpperEstimate": 0.01749175
+    },
+    {
+      "file": "r4-live-freshness-2026-11-21.json",
+      "inputTokens": 39498,
+      "previousEstimate": 0.0060418,
+      "correctedUpperEstimate": 0.00702925
+    },
+    {
+      "file": "r4-live-guidance-2026-11-21.json",
+      "inputTokens": 40831,
+      "previousEstimate": 0.005408100000000001,
+      "correctedUpperEstimate": 0.0064288750000000006
+    },
+    {
+      "file": "r4-live-guidance-expanded-2026-11-21.json",
+      "inputTokens": 113628,
+      "previousEstimate": 0.016063300000000003,
+      "correctedUpperEstimate": 0.018904000000000004
+    },
+    {
+      "file": "r4-live-question-guard-diagnostic-2026-11-22.json",
+      "inputTokens": 23381,
+      "previousEstimate": 0.0038546000000000006,
+      "correctedUpperEstimate": 0.004439125
+    },
+    {
+      "file": "r4-live-question-history-2026-11-22.json",
+      "inputTokens": 22006,
+      "previousEstimate": 0.0042101,
+      "correctedUpperEstimate": 0.00476025
+    },
+    {
+      "file": "r4-live-question-patch-guidance-2026-11-22.json",
+      "inputTokens": 23090,
+      "previousEstimate": 0.004915,
+      "correctedUpperEstimate": 0.00549225
+    },
+    {
+      "file": "r4-live-question-progress-2026-11-22.json",
+      "inputTokens": 22747,
+      "previousEstimate": 0.0031727000000000005,
+      "correctedUpperEstimate": 0.0037413750000000008
+    },
+    {
+      "file": "r4-live-question-stale-guidance-2026-11-22.json",
+      "inputTokens": 25246,
+      "previousEstimate": 0.0055511,
+      "correctedUpperEstimate": 0.00618225
+    }
+  ],
+  "knownUpperEstimate": 0.097886625,
+  "timeoutFullCorrectedReservation": 0.124651625,
+  "v2FullCorrectedReservation": 0.047689,
+  "correctedHistoricalBase": 0.27022725,
+  "perSlotCap": 0.054,
+  "slots": 6,
+  "plannedTotalUpper": 0.59422725,
+  "authorizedTotal": 0.6
+}

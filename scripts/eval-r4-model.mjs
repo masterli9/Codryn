@@ -4,6 +4,7 @@ import { pathToFileURL } from 'node:url';
 import { readFile } from 'node:fs/promises';
 import { readProviderKey, providerChildEnvironment } from './r2-provider-key.mjs';
 import { r4EvalDatasetPath, readR4EvalOptions, selectR4EvalCases } from './r4-eval-selection.mjs';
+import { isAuthorizedR4ReliabilityBudget } from './r4-eval-budget.mjs';
 
 const args = process.argv.slice(2);
 const value = flag => {const index=args.indexOf(flag);return index<0?undefined:args[index+1];};
@@ -23,6 +24,9 @@ const authorized = () => live && !offline && args.includes('--confirm-paid-api')
   && positive('--max-cost-usd') && positive('--max-requests') && Number(value('--max-requests')) <= 100
   && Number.isInteger(Number(value('--max-requests')))
   && positive('--input-usd-per-million') && positive('--output-usd-per-million')
+  && (evalOptions.datasetVersion!=='v3'||isAuthorizedR4ReliabilityBudget({caseId:evalOptions.caseId,
+    maxCostUsd:Number(value('--max-cost-usd')),maxRequests:Number(value('--max-requests')),
+    inputPrice:Number(value('--input-usd-per-million')),outputPrice:Number(value('--output-usd-per-million'))}))
   && /^https:\/\//u.test(value('--pricing-source') ?? '');
 if(caseError){
   const message=caseError instanceof Error?caseError.message:'';

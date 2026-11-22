@@ -16,6 +16,12 @@ export function loadCount(storage: CountStorage): number {
 }
 `;
 
+const repairTests = `
+test("increments 1", () => assert.equal(nextCount(1), 2));
+test("increments 0", () => assert.equal(nextCount(0), 1));
+test("increments a negative count", () => assert.equal(nextCount(-3), -2));
+`;
+
 const storageTests = `
 import { readFile } from "node:fs/promises";
 import { Worker } from "node:worker_threads";
@@ -96,7 +102,8 @@ export async function createR4EvalProjectFixture(projectRoot: string, variant: s
   await writeFile(join(projectRoot, 'src/counter.ts'), source);
   await writeFile(join(projectRoot, 'src/Counter.tsx'), 'import { nextCount } from "./counter";\nexport const Counter = () => <button>{nextCount(1)}</button>;\n');
   if (hasStorageTask) await writeFile(join(projectRoot, 'src/counter-storage.ts'), storageModule);
-  await writeFile(join(projectRoot, 'counter.test.mjs'), 'import { test } from "node:test";\nimport assert from "node:assert/strict";\nimport { nextCount } from "./src/counter.ts";\ntest("increments",()=>assert.equal(nextCount(1),2));\n' + (hasStorageTask ? storageTests : ''));
+  const counterTests = variant === 'repair-git' ? repairTests : 'test("increments",()=>assert.equal(nextCount(1),2));\n';
+  await writeFile(join(projectRoot, 'counter.test.mjs'), 'import { test } from "node:test";\nimport assert from "node:assert/strict";\nimport { nextCount } from "./src/counter.ts";\n' + counterTests + (hasStorageTask ? storageTests : ''));
   await writeFile(join(projectRoot, 'package.json'), JSON.stringify({ type: 'module', scripts: { test: 'node --test', typecheck: 'tsc --noEmit' }, devDependencies: { typescript: '6.0.3' } }));
   const include = hasStorageTask ? ['src/counter.ts', 'src/counter-storage.ts'] : ['src/counter.ts'];
   await writeFile(join(projectRoot, 'tsconfig.json'), JSON.stringify({ compilerOptions: { target: 'ES2022', module: 'NodeNext', moduleResolution: 'NodeNext', strict: true }, include }));

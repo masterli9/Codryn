@@ -1,5 +1,12 @@
 import { Buffer } from 'node:buffer';
 
+export function isAuthorizedR4ReliabilityBudget({caseId,maxRequests,maxCostUsd,inputPrice,outputPrice}) {
+  return typeof caseId==='string' && Number.isInteger(maxRequests) && maxRequests>=1 && maxRequests<=12
+    && Number.isFinite(maxCostUsd) && maxCostUsd>0 && maxCostUsd<=0.054
+    && Number.isFinite(inputPrice) && inputPrice>=0.125
+    && Number.isFinite(outputPrice) && outputPrice>=0.5;
+}
+
 /** One reservation authorizes one transport delegation. No usage refund. */
 export class R4RequestBudget {
   requests = 0;

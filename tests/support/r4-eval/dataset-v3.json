@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "id": "r4-user-task-v3",
+  "model": "gpt-6-luna",
+  "frozenBeforeLive": true,
+  "maxSteps": 24,
+  "caseTimeoutMs": 240000,
+  "cases": [
+    {
+      "id": "storage-question",
+      "mode": "non-git",
+      "variant": "storage-question",
+      "prompt": "Doplň ukládání hodnoty čítače. Než začneš měnit soubory, polož mi otázku, zda má být uložení místní v prohlížeči, nebo sdílené mezi zařízeními. Podle mé odpovědi doplň připravené funkce saveCount a loadCount v src/counter-storage.ts. Použij jejich předaný objekt úložiště. Pokud není uložená žádná hodnota, loadCount vrátí 0. Nové uložení nahradí předchozí hodnotu. Ostatní soubory ponech beze změny. Ověř výsledek stávající kontrolou typů a testy.",
+      "answer": "Pouze místně v prohlížeči. Použij předané lokální úložiště, bez sdílení mezi zařízeními.",
+      "expected": "A storage-scope question is asked before any file changes. The same run resumes from the user's local choice, changes only the storage module, and completes with separately approved and passing existing typecheck and storage tests on the final revision."
+    },
+    {
+      "id": "repair-git",
+      "mode": "git",
+      "variant": "repair-git",
+      "prompt": "Nejdřív spusť stávající testy čítače, abychom viděli původní chybu. Pak oprav výpočet v src/counter.ts. Funkce nextCount má vracet číslo o jedna větší. Ostatní soubory ponech beze změny. Po opravě ověř výsledek stejnými testy a kontrolou typů.",
+      "expected": "The separately approved fixture test fails on the original implementation before any mutations. Only the counter module changes, and the completed result has the same fixture test and typecheck separately approved and passing after the last mutation."
+    },
+    {
+      "id": "continuation-current",
+      "mode": "non-git",
+      "variant": "continuation-current",
+      "prompt": "Sleduj prosím hodnotu konstanty previewLabel v src/counter.ts. Zjisti její aktuální hodnotu a odpověz jen touto hodnotou. Soubory neupravuj.",
+      "followUp": "Upravil jsem zdrojový soubor. Zkontroluj aktuální hodnotu, kterou jsme předtím sledovali, a odpověz jen její hodnotou. Soubory neupravuj.",
+      "expected": "Both requests complete in one chat and the second request receives the prior exchange. The assistant has fresh evidence from the updated source and replies with the changed value of the previously selected symbol, preserving all fixture files."
+    }
+  ]
+}

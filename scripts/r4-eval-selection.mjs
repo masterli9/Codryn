@@ -14,7 +14,7 @@ export function readR4EvalOptions(args) {
   const caseId=readR4EvalCase(args);
   const datasetIndex=args.indexOf('--dataset');
   const datasetVersion=datasetIndex===-1?undefined:args[datasetIndex+1];
-  if(datasetIndex!==-1&&(args.lastIndexOf('--dataset')!==datasetIndex||!['v1','v2'].includes(datasetVersion)))
+  if(datasetIndex!==-1&&(args.lastIndexOf('--dataset')!==datasetIndex||!['v1','v2','v3'].includes(datasetVersion)))
     throw new Error('R4_EVAL_DATASET_ARGUMENT_INVALID');
   const datasetOption=datasetVersion===undefined?{}:{datasetVersion};
   const indices=[];
@@ -29,7 +29,9 @@ export function readR4EvalOptions(args) {
 }
 
 export function r4EvalDatasetPath(version) {
-  return version==='v2'?'tests/support/r4-eval/dataset-v2.json':'tests/support/r4-eval/dataset-v1.json';
+  const dataset = version ?? 'v1';
+  if (!['v1', 'v2', 'v3'].includes(dataset)) throw new Error('R4_EVAL_DATASET_ARGUMENT_INVALID');
+  return `tests/support/r4-eval/dataset-${dataset}.json`;
 }
 
 export function effectiveR4EvalMaxSteps(datasetMaxSteps, override) {
