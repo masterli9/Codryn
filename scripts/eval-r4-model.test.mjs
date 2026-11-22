@@ -68,6 +68,36 @@ test('report schema distinguishes a one-case run and still accepts historical fu
   assert.equal(r4EvalReportSchema.safeParse({...report,total:1}).success,false);
   assert.equal(r4EvalReportSchema.safeParse(report).success,true);
 });
+test('live reports retain completed usage totals when a request times out',async()=>{
+  const offline=JSON.parse(await readFile('docs/evals/r4-offline-report.json','utf8'));
+  const base={...offline,series:'live',model:'gpt-6-luna',paidRequests:23,reservedUsd:0.11,approvedBudgetUsd:0.15,
+    pricingSource:'https://developers.openai.com/api/docs/models/gpt-6-luna',total:1,passed:0,
+    results:[{...offline.results[0],success:false,taskCompleted:false,recovery:false,failureOwner:'harness',reason:'run_did_not_finish',requests:23,
+      inputTokens:null,outputTokens:null,reasoningTokens:null,estimatedCostUsd:null,observedUsage:{knownRequests:22,unknownRequests:1,
+        inputTokens:42000,outputTokens:3500,reasoningTokens:1800,estimatedCostUsd:0.00595}}],
+    selection:{kind:'case',id:offline.results[0].id}};
+  assert.equal(r4EvalReportSchema.safeParse(base).success,true);
+  assert.equal(r4EvalReportSchema.safeParse(offline).success,true,'legacy reports without partial usage remain valid');
+  assert.equal(r4EvalReportSchema.safeParse({...base,results:[{...base.results[0],inputTokens:42000}]}).success,false,
+    'partial observations must not be presented as complete totals');
+  assert.equal(r4EvalReportSchema.safeParse({...base,results:[{...base.results[0],observedUsage:{...base.results[0].observedUsage,unknownRequests:2}}]}).success,false,
+    'known and unknown request counts must sum to delegated requests');
+  const zeroRequests={...base,paidRequests:0,results:[{...base.results[0],requests:0,inputTokens:42000,outputTokens:3500,
+    reasoningTokens:1800,estimatedCostUsd:0.00595,observedUsage:{knownRequests:0,unknownRequests:0,inputTokens:42000,
+      outputTokens:3500,reasoningTokens:1800,estimatedCostUsd:0.00595}}]};
+  assert.equal(r4EvalReportSchema.safeParse(zeroRequests).success,false,'zero requests cannot report observed usage');
+  const noKnownUsage={...base,paidRequests:1,results:[{...base.results[0],requests:1,observedUsage:{knownRequests:0,unknownRequests:1,
+    inputTokens:1,outputTokens:0,reasoningTokens:null,estimatedCostUsd:0.0000001}}]};
+  assert.equal(r4EvalReportSchema.safeParse(noKnownUsage).success,false,'zero known requests cannot have nonzero observed subtotals');
+});
+test('partial usage aggregation separates observed subtotals from incomplete totals',async()=>{
+  const {createR4UsageMetrics}=await import('./r4-eval-report.mjs');
+  assert.equal(typeof createR4UsageMetrics,'function');
+  const partial=createR4UsageMetrics({live:true,requestCount:23,knownRequests:22,inputTokens:42000,outputTokens:3500,
+    reasoningTokens:1800,usageKnown:false,reasoningKnown:false,observedReasoningKnown:true,estimatedCostUsd:0.00595});
+  assert.deepEqual(partial,{inputTokens:null,outputTokens:null,reasoningTokens:null,estimatedCostUsd:null,
+    observedUsage:{knownRequests:22,unknownRequests:1,inputTokens:42000,outputTokens:3500,reasoningTokens:1800,estimatedCostUsd:0.00595}});
+});
 test('unknown --case is rejected before live authorization or provider dispatch',()=>{
   const result=spawnSync(process.execPath,['scripts/eval-r4-model.mjs','--live','--case','unknown-case'],{cwd:process.cwd(),encoding:'utf8',timeout:5000,windowsHide:true});
   assert.equal(result.status,2);

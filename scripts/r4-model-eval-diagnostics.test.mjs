@@ -133,3 +133,13 @@ test('reports only fixed pre-schema size and sensitive-assignment categories',()
   assert.deepEqual(sensitiveDiagnostic.reasons,['pre_schema_safety_check']);
   assert.equal(JSON.stringify(sensitiveDiagnostic).includes(canary),false);
 });
+
+test('does not label rejected patch pre-schema when edit schema reasons already explain it',()=>{
+  const args={path:'src/counter.ts',expectedHash:'a'.repeat(64),edits:[{oldText:'',newText:'after'}]};
+  const shape=diagnosePatchInputArguments(args,patchInputSchema);
+  assert.deepEqual(shape.reasons,[]);
+  assert.deepEqual(shape.editShapes[0]?.reasons,['oldText_below_minimum']);
+  const diagnostic=finalizePatchInputDiagnostic(shape,true,[]);
+  assert.deepEqual(diagnostic.reasons,[]);
+  assert.deepEqual(diagnostic.editShapes[0]?.reasons,['oldText_below_minimum']);
+});

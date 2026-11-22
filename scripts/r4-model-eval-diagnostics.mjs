@@ -118,11 +118,12 @@ export function diagnosePatchPreSchemaGuards(args) {
 
 /** Preserves the generic cause when none of the mirrored guards matched. */
 export function finalizePatchInputDiagnostic(shape,rejected,preSchemaGuardMatches) {
+  const hasSchemaReasons=shape.reasons.length>0||shape.editShapes.some(edit=>edit.reasons.length>0);
   return {
     ...shape,
     preSchemaGuardMatches,
     rejected,
-    reasons:shape.reasons.length?shape.reasons:rejected?['pre_schema_safety_check']:[]
+    reasons:hasSchemaReasons?shape.reasons:rejected?['pre_schema_safety_check']:[]
   };
 }
 

@@ -9,7 +9,7 @@ import type { ProviderTransport } from '@codryn/infrastructure';
 import { builtinWorkflowSchema, patchInputSchema, type ModelRequest, type JsonValue } from '@codryn/shared';
 import { createR4EvalProjectFixture } from '@codryn/test-support';
 import { sourceHash } from './r3-build-identity.mjs';
-import { isSafeR4EvalId, r4EvalReportSchema } from './r4-eval-report.mjs';
+import { createR4UsageMetrics, isSafeR4EvalId, r4EvalReportSchema } from './r4-eval-report.mjs';
 import { R4RequestBudget } from './r4-eval-budget.mjs';
 import { writeR4EvalOutput } from './r4-safe-output.mjs';
 import { counterOracle } from './r4-counter-oracle.mjs';
@@ -89,7 +89,7 @@ try {
     const filePatchShapes: {callId:string;shape:ReturnType<typeof diagnosePatchInputArguments>;preSchemaGuardMatches:ReturnType<typeof diagnosePatchPreSchemaGuards>}[] = [];
     const fileReadRejections = new Map<string,string|null>();
     const filePatchRejections = new Map<string,string|null>();
-    let inputTokens=0,outputTokens=0,reasoningTokens=0,usageKnown=true,reasoningKnown=true,actualCost=0,requestCount=0;
+    let inputTokens=0,outputTokens=0,reasoningTokens=0,usageKnown=true,reasoningKnown=true,observedReasoningKnown=true,actualCost=0,requestCount=0,usageRequestCount=0;
     let budgetHit=false,validArguments=0,projectId:string|undefined,runFailureCode:string|null=null,runState:string|null=null;
     let resultStatus:string|null=null,verificationStatus:string|null=null,questionTotal=0,counterOracleStatus:'verified'|'mismatch'|'unsupported'|'not_applicable'='not_applicable';
     let commandExitCodes:(number|null)[]=[];
@@ -103,8 +103,8 @@ try {
         const raw=event as {type?:string;response?:{usage?:{input_tokens?:number;output_tokens?:number;output_tokens_details?:{reasoning_tokens?:number}}}};
         const usage=raw.type==='response.completed'?raw.response?.usage:undefined;
         if(!used&&usage&&Number.isSafeInteger(usage.input_tokens)&&Number.isSafeInteger(usage.output_tokens)&&typeof usage.input_tokens==='number'&&typeof usage.output_tokens==='number'){
-          inputTokens+=usage.input_tokens;outputTokens+=usage.output_tokens;actualCost+=(usage.input_tokens*inputPrice+usage.output_tokens*outputPrice)/1_000_000;used=true;
-          if(typeof usage.output_tokens_details?.reasoning_tokens==='number')reasoningTokens+=usage.output_tokens_details.reasoning_tokens;else reasoningKnown=false;
+          inputTokens+=usage.input_tokens;outputTokens+=usage.output_tokens;actualCost+=(usage.input_tokens*inputPrice+usage.output_tokens*outputPrice)/1_000_000;used=true;usageRequestCount++;
+          if(typeof usage.output_tokens_details?.reasoning_tokens==='number')reasoningTokens+=usage.output_tokens_details.reasoning_tokens;else{reasoningKnown=false;observedReasoningKnown=false;}
         }
         yield event;
       }}finally{if(!used){usageKnown=false;reasoningKnown=false;}}
@@ -281,8 +281,8 @@ try {
       rejectedInputCount:toolAudit.filter(row=>row.errorCode==='R1_TOOL_INPUT_INVALID').length});
     results.push({id:item.id,success,taskCompleted,recovery,failureOwner:success?null:owner,reason,toolCalls:trace.length,
       validArguments,latencyMs:Math.round(performance.now()-started),requests:requestCount,
-      inputTokens:live&&requestCount>0&&usageKnown?inputTokens:null,outputTokens:live&&requestCount>0&&usageKnown?outputTokens:null,reasoningTokens:live&&requestCount>0&&reasoningKnown?reasoningTokens:null,
-      estimatedCostUsd:live&&requestCount>0&&usageKnown?actualCost:null});
+      ...createR4UsageMetrics({live,requestCount,knownRequests:usageRequestCount,inputTokens,outputTokens,reasoningTokens,
+        usageKnown,reasoningKnown,observedReasoningKnown,estimatedCostUsd:actualCost})});
   }
   const report={schemaVersion:1,series:live?'live':'offline',model:live?'gpt-6-luna':'scripted-fake',createdAt:new Date().toISOString(),
     datasetHash:hash(datasetBytes),sourceHash:await sourceHash(),evalIdentity,paidRequests:budget?.requests??0,reservedUsd:budget?.reservedUsd??0,approvedBudgetUsd:live?maxCost:null,

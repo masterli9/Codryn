@@ -2,6 +2,22 @@ import { z } from 'zod';
 export function isSafeR4EvalId(value) { return typeof value === 'string' && /^[a-z0-9]+(?:-[a-z0-9]+)*$/u.test(value); }
 const count = z.number().int().nonnegative();
 const metric = z.number().nonnegative().nullable();
+const observedUsage = z.object({
+  knownRequests:count,unknownRequests:count,inputTokens:count,outputTokens:count,
+  reasoningTokens:count.nullable(),estimatedCostUsd:z.number().nonnegative()
+}).strict();
+export function createR4UsageMetrics({live,requestCount,knownRequests,inputTokens,outputTokens,reasoningTokens,
+  usageKnown,reasoningKnown,observedReasoningKnown,estimatedCostUsd}) {
+  const hasUsage=live&&requestCount>0;
+  return {
+    inputTokens:hasUsage&&usageKnown?inputTokens:null,
+    outputTokens:hasUsage&&usageKnown?outputTokens:null,
+    reasoningTokens:hasUsage&&reasoningKnown?reasoningTokens:null,
+    estimatedCostUsd:hasUsage&&usageKnown?estimatedCostUsd:null,
+    ...(hasUsage?{observedUsage:{knownRequests,unknownRequests:requestCount-knownRequests,inputTokens,outputTokens,
+      reasoningTokens:knownRequests>0&&observedReasoningKnown?reasoningTokens:null,estimatedCostUsd}}:{})
+  };
+}
 export const r4EvalReportSchema = z.object({
   schemaVersion:z.literal(1),series:z.enum(['offline','live']),model:z.string().min(1),createdAt:z.iso.datetime(),
   datasetHash:z.string().regex(/^[a-f0-9]{64}$/u),sourceHash:z.string().regex(/^[a-f0-9]{64}$/u),
@@ -23,7 +39,8 @@ export const r4EvalReportSchema = z.object({
     id:z.string().min(1),success:z.boolean(),taskCompleted:z.boolean(),recovery:z.boolean(),
     failureOwner:z.enum(['model','harness','provider','budget']).nullable(),reason:z.string().nullable(),
     toolCalls:count,validArguments:count,latencyMs:count,requests:count,
-    inputTokens:count.nullable(),outputTokens:count.nullable(),reasoningTokens:count.nullable(),estimatedCostUsd:metric
+    inputTokens:count.nullable(),outputTokens:count.nullable(),reasoningTokens:count.nullable(),estimatedCostUsd:metric,
+    observedUsage:observedUsage.optional()
   }).strict())
 }).strict().superRefine((report,context)=>{
   const full=report.selection===undefined||report.selection.kind==='full';
@@ -34,11 +51,21 @@ export const r4EvalReportSchema = z.object({
     &&Object.hasOwn(selection,'profile')
     &&(selection.profile==='frozen_dataset'&&selection.maxStepsOverride===null
       ||selection.profile==='diagnostic_max_steps_override'&&selection.maxStepsOverride===selection.effectiveMaxSteps));
+  const usageValid=report.results.every(item=>{
+    const observed=item.observedUsage;
+    if(!observed)return true;
+    if(report.series!=='live'||item.requests===0||observed.knownRequests+observed.unknownRequests!==item.requests)return false;
+    if(observed.knownRequests===0&&(observed.inputTokens!==0||observed.outputTokens!==0
+      ||observed.reasoningTokens!==null||observed.estimatedCostUsd!==0))return false;
+    if(observed.unknownRequests>0)return item.inputTokens===null&&item.outputTokens===null&&item.reasoningTokens===null&&item.estimatedCostUsd===null;
+    return item.inputTokens===observed.inputTokens&&item.outputTokens===observed.outputTokens
+      &&item.reasoningTokens===observed.reasoningTokens&&item.estimatedCostUsd===observed.estimatedCostUsd;
+  });
   const valid=report.passed===report.results.filter(item=>item.success).length
     && report.total===report.results.length
     && (full?(report.total===9&&new Set(report.results.map(item=>item.id)).size===9)
       :(report.total===1&&report.results[0]?.id===report.selection.id))
-    && stepMetadataValid
+    && stepMetadataValid && usageValid
     && report.paidRequests===report.results.reduce((count,item)=>count+item.requests,0)
     && report.results.every(item=>item.validArguments<=item.toolCalls && item.success===(item.failureOwner===null&&item.reason===null)
       && (item.reasoningTokens===null||item.outputTokens!==null))
